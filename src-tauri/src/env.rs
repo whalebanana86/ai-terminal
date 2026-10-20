@@ -21,12 +21,43 @@ pub fn shell_env() -> &'static HashMap<String, String> {
         if let Some(loaded) = load_login_env() {
             env.extend(loaded);
         }
+        // 앱을 띄운 에이전트 세션의 변수를 자식에게 물려주면, 재개한 CLI 가 자신을 하위 세션으로 알고
+        // 기록 저장을 끄는 등 오동작한다. 세션에 묶인 변수만 지운다(사용자 설정 변수는 유지).
+        env.retain(|k, _| !is_inherited_session_var(k));
         // 한글이 깨지지 않도록 UTF-8 로케일을 보장한다.
         if !env.get("LANG").is_some_and(|v| v.to_ascii_lowercase().contains("utf")) {
             env.insert("LANG".into(), "en_US.UTF-8".into());
         }
         env
     })
+}
+
+/// 부모 에이전트 세션에서 새어 들어온, 특정 실행에 묶인 환경변수인지
+pub fn is_inherited_session_var(k: &str) -> bool {
+    const EXACT: &[&str] = &[
+        "CLAUDECODE",
+        "CLAUDE_PID",
+        "CLAUDE_EFFORT",
+        "CLAUDE_AGENT_SDK_VERSION",
+        "CLAUDE_CODE_ENTRYPOINT",
+        "CLAUDE_CODE_EXECPATH",
+        "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS",
+        "AI_AGENT",
+        "CODEX_SANDBOX",
+        "CODEX_SANDBOX_NETWORK_DISABLED",
+        "CODEX_THREAD_ID",
+        "CODEX_CI",
+    ];
+    const PREFIX: &[&str] = &[
+        "CLAUDE_CODE_SESSION",
+        "CLAUDE_CODE_CHILD",
+        "CLAUDE_CODE_MESSAGING",
+        "CODEX_THREAD",
+        "CODEX_SESSION",
+        "ORCA_",
+        "AITERM_AUTOMATION",
+    ];
+    EXACT.contains(&k) || PREFIX.iter().any(|p| k.starts_with(p))
 }
 
 fn load_login_env() -> Option<HashMap<String, String>> {
@@ -97,4 +128,20 @@ pub fn home_dir() -> PathBuf {
         .map(PathBuf::from)
         .or_else(dirs::home_dir)
         .unwrap_or_else(|| PathBuf::from("/"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strips_parent_session_vars_but_keeps_user_config() {
+        for k in ["CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_SESSION_ID", "ORCA_AGENT_SESSION_ID", "CODEX_THREAD_ID"] {
+            assert!(is_inherited_session_var(k), "{k}");
+        }
+        for k in ["CLAUDE_CODE_USE_BEDROCK", "ANTHROPIC_API_KEY", "PATH", "CODEX_HOME", "CLAUDE_CONFIG_DIR"] {
+            assert!(!is_inherited_session_var(k), "{k}");
+        }
+        assert!(!shell_env().keys().any(|k| is_inherited_session_var(k)));
+    }
 }
