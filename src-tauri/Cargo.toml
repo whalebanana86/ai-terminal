@@ -1,0 +1,51 @@
+[package]
+name = "ai-terminal"
+version = "0.1.0"
+description = "AI coding agent workspace: sessions, worktrees and files side by side"
+authors = ["AI Terminal contributors"]
+license = "MIT"
+edition = "2024"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "ai_terminal_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+portable-pty = "0.9"
+rusqlite = { version = "0.40", features = ["bundled"] }
+notify = "8.2"
+notify-debouncer-full = "0.7"
+zstd = "0.13"
+anyhow = "1"
+uuid = { version = "1", features = ["v4"] }
+dirs = "6"
+parking_lot = "0.12"
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+# 테스트용 원격 조작 소켓. 배포 빌드에는 넣지 않는다.
+automation = []
+
+
+# Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
