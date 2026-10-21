@@ -4,7 +4,7 @@
 
 <p align="center">
   <img src="docs/demo.gif" width="900" alt="30-second demo: pick a session → all three panes follow its worktree → file diff and image compare → continue in chat with a tool permission card → stage part of a file → graph menu → worktrees">
-  <br><sub>30-second demo (<a href="docs/demo.mp4">MP4</a>) · recorded with made-up sample data · the UI is in Korean for now</sub>
+  <br><sub>30-second demo (<a href="docs/demo.mp4">MP4</a>) · recorded with made-up sample data</sub>
 </p>
 
 <p align="center">
@@ -57,17 +57,17 @@ So AI Terminal
 ```bash
 git clone https://github.com/whalebanana86/ai-terminal.git
 cd ai-terminal
-pnpm install
-pnpm tauri build
-ditto "src-tauri/target/release/bundle/macos/AI Terminal.app" "/Applications/AI Terminal.app"
+pnpm install          # also builds the app and puts it in /Applications
 open "/Applications/AI Terminal.app"
 ```
+
+`pnpm install-app` rebuilds just the app; `AITERM_SKIP_APP=1 pnpm install` skips it.
 
 Then use **＋ 저장소 추가** (Add repository) at the top to pick a Git repository. Repositories you have used with an AI are found automatically.
 
 > A `dmg` built by someone else is not notarized yet. If macOS blocks it, use **System Settings → Privacy & Security → Open Anyway**, or run `xattr -dr com.apple.quarantine "/Applications/AI Terminal.app"`. Apps you build yourself are fine.
 
-**Update:** `git pull && pnpm install && pnpm tauri build`, then copy the app again. **Uninstall:** delete the app, and `~/Library/Application Support/dev.aiterminal.app` if you also want to forget the repository list. Your AI conversation logs are not created by this app and stay where they are.
+**Update:** `git pull && pnpm install` replaces the app (quit and reopen it if it was running). **Uninstall:** delete the app, and `~/Library/Application Support/dev.aiterminal.app` if you also want to forget the repository list. Your AI conversation logs are not created by this app and stay where they are.
 
 ## Using it
 
@@ -155,7 +155,9 @@ scripts/make_screenshots.sh   # README images + demo video from sample data (nee
 scripts/package_release.sh 0.1.0   # universal app → build/release/ DMG, zip, SHA256SUMS (a v* tag does this on GitHub Actions and publishes a Release)
 ```
 
-Not yet: notarized builds, Intel check, line-level staging, 3-way merge editor, interactive rebase, stash, English UI.
+**Settings** (⚙ at the bottom right): language (한국어 / English, follows macOS at first) and appearance (system / light / dark; the terminal and code colours follow).
+
+Not yet: notarized builds, Intel check, line-level staging, 3-way merge editor, interactive rebase, stash.
 
 ## License
 

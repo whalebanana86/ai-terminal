@@ -70,13 +70,13 @@ impl PtyManager {
         on_exit: impl FnOnce(&str, Option<i32>) + Send + 'static,
     ) -> Result<Arc<PtyExec>> {
         let program = crate::env::which(&spec.program)
-            .ok_or_else(|| anyhow!("'{}' 명령을 찾을 수 없습니다. 설치되어 있고 로그인 셸 PATH 에 있는지 확인하세요.", spec.program))?;
+            .ok_or_else(|| anyhow!(tr!("'{}' 명령을 찾을 수 없습니다. 설치되어 있고 로그인 셸 PATH 에 있는지 확인하세요.", "Command '{}' not found. Make sure it's installed and on your login shell PATH.", spec.program)))?;
         if !std::path::Path::new(&spec.cwd).is_dir() {
-            return Err(anyhow!("작업 폴더가 없습니다: {}", spec.cwd));
+            return Err(anyhow!(tr!("작업 폴더가 없습니다: {}", "Working folder not found: {}", spec.cwd)));
         }
         let pair = native_pty_system()
             .openpty(PtySize { rows: spec.rows.max(5), cols: spec.cols.max(20), pixel_width: 0, pixel_height: 0 })
-            .context("PTY 를 열 수 없습니다")?;
+            .with_context(|| tr!("PTY 를 열 수 없습니다", "Can't open a PTY"))?;
         let mut cmd = CommandBuilder::new(&program);
         cmd.args(&spec.args);
         cmd.cwd(&spec.cwd);
@@ -91,7 +91,7 @@ impl PtyManager {
         for (k, v) in &spec.extra_env {
             cmd.env(k, v);
         }
-        let child = pair.slave.spawn_command(cmd).with_context(|| format!("{} 실행 실패", program.display()))?;
+        let child = pair.slave.spawn_command(cmd).with_context(|| tr!("{} 실행 실패", "Failed to run {}", program.display()))?;
         drop(pair.slave);
         let pid = child.process_id();
         let reader = pair.master.try_clone_reader()?;
@@ -151,7 +151,7 @@ impl PtyManager {
 
     /// 지금까지의 출력을 먼저 보내고, 이후 출력을 계속 보낸다. 반환값은 구독 id.
     pub fn attach(&self, id: &str, sink: Sink) -> Result<u64> {
-        let exec = self.get(id).ok_or_else(|| anyhow!("실행을 찾을 수 없습니다: {id}"))?;
+        let exec = self.get(id).ok_or_else(|| anyhow!(tr!("실행을 찾을 수 없습니다: {id}", "Run not found: {id}")))?;
         let sid = self.next_sink.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut inner = exec.inner.lock();
         // 버퍼 재생과 구독 등록을 같은 잠금 안에서 해야 출력이 빠지거나 겹치지 않는다.
@@ -160,7 +160,7 @@ impl PtyManager {
         snapshot.extend_from_slice(a);
         snapshot.extend_from_slice(b);
         if !snapshot.is_empty() && !sink(&snapshot) {
-            return Err(anyhow!("터미널 화면에 연결하지 못했습니다"));
+            return Err(anyhow!(tr!("터미널 화면에 연결하지 못했습니다", "Failed to connect to the terminal view")));
         }
         inner.sinks.push((sid, sink));
         Ok(sid)
@@ -173,16 +173,16 @@ impl PtyManager {
     }
 
     pub fn write(&self, id: &str, data: &[u8]) -> Result<()> {
-        let exec = self.get(id).ok_or_else(|| anyhow!("실행을 찾을 수 없습니다: {id}"))?;
+        let exec = self.get(id).ok_or_else(|| anyhow!(tr!("실행을 찾을 수 없습니다: {id}", "Run not found: {id}")))?;
         let mut w = exec.writer.lock();
-        let w = w.as_mut().ok_or_else(|| anyhow!("이미 종료된 실행입니다"))?;
+        let w = w.as_mut().ok_or_else(|| anyhow!(tr!("이미 종료된 실행입니다", "This run has already ended")))?;
         w.write_all(data)?;
         w.flush()?;
         Ok(())
     }
 
     pub fn resize(&self, id: &str, cols: u16, rows: u16) -> Result<()> {
-        let exec = self.get(id).ok_or_else(|| anyhow!("실행을 찾을 수 없습니다: {id}"))?;
+        let exec = self.get(id).ok_or_else(|| anyhow!(tr!("실행을 찾을 수 없습니다: {id}", "Run not found: {id}")))?;
         if let Some(m) = exec.master.lock().as_ref() {
             m.resize(PtySize { rows: rows.max(2), cols: cols.max(2), pixel_width: 0, pixel_height: 0 })?;
         }
@@ -190,7 +190,7 @@ impl PtyManager {
     }
 
     pub fn kill(&self, id: &str) -> Result<()> {
-        let exec = self.get(id).ok_or_else(|| anyhow!("실행을 찾을 수 없습니다: {id}"))?;
+        let exec = self.get(id).ok_or_else(|| anyhow!(tr!("실행을 찾을 수 없습니다: {id}", "Run not found: {id}")))?;
         terminate(&exec);
         Ok(())
     }
@@ -360,6 +360,8 @@ mod tests {
 
     #[test]
     fn missing_program_is_reported() {
+        // 다른 테스트가 메시지 언어를 잠깐 영어로 바꾸므로 같은 잠금을 잡는다
+        let _g = crate::env::TEST_ENV_LOCK.lock();
         let m = PtyManager::default();
         let err = m
             .spawn(

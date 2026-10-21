@@ -1,3 +1,4 @@
+import { currentTheme } from "./theme";
 // Shiki 를 필요할 때만 불러와 코드에 색을 입힌다. 문법 파일은 앱 번들 안에 있어 네트워크를 쓰지 않는다.
 
 const EXT: Record<string, string> = {
@@ -63,10 +64,15 @@ let hl: Promise<Core> | null = null;
 
 async function highlighter(): Promise<Core> {
   if (!hl) {
-    hl = Promise.all([import("shiki/core"), import("shiki/engine/javascript"), import("@shikijs/themes/github-dark-default")]).then(
-      ([core, eng, theme]) =>
+    hl = Promise.all([
+      import("shiki/core"),
+      import("shiki/engine/javascript"),
+      import("@shikijs/themes/github-dark-default"),
+      import("@shikijs/themes/github-light-default"),
+    ]).then(
+      ([core, eng, dark, light]) =>
         core.createHighlighterCore({
-          themes: [theme.default],
+          themes: [dark.default, light.default],
           langs: [],
           engine: eng.createJavaScriptRegexEngine({ forgiving: true }),
         }),
@@ -86,7 +92,7 @@ export async function highlightLines(code: string, path: string): Promise<string
       const mod = (await loader()) as { default: Parameters<Core["loadLanguage"]>[0] };
       await h.loadLanguage(mod.default);
     }
-    const tokens = h.codeToTokensBase(code, { lang, theme: "github-dark-default" });
+    const tokens = h.codeToTokensBase(code, { lang, theme: currentTheme() === "light" ? "github-light-default" : "github-dark-default" });
     return tokens.map((line) =>
       line.map((t) => `<span style="color:${t.color ?? "inherit"}">${escapeHtml(t.content)}</span>`).join(""),
     );

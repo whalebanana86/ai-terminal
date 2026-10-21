@@ -7,4 +7,6 @@ export default {
   밝게: "Light",
   어둡게: "Dark",
   "맥 설정을 따라가요": "Follows macOS",
+  "[연결 실패]": "[connection failed]",
+  "(제목 없음)": "(Untitled)",
 } satisfies Record<string, string>;

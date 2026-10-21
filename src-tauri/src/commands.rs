@@ -374,7 +374,7 @@ pub fn reveal_in_finder(state: State<'_, AppState>, path: String) -> Res<()> {
     state.core.ensure_known(&path).map_err(err)?;
     let p = PathBuf::from(&path);
     if !p.exists() {
-        return Err(format!("경로가 없습니다: {path}"));
+        return Err(tr!("경로가 없습니다: {path}", "Path not found: {path}"));
     }
     std::process::Command::new("/usr/bin/open").arg("-R").arg(&p).spawn().map_err(|e| e.to_string())?;
     Ok(())
@@ -421,7 +421,7 @@ pub async fn chat_start(state: State<'_, AppState>, args: ChatStartArgs) -> Res<
     blocking(move || {
         if let Some(c) = &args.cwd {
             if args.session_id.is_none() && !std::path::Path::new(c).is_dir() {
-                anyhow::bail!("폴더가 없습니다: {c}");
+                anyhow::bail!(tr!("폴더가 없습니다: {c}", "Folder not found: {c}"));
             }
         }
         core.chat_start(&args.agent, args.session_id.as_deref(), args.cwd.as_deref(), &args.mode, args.force)
@@ -529,7 +529,7 @@ pub async fn git_worktree_remove(state: State<'_, AppState>, path: String, targe
     blocking(move || {
         core.ensure_known(&path)?;
         if !Path::new(&target).exists() {
-            anyhow::bail!("폴더가 이미 없는 워크트리입니다. '정리' 로 등록을 지우세요.");
+            anyhow::bail!(tr!("폴더가 이미 없는 워크트리입니다. '정리' 로 등록을 지우세요.", "This worktree's folder no longer exists. Use 'Prune' to remove its registration."));
         }
         core.ensure_known(&target)?;
         let canon = std::fs::canonicalize(&target)?;
@@ -537,7 +537,7 @@ pub async fn git_worktree_remove(state: State<'_, AppState>, path: String, targe
         let busy_exec = core.exec_list().into_iter().any(|e| !e.exited && inside(&e.cwd));
         let busy_chat = core.chats.list().into_iter().any(|c| c.alive && inside(&c.cwd));
         if busy_exec || busy_chat {
-            anyhow::bail!("이 워크트리에서 앱의 에이전트가 실행 중입니다. 먼저 중지하세요.");
+            anyhow::bail!(tr!("이 워크트리에서 앱의 에이전트가 실행 중입니다. 먼저 중지하세요.", "An agent started from this app is running in this worktree. Stop it first."));
         }
         core.refresh_live();
         let live = core.live_runs().into_iter().filter(|r| !r.owned_by_app && r.cwd.as_deref().is_some_and(inside)).count();

@@ -71,29 +71,21 @@ AI 에게 코드를 맡기다 보면 이런 일이 생겨요.
 #### 따라 하기
 
 1. **터미널을 열어요.** `⌘ + 스페이스`를 누르고 "터미널"이라고 쓴 뒤 엔터를 쳐요.
-2. **코드를 내려받아요.**
+2. **코드를 내려받고 설치해요.**
    ```bash
    git clone https://github.com/whalebanana86/ai-terminal.git
    cd ai-terminal
    pnpm install
    ```
-3. **앱을 만들어요.**
-   ```bash
-   pnpm tauri build
-   ```
-   끝나면 `src-tauri/target/release/bundle/macos/AI Terminal.app` 과 설치용 `dmg` 가 생겨요.
-4. **응용 프로그램 폴더에 넣고 열어요.**
-   ```bash
-   ditto "src-tauri/target/release/bundle/macos/AI Terminal.app" "/Applications/AI Terminal.app"
-   open "/Applications/AI Terminal.app"
-   ```
-5. 위쪽 **＋ 저장소 추가**로 내 Git 저장소 폴더를 골라요. AI 와 일한 적 있는 저장소는 알아서 찾아 줘요.
+   `pnpm install` 이 필요한 것을 받은 다음 **앱까지 만들어 응용 프로그램 폴더에 넣어요**(처음엔 몇 분). 앱만 다시 만들려면 `pnpm install-app`, 앱은 빼고 받기만 하려면 `AITERM_SKIP_APP=1 pnpm install`.
+3. **앱을 열어요.** 응용 프로그램 폴더나 Spotlight 에서 **AI Terminal** 을 열어요.
+4. 위쪽 **＋ 저장소 추가**로 내 Git 저장소 폴더를 골라요. AI 와 일한 적 있는 저장소는 알아서 찾아 줘요.
 
 > 다른 사람이 만든 `dmg` 를 받아서 열면 "확인할 수 없는 개발자" 창이 뜰 수 있어요(Apple 공증 전). **시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기**를 누르거나, 터미널에서 `xattr -dr com.apple.quarantine "/Applications/AI Terminal.app"` 를 한 번 실행해요. 직접 만든 앱은 괜찮아요.
 
 ### 새 버전으로 바꾸기 · 지우기
 
-- 새 버전: 내려받아 쓰면 새 DMG 로 앱을 바꿔 끼워요. 코드로 설치했으면 `ai-terminal` 폴더에서 `git pull && pnpm install && pnpm tauri build` 한 다음 4번을 다시 해요. 추가한 저장소 목록은 그대로 남아요.
+- 새 버전: 내려받아 쓰면 새 DMG 로 앱을 바꿔 끼워요. 코드로 설치했으면 `ai-terminal` 폴더에서 `git pull && pnpm install` 하면 새 앱으로 바꿔 넣어요(켜져 있으면 끄고 다시 열어요). 추가한 저장소 목록은 그대로 남아요.
 - 지우기: `AI Terminal.app` 을 휴지통에 넣어요. 앱이 기억하던 저장소 목록까지 지우려면 `~/Library/Application Support/dev.aiterminal.app` 폴더도 지워요. AI 대화 기록(원본)은 이 앱이 만든 게 아니라서 그대로 있어요.
 
 ## 쓰는 방법
@@ -149,6 +141,13 @@ AI 에게 코드를 맡기다 보면 이런 일이 생겨요.
 - 파일을 누르면 **내용**(색칠된 코드), **변경**(마지막 커밋과 비교), **일부 담기**를 골라 봐요.
 - 그림 파일(png·jpg·gif·webp·svg 등)은 그림으로 보여 줘요. 바뀐 그림은 **마지막 커밋과 지금을 나란히** 놓아요. 그림을 누르면 실제 크기 ↔ 맞춤.
 - AI 나 편집기가 파일을 바꾸면 알아서 새로 고쳐져요.
+
+### 설정: 언어·화면 모드
+
+아래 상태줄 오른쪽 **⚙ 설정**에서 골라요.
+
+- **언어**: 한국어 / English. 고르면 화면을 바로 다시 그려요. 처음엔 맥의 언어를 따라가요.
+- **화면 모드**: 시스템(맥 설정 따라가기) / 밝게 / 어둡게. 터미널과 코드 색도 같이 바뀌어요.
 
 ### 단축키
 
@@ -269,7 +268,6 @@ scripts/make_screenshots.sh --no-video  # 그림만
 
 - Apple 공증·서명된 배포본, 인텔 맥 확인
 - 줄 단위 스테이징, 3-way 충돌 편집기, 대화형 리베이스, stash
-- 화면 글자는 한국어만
 - 아주 큰 저장소의 그래프는 최근 커밋까지만 그린다(페이지 나눔 없음)
 
 ## 라이선스

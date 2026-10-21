@@ -2046,7 +2046,7 @@ li:hover .hover-only,
 }
 @keyframes stick-bump {
   0% { transform: scale(1); }
-  30% { transform: scale(1.7); color: #fff; }
+  30% { transform: scale(1.7); color: var(--accent); }
   100% { transform: scale(1); }
 }
 .stickman {
@@ -2301,3 +2301,105 @@ li:hover .hover-only,
   color: var(--fg-dim);
   font-size: 12px;
 }
+
+/* ══════════════ 밝은 화면 (설정 → 화면 모드 → 밝게, 또는 시스템이 밝을 때) ══════════════
+   색 변수를 바꾸고, 어두운 바탕을 전제로 고정해 둔 색(진한 바탕·연한 글자)만 다시 칠한다. */
+:root[data-theme="light"] {
+  --bg-0: #eceff3;
+  --bg-1: #ffffff;
+  --bg-2: #f6f7f9;
+  --bg-3: #eceef2;
+  --line: #e1e4e9;
+  --line-2: #cfd5dd;
+  --fg: #1f2329;
+  --fg-dim: #57606d;
+  --fg-faint: #6a7380; /* 흰 바탕 4.8:1 */
+  --accent: #0a78c2;
+  --accent-2: #1f6fb2; /* 흰 글자 5.4:1 */
+  --ok: #1a7f37;
+  --warn: #9a6700;
+  --err: #cf222e;
+  --add: #1a7f37;
+  --del: #cf222e;
+  --claude: #b4542a;
+  --codex: #4b57c9;
+  color-scheme: light;
+}
+[data-theme="light"] .btn:hover:not(:disabled) { border-color: #b8c2cf; background: #e6e9ee; }
+[data-theme="light"] .btn-primary:hover:not(:disabled) { background: #1a64a3; }
+[data-theme="light"] .btn-danger { background: #cf222e; border-color: #b62324; }
+[data-theme="light"] .tag-warn { border-color: #e7c98f; }
+[data-theme="light"] .branch-chip { background: #e3f0fb; color: #0b5a94; }
+[data-theme="light"] .branch-chip.strong { background: #d2e7f8; color: #08467a; }
+[data-theme="light"] .branch-chip.warn { background: #fbefd9; }
+[data-theme="light"] .agent-claude { background: #fbe7dc; }
+[data-theme="light"] .agent-codex { background: #e5e8fb; }
+[data-theme="light"] .banner-warn { background: #fff6e5; border-color: #efd39a; color: #6b4a00; }
+[data-theme="light"] .banner-error { background: #ffeef0; border-color: #f5c2c7; color: #a0111f; }
+[data-theme="light"] .banner-op { background: #f1efff; border-color: #cfc8f5; color: #3d2f8f; }
+[data-theme="light"] .banner-ext { background: #f5f1ff; border-color: #d8ccf5; color: #4b2f9a; }
+[data-theme="light"] .grow:hover { background: #f1f4f8; }
+[data-theme="light"] .grow.selected { background: #dcebfa; }
+[data-theme="light"] .grow:not(.on-chain) .gsubject { color: #57606d; }
+[data-theme="light"] .ref-branch { background: #dff3e6; color: #116329; }
+[data-theme="light"] .ref-remote { background: #e3e9fb; color: #3451b2; }
+[data-theme="light"] .ref-tag { background: #fbf0d2; color: #7a5600; }
+[data-theme="light"] .ref-focus { background: #d6eafb; color: #0b4a7a; }
+/* 워크트리 색은 밝은 바탕에서 옅으니 글자는 진하게 섞는다 */
+[data-theme="light"] .ref-wt { color: color-mix(in srgb, var(--wc, #8f6ee8) 65%, #000); background: color-mix(in srgb, var(--wc, #8f6ee8) 14%, #fff); }
+[data-theme="light"] .ref-wt-focus { color: #111; background: color-mix(in srgb, var(--wc) 30%, #fff); }
+[data-theme="light"] .file-list li.on,
+[data-theme="light"] .tree-row.on { background: #dcebfa; }
+[data-theme="light"] .tree-row:hover,
+[data-theme="light"] .session:hover { background: #f1f4f8; }
+[data-theme="light"] .session.on,
+[data-theme="light"] .branch-list li.cur,
+[data-theme="light"] .choice.on { background: #e3eefa; }
+[data-theme="light"] .choice:hover { border-color: #b8c2cf; }
+[data-theme="light"] .kind-modified,
+[data-theme="light"] .k-modified > .name,
+[data-theme="light"] .dir-dot { color: #9a6700; }
+[data-theme="light"] .kind-added,
+[data-theme="light"] .kind-untracked,
+[data-theme="light"] .k-added > .name,
+[data-theme="light"] .k-untracked > .name { color: #1a7f37; }
+[data-theme="light"] .kind-deleted,
+[data-theme="light"] .k-deleted > .name { color: #cf222e; }
+[data-theme="light"] .kind-renamed,
+[data-theme="light"] .k-renamed > .name { color: #0969da; }
+[data-theme="light"] .kind-conflicted,
+[data-theme="light"] .k-conflicted > .name { color: #bf3989; }
+[data-theme="light"] .dir-count { background: #fbefd9; color: #9a6700; }
+[data-theme="light"] .dot-recent { background: #a0a7b4; }
+[data-theme="light"] .dot-external { background: #8250df; box-shadow: none; }
+[data-theme="light"] .tag-ext,
+[data-theme="light"] .st-ext { color: #6639ba; border-color: #d8ccf5; }
+[data-theme="light"] .st-ext { background: #f5f1ff; }
+[data-theme="light"] .st-run { border-color: #b7e1c1; background: #e6f6ea; }
+[data-theme="light"] .st-chat { border-color: #c6dcf3; background: #e8f1fb; }
+[data-theme="light"] .term-stack,
+[data-theme="light"] .hangul-preview { background: #fbfbfc; }
+[data-theme="light"] .hangul-preview { color: #111; }
+[data-theme="light"] .term-exit { background: #fff4e0; border-top-color: #efd39a; }
+[data-theme="light"] .msg-user .msg-text { background: #e8f1fb; border-color: #c6dcf3; }
+[data-theme="light"] .perm.pending { background: #fff7e6; }
+[data-theme="light"] .hunk-head { color: #3a6ea5; background: #eef4fb; }
+[data-theme="light"] .dl-add { background: #e6f6ea; }
+[data-theme="light"] .dl-add .lc { color: #116329; }
+[data-theme="light"] .dl-del { background: #fdebec; }
+[data-theme="light"] .dl-del .lc { color: #82071e; }
+[data-theme="light"] .toast { box-shadow: 0 6px 24px #0002; }
+[data-theme="light"] .toast-error { border-color: #f5c2c7; background: #ffeef0; }
+[data-theme="light"] .toast-success { border-color: #b7e1c1; }
+[data-theme="light"] .modal-backdrop { background: #0004; }
+[data-theme="light"] .modal,
+[data-theme="light"] .menu,
+[data-theme="light"] .switcher-pop { box-shadow: 0 10px 30px #0003; }
+[data-theme="light"] .modal-body { color: #3b424d; }
+[data-theme="light"] .menu-item.danger:hover:not(:disabled),
+[data-theme="light"] .icon-btn.danger:hover:not(:disabled) { background: #cf222e; }
+[data-theme="light"] .icon-btn.danger { border-color: #f5c2c7; background: #ffeef0; }
+[data-theme="light"] .img-stage { background-color: #eceef1; background-image: conic-gradient(#dfe2e7 25%, transparent 0 50%, #dfe2e7 0 75%, transparent 0); }
+[data-theme="light"] .stick-pop,
+[data-theme="light"] .settings-pop { box-shadow: 0 12px 32px #0002; }
+[data-theme="light"] .stick-count b.bump { color: var(--accent); }

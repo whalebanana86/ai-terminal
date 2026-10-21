@@ -1,6 +1,7 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { api, errorText } from "../api";
 import { Check, ChevronDown, FolderGit2, Plus, X } from "lucide-react";
+import { t } from "../i18n";
 import { baseName } from "../logic";
 import { useStore } from "../store";
 import { SettingsButton } from "./Settings";
@@ -14,7 +15,7 @@ export function TopBar() {
   const toast = useStore((s) => s.toast);
 
   const addRepo = async () => {
-    const dir = await open({ directory: true, multiple: false, title: "Git 저장소 폴더 선택" });
+    const dir = await open({ directory: true, multiple: false, title: t("Git 저장소 폴더 선택") });
     if (typeof dir !== "string") return;
     try {
       const r = await api.repoAdd(dir);
@@ -22,7 +23,7 @@ export function TopBar() {
       const fresh = useStore.getState().repos.find((x) => x.id === r.id);
       const target = fresh?.worktrees.find((w) => w.path === dir) ?? fresh?.worktrees[0];
       if (target) setFocus(target.path);
-      toast("success", `저장소를 추가했습니다: ${r.name}`);
+      toast("success", t("저장소를 추가했습니다: {name}", { name: r.name }));
     } catch (e) {
       toast("error", errorText(e));
     }
@@ -33,10 +34,10 @@ export function TopBar() {
       <div className="brand" data-tauri-drag-region>
         AI Terminal
       </div>
-      <label className="folder-select" title="볼 워크트리를 고릅니다(저장소마다 하나 이상). 체크아웃은 하지 않아요.">
+      <label className="folder-select" title={t("볼 워크트리를 고릅니다(저장소마다 하나 이상). 체크아웃은 하지 않아요.")}>
         <FolderGit2 size={14} aria-hidden className="wt-icon" />
-        <select aria-label="볼 워크트리 고르기" value={focus?.worktreePath ?? ""} onChange={(e) => e.target.value && setFocus(e.target.value)}>
-          <option value="">워크트리를 고르세요…</option>
+        <select aria-label={t("볼 워크트리 고르기")} value={focus?.worktreePath ?? ""} onChange={(e) => e.target.value && setFocus(e.target.value)}>
+          <option value="">{t("워크트리를 고르세요…")}</option>
           {repos.map((r) => (
             <optgroup key={r.id} label={r.name}>
               {r.worktrees
@@ -51,8 +52,8 @@ export function TopBar() {
         </select>
         <ChevronDown size={14} aria-hidden className="select-caret" />
       </label>
-      <button className="btn btn-small btn-ghost" onClick={addRepo} title="로컬 Git 저장소를 목록에 추가">
-        <Plus size={14} aria-hidden /> 저장소 추가
+      <button className="btn btn-small btn-ghost" onClick={addRepo} title={t("로컬 Git 저장소를 목록에 추가")}>
+        <Plus size={14} aria-hidden /> {t("저장소 추가")}
       </button>
       <div className="spacer" data-tauri-drag-region />
       <StickBuddy />
@@ -64,18 +65,20 @@ export function TopBar() {
 export function StatusBar() {
   const info = useStore((s) => s.info);
   const item = (name: string, path: string | null | undefined, extra?: string | null) => (
-    <span className={path ? "ok" : "missing"} title={path ? `${path}${extra ? ` (${extra})` : ""}` : `${name} 을(를) 찾지 못했습니다. 설치되어 있고 로그인 셸 PATH 에 있는지 확인하세요.`}>
+    <span className={path ? "ok" : "missing"} title={path ? `${path}${extra ? ` (${extra})` : ""}` : t("{name} 을(를) 찾지 못했습니다. 설치되어 있고 로그인 셸 PATH 에 있는지 확인하세요.", { name })}>
       {path ? <Check size={11} aria-hidden /> : <X size={11} aria-hidden />} {name}
     </span>
   );
   return (
-    <footer className="statusbar" aria-label="상태">
+    <footer className="statusbar" aria-label={t("상태")}>
       <span className="muted">CLI</span>
       {item("Claude Code", info?.claude)}
       {item("Codex", info?.codex)}
       {item("git", info?.git, info?.gitVersion)}
       <span className="spacer" />
-      <span className="muted" title="이 앱은 대화·코드를 외부로 보내지 않습니다">로컬 전용</span>
+      <span className="muted" title={t("이 앱은 대화·코드를 외부로 보내지 않습니다")}>
+        {t("로컬 전용")}
+      </span>
       <SettingsButton />
     </footer>
   );

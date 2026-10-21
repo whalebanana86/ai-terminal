@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { GitRef, GraphData, GraphRow, Worktree } from "../api";
 import { baseName, laneColor, relativeTime } from "../logic";
 import { colorOf, metroColors, useWtColors } from "../wtColors";
+import { t } from "../i18n";
 
 const ROW_H = 26;
 const LANE_W = 13;
@@ -86,7 +87,7 @@ export function GraphView({ data, focusWorktree, sessionStartBranch, selectedSha
   const visible = data.rows.slice(first, last);
 
   return (
-    <div className="graph" ref={scroller} onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)} tabIndex={0} aria-label="커밋 그래프">
+    <div className="graph" ref={scroller} onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)} tabIndex={0} aria-label={t("커밋 그래프")}>
       <div style={{ height: data.rows.length * ROW_H, position: "relative" }}>
         {visible.map((row, i) => (
           <Row
@@ -111,7 +112,7 @@ export function GraphView({ data, focusWorktree, sessionStartBranch, selectedSha
           />
         ))}
       </div>
-      {data.truncated && <div className="graph-more">최근 {data.limit}개 커밋만 표시합니다</div>}
+      {data.truncated && <div className="graph-more">{t("최근 {n}개 커밋만 표시합니다", { n: data.limit })}</div>}
     </div>
   );
 }
@@ -245,8 +246,8 @@ function badges(p: { refs: GitRef[]; worktrees: Worktree[]; colorFor: (path: str
     out.push({
       key: `wt:${w.path}`,
       cls: `ref ref-wt${mine ? " ref-wt-focus" : ""}`,
-      title: mine ? "지금 보는 워크트리가 가리키는 커밋" : `다른 워크트리 ${w.path} 가 가리키는 커밋`,
-      label: mine ? "현재" : baseName(w.path),
+      title: mine ? t("지금 보는 워크트리가 가리키는 커밋") : t("다른 워크트리 {path} 가 가리키는 커밋", { path: w.path }),
+      label: mine ? t("현재") : baseName(w.path),
       rank: mine ? 0 : 3,
       color: p.colorFor(w.path),
     });
@@ -257,8 +258,11 @@ function badges(p: { refs: GitRef[]; worktrees: Worktree[]; colorFor: (path: str
     out.push({
       key: r.name,
       cls: `ref ref-${r.kind}${focusBranch ? " ref-focus" : ""}${startBranch ? " ref-start" : ""}`,
-      title: `${r.kind === "branch" ? "로컬 브랜치" : r.kind === "remote" ? "원격 브랜치" : "태그"} ${r.short}${r.track ? " " + r.track : ""}${startBranch ? " · 세션이 시작된 브랜치" : ""}`,
-      label: r.short + (startBranch ? " (세션 시작)" : ""),
+      title:
+        (r.kind === "branch" ? t("로컬 브랜치 {name}", { name: r.short }) : r.kind === "remote" ? t("원격 브랜치 {name}", { name: r.short }) : t("태그 {name}", { name: r.short })) +
+        (r.track ? " " + r.track : "") +
+        (startBranch ? " · " + t("세션이 시작된 브랜치") : ""),
+      label: r.short + (startBranch ? ` (${t("세션 시작")})` : ""),
       rank: focusBranch ? 1 : startBranch ? 2 : r.kind === "branch" ? 4 : r.kind === "remote" ? 5 : 6,
     });
   }

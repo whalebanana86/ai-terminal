@@ -7,6 +7,8 @@ import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef } from "react";
 import { api } from "../api";
 import { attachHangulInput } from "../hangulInput";
+import { t } from "../i18n";
+import { currentTheme, onThemeChange, type Theme } from "../theme";
 import { termPasters } from "../termPaste";
 
 /** 실행 id → 터미널. 테스트 자동화와 디버깅에서 화면 글자를 읽는 데 쓴다. */
@@ -36,7 +38,7 @@ export function exposeTerminals() {
   };
 }
 
-const THEME = {
+const DARK = {
   background: "#0f1115",
   foreground: "#d7dae0",
   cursor: "#4cc2ff",
@@ -51,6 +53,25 @@ const THEME = {
   cyan: "#56d4bc",
   white: "#d7dae0",
 };
+
+/** 밝은 화면용(설정 → 화면 모드). CLI 가 쓰는 기본 16색도 흰 바탕에서 읽히게 진하게 */
+const LIGHT = {
+  background: "#fbfbfc",
+  foreground: "#1f2329",
+  cursor: "#0a78c2",
+  selectionBackground: "#cfe3f7",
+  black: "#1f2329",
+  brightBlack: "#6a7380",
+  red: "#cf222e",
+  green: "#1a7f37",
+  yellow: "#9a6700",
+  blue: "#0969da",
+  magenta: "#8250df",
+  cyan: "#1b7c83",
+  white: "#6e7781",
+  brightWhite: "#8c959f",
+};
+const themeFor = (t: Theme) => (t === "light" ? LIGHT : DARK);
 
 export function TerminalView({ execId, visible }: { execId: string; visible: boolean }) {
   const host = useRef<HTMLDivElement>(null);
@@ -68,7 +89,7 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
       scrollback: 5000,
       allowProposedApi: true,
       macOptionIsMeta: true,
-      theme: THEME,
+      theme: themeFor(currentTheme()),
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -87,6 +108,8 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
     const detachHangul = attachHangulInput(term, el);
     termRef.current = term;
     fitRef.current = fit;
+    // 화면 모드가 바뀌면 터미널 색도 바로 바꾼다
+    const offTheme = onThemeChange((th) => (term.options.theme = themeFor(th)));
     registry.set(execId, term);
     // 파일을 끌어다 놓으면 경로를 붙여넣기로(괄호 붙여넣기 모드면 CLI 가 붙여넣기로 알아본다)
     termPasters.set(execId, (text) => {
@@ -107,7 +130,7 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
         if (disposed) void api.execDetach(execId, id);
         else sinkId = id;
       },
-      (e) => term.write(`\r\n[연결 실패] ${e}\r\n`),
+      (e) => term.write(`\r\n${t("[연결 실패]")} ${e}\r\n`),
     );
     const onData = term.onData((d) => void api.execWrite(execId, d).catch(() => {}));
     const resize = () => {
@@ -124,6 +147,7 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
     resize();
     return () => {
       disposed = true;
+      offTheme();
       detachHangul();
       ro.disconnect();
       onData.dispose();

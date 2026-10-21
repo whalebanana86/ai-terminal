@@ -1,2 +1,167 @@
-/** 영어 사전: agent */
-export default {} satisfies Record<string, string>;
+/** 영어 사전: agent (AgentPanel·ChatView) */
+export default {
+  // 세션 목록 날짜 묶음
+  오늘: "Today",
+  어제: "Yesterday",
+  "이번 주": "This week",
+  이전: "Earlier",
+
+  // 외부 실행 확인
+  "다른 곳에서 실행 중인 세션": "Session running elsewhere",
+  "이 대화는 {client}(PID {pid})에서 실행 중입니다.\n같은 대화를 두 곳에서 동시에 이어가면 기록이 섞이거나, CLI 가 거부할 수 있습니다(Codex 는 다른 앱이 연 대화를 막습니다).\n\n그래도 여기서 열까요?":
+    "This conversation is running in {client} (PID {pid}).\nContinuing the same conversation in two places at once can mix up the log, or the CLI may refuse (Codex blocks conversations opened by another app).\n\nOpen it here anyway?",
+  "그래도 열기": "Open anyway",
+
+  // 패널 머리·세션 목록
+  에이전트: "Agents",
+  "새 에이전트 대화 시작 (⌘N)": "Start a new agent conversation (⌘N)",
+  "새 세션": "New session",
+  "{name} 의 세션 검색": "Search sessions in {name}",
+  "세션 검색": "Search sessions",
+  "에이전트 종류": "Agent type",
+  "Claude 만": "Claude only",
+  "Codex 만": "Codex only",
+  "Codex 에서 보관 처리한 세션도 보여 줍니다": "Also show sessions archived in Codex",
+  "보관된 세션": "Archived sessions",
+  "세션 목록 새로 읽기 (⌘R)": "Reload session list (⌘R)",
+  "세션 목록 새로 읽기": "Reload session list",
+  "에이전트 세션": "Agent sessions",
+  "위에서 워크트리를 고르세요.": "Choose a worktree above.",
+  "검색 조건에 맞는 세션이 없습니다.": "No sessions match your search.",
+  "{name} 에서 작업한 세션이 아직 없습니다. '+ 새 세션' 으로 시작하세요.": "No sessions have worked in {name} yet. Start one with '+ New session'.",
+
+  // 세션 상태
+  "답하는 중": "Responding",
+  "채팅 열림": "Chat open",
+  "이 앱의 채팅 화면에서 열려 있습니다": "Open in this app's chat view",
+  "터미널 실행 중": "Running in terminal",
+  "이 앱의 터미널에서 실행 중입니다": "Running in this app's terminal",
+  "{client}에서 실행 중": "Running in {client}",
+  "앱 밖에서 실행 중 (PID {pid}{status}). 여기서 동시에 열면 기록이 섞일 수 있습니다.":
+    "Running outside the app (PID {pid}{status}). Opening it here at the same time can mix up the log.",
+
+  // 세션 항목
+  "같은 제목의 세션을 구분하는 id": "Short id to tell apart sessions with the same title",
+  "이 워크트리에서도 일했고, 마지막으로 일한 곳은 {path}": "Also worked in this worktree; last worked in {path}",
+  "최근엔 {name}": "Lately in {name}",
+  "세션 시작: {start} · 마지막 작업: {last} · 지금 워크트리: {current}": "Session start: {start} · Last work: {last} · Worktree now: {current}",
+  "알 수 없음": "Unknown",
+  "브랜치 없음": "No branch",
+  "폴더 없음": "Folder missing",
+  보관됨: "Archived",
+
+  // 세션 상세
+  "이어가기 실패: {error}": "Couldn't continue: {error}",
+  "에이전트 멈추기": "Stop agent",
+  "실행 중인 에이전트 프로세스를 끝냅니다. 대화 기록은 남아 있어 나중에 이어갈 수 있습니다.":
+    "Ends the running agent process. The conversation log is kept, so you can continue later.",
+  멈추기: "Stop",
+  "세션을 고르세요": "Choose a session",
+  "위 목록에서 대화를 고르면 왼쪽 Git 과 오른쪽 파일이 그 대화가 작업한 워크트리를 보여 줍니다.":
+    "Pick a conversation from the list above, and Git on the left and Files on the right will show the worktree it worked in.",
+  "{client}에서 열려 있는 대화입니다 (PID {pid}). 여기서 동시에 이어가면 기록이 섞일 수 있어요.":
+    "This conversation is open in {client} (PID {pid}). Continuing it here at the same time can mix up the log.",
+  대화: "Conversation",
+  "이전 기록": "Earlier log",
+  "작업한 파일": "Files touched",
+  "에이전트가 끝났습니다 (코드 {code}).": "Agent exited (code {code}).",
+  "터미널로 다시 이어가기": "Continue again in terminal",
+
+  // 허락 범위
+  "도구마다 허락 묻기": "Ask permission for each tool",
+  "파일 편집은 자동 허락": "Auto-allow file edits",
+  "계획만 세우기 (수정 안 함)": "Plan only (no changes)",
+  "이 워크트리 안에서 쓰기 허락": "Allow writes inside this worktree",
+  "읽기만 허락": "Allow reads only",
+  "모두 허락 (위험)": "Allow everything (risky)",
+
+  // 세션 머리
+  "브랜치 알 수 없음": "Branch unknown",
+  "브랜치 없음(커밋)": "No branch (commit)",
+  "채팅을 닫습니다. 대화는 남아 나중에 이어갈 수 있어요.": "Closes the chat. The conversation is kept, so you can continue later.",
+  "채팅 닫기": "Close chat",
+  "원본 CLI 터미널로 이어가기": "Continue in original CLI terminal",
+  "앱의 채팅 화면으로 이어가기": "Continue in the app's chat view",
+  이어가기: "Continue",
+  "이어가기 방법 고르기": "Choose how to continue",
+  "{name} (Git 아님)": "{name} (not Git)",
+  "{last}에서 작업 → 지금 {current}": "Worked on {last} → now {current}",
+  자세히: "Details",
+  "경로·세션 id 자세히": "Path and session id details",
+  저장소: "Repository",
+  "Git 저장소 아님": "Not a Git repository",
+  워크트리: "Worktree",
+  "눌러서 복사": "Click to copy",
+  브랜치: "Branch",
+  "시작 {start} · 마지막 {last} · 지금 {current}": "Start {start} · Last {last} · Now {current}",
+  "세션 id": "Session id",
+  "(기록 대기 중)": "(waiting for log)",
+  "앱 채팅 화면으로 이어가기": "Continue in app chat view",
+  "도구 사용을 버튼으로 허락": "Allow tool use with buttons",
+  "채팅에서 쓸 허락 범위": "Permission scope for chat",
+  "터미널 준비 중…": "Preparing terminal…",
+
+  // 이전 기록·작업한 파일
+  "아직 기록이 없습니다": "No log yet",
+  "에이전트가 첫 응답을 기록하면 여기에 나타납니다.": "It appears here once the agent logs its first response.",
+  "기록을 읽는 중…": "Reading log…",
+  "최근 {shown}개 / 전체 {total}개": "Latest {shown} of {total}",
+  "{n}개": "{n} items",
+  "도구 실행 보기": "Show tool runs",
+  "에이전트가 파일을 수정한 기록이 없습니다": "No record of the agent editing files",
+  "Edit/Write(Claude), apply_patch(Codex) 도구 기록을 기준으로 합니다.": "Based on Edit/Write (Claude) and apply_patch (Codex) tool records.",
+  "워크트리 밖의 파일": "File outside the worktree",
+  "오른쪽에서 보기": "View on the right",
+  "이 세션 워크트리를 볼 때 열 수 있습니다": "Can be opened while viewing this session's worktree",
+  "지금: {kind}": "Now: {kind}",
+  "지금은 커밋됨/변경 없음": "Now committed / unchanged",
+
+  // 새 세션
+  "먼저 저장소를 추가하세요": "Add a repository first",
+  "작업 폴더 선택": "Choose working folder",
+  "시작 실패: {error}": "Couldn't start: {error}",
+  "새 에이전트 세션": "New agent session",
+  "설치되지 않음": "Not installed",
+  "작업할 워크트리 (브랜치를 바꾸지 않고 그 워크트리에서 바로 실행해요)": "Worktree to work in (runs right in that worktree without switching branches)",
+  "작업할 워크트리": "Worktree to work in",
+  "＋ 새 워크트리 만들어서 시작…": "＋ Create a new worktree and start…",
+  "Git 밖의 다른 폴더 고르기…": "Choose another folder outside Git…",
+  "앱 채팅 화면": "App chat view",
+  "원본 CLI 터미널": "Original CLI terminal",
+  "CLI 화면 그대로": "The CLI screen as is",
+  "허락 범위": "Permission scope",
+  "첫 지시 (선택)": "First instruction (optional)",
+  "예: 로그인 버튼이 눌리지 않는 버그를 고쳐 줘": "e.g. Fix the bug where the login button doesn't respond",
+  "기존 CLI 로그인·구독을 그대로 써요. 이 앱은 대화 내용을 외부로 보내지 않아요.":
+    "Uses your existing CLI login and subscription. This app never sends your conversations anywhere.",
+  취소: "Cancel",
+  "시작하는 중…": "Starting…",
+  시작: "Start",
+
+  // 채팅 화면
+  "에이전트 프로세스가 끝났습니다 (코드 {code}).": "Agent process exited (code {code}).",
+  "허락 범위: {mode}": "Permission scope: {mode}",
+  "이 워크트리 안에서 쓰기": "Write inside this worktree",
+  읽기만: "Read only",
+  "프로세스 종료됨": "Process ended",
+  중단: "Stop",
+  "이전 대화 {n}개": "{n} earlier messages",
+  "여기서부터 이어감": "Continued from here",
+  "메시지를 보내면 에이전트가 이 워크트리에서 이어서 작업해요.": "Send a message and the agent will keep working in this worktree.",
+  도구: "Tool",
+  "사용 허락을 요청합니다": "is asking for permission",
+  "모델 설명: {text}": "Model's note: {text}",
+  거부: "Deny",
+  허용: "Allow",
+  허용함: "Allowed",
+  거부함: "Denied",
+  "CLI 가 보고한 API 환산 누적 비용 ${cost} (구독 사용 시 실제 청구와 다름)":
+    "Cumulative API-equivalent cost reported by the CLI: ${cost} (differs from actual billing on a subscription)",
+  "오류로 끝남: {text}": "Ended with error: {text}",
+  "오류로 끝남": "Ended with error",
+  "응답 끝": "End of response",
+  "답하는 중…": "Responding…",
+  "에이전트가 답하는 중입니다": "The agent is responding",
+  "메시지 (Enter 보내기, Shift+Enter 줄바꿈)": "Message (Enter to send, Shift+Enter for new line)",
+  보내기: "Send",
+} satisfies Record<string, string>;

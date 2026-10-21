@@ -1,5 +1,6 @@
 import { Bug, MessageCircleQuestion, Plus, Trash2, Wrench, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { t } from "../i18n";
 import { relativeTime } from "../logic";
 import { takeNewRequests, type RequestKind, type SeenRequest } from "../requestKind";
 import { useStore } from "../store";
@@ -11,11 +12,11 @@ import { useStore } from "../store";
  */
 
 const KINDS: { kind: RequestKind; label: string; icon: LucideIcon; color: string }[] = [
-  { kind: "add", label: "추가", icon: Plus, color: "#4fd18b" },
-  { kind: "modify", label: "수정", icon: Wrench, color: "#4cc2ff" },
-  { kind: "delete", label: "삭제", icon: Trash2, color: "#ff8a5b" },
-  { kind: "bug", label: "버그·오류", icon: Bug, color: "#c792ff" },
-  { kind: "question", label: "질문", icon: MessageCircleQuestion, color: "#e2c08d" },
+  { kind: "add", label: t("추가"), icon: Plus, color: "#4fd18b" },
+  { kind: "modify", label: t("수정"), icon: Wrench, color: "#4cc2ff" },
+  { kind: "delete", label: t("삭제"), icon: Trash2, color: "#ff8a5b" },
+  { kind: "bug", label: t("버그·오류"), icon: Bug, color: "#c792ff" },
+  { kind: "question", label: t("질문"), icon: MessageCircleQuestion, color: "#e2c08d" },
 ];
 const KEY = "aiterm.stick.v1";
 const ACT_MS = 1600;
@@ -246,7 +247,7 @@ export function StickBuddy() {
           </g>
         </g>
       </svg>
-      <button className="stick-counts" onClick={() => setOpen(!open)} title="오늘 AI 에게 보낸 요청 (눌러서 목록)" aria-label={`오늘 요청 ${total}개`} aria-expanded={open}>
+      <button className="stick-counts" onClick={() => setOpen(!open)} title={t("오늘 AI 에게 보낸 요청 (눌러서 목록)")} aria-label={t("오늘 요청 {n}개", { n: total })} aria-expanded={open}>
         {KINDS.map(({ kind, label, icon: Icon, color }) => (
           <span key={kind} className="stick-count" data-kind={kind} title={`${label} ${saved.counts[kind]}`} style={{ color }}>
             <Icon size={11} strokeWidth={2.4} aria-hidden />
@@ -257,9 +258,9 @@ export function StickBuddy() {
         ))}
       </button>
       {open && (
-        <div className="stick-pop" role="dialog" aria-label="오늘 받은 요청">
+        <div className="stick-pop" role="dialog" aria-label={t("오늘 받은 요청")}>
           <div className="stick-pop-head">
-            <b>오늘 AI 에게 보낸 요청</b>
+            <b>{t("오늘 AI 에게 보낸 요청")}</b>
             <span className="muted small">
               {KINDS.map((k) => `${k.label} ${saved.counts[k.kind]}`).join(" · ")}
             </span>
@@ -280,9 +281,11 @@ export function StickBuddy() {
                 </li>
               );
             })}
-            {!saved.recent.length && <li className="muted small">아직 없어요. AI 에게 요청을 보내면 여기에 쌓여요.</li>}
+            {!saved.recent.length && <li className="muted small">{t("아직 없어요. AI 에게 요청을 보내면 여기에 쌓여요.")}</li>}
           </ul>
-          <div className="muted small stick-pop-foot">요청 글자로 추가·수정·삭제·버그·질문을 나눠요(앱 안에서만, 어디에도 보내지 않음). "진행해"처럼 어디에도 안 맞는 말(·)은 세지 않아요. 하루가 지나면 0 부터.</div>
+          <div className="muted small stick-pop-foot">
+            {t("요청 글자로 추가·수정·삭제·버그·질문을 나눠요(앱 안에서만, 어디에도 보내지 않음). \"진행해\"처럼 어디에도 안 맞는 말(·)은 세지 않아요. 하루가 지나면 0 부터.")}
+          </div>
         </div>
       )}
     </div>

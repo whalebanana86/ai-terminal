@@ -39,7 +39,7 @@ pub fn resolve_inside(worktree: &Path, rel: &str) -> Result<PathBuf> {
     let p = root.join(rel);
     let real = std::fs::canonicalize(&p).unwrap_or_else(|_| p.clone());
     if !real.starts_with(&root) {
-        bail!("워크트리 밖의 경로는 열 수 없습니다: {rel}");
+        bail!(tr!("워크트리 밖의 경로는 열 수 없습니다: {rel}", "Can't open a path outside the worktree: {rel}"));
     }
     // 검사한 실제 경로를 그대로 돌려줘 검사와 사용 사이에 링크를 바꿔치기할 틈을 없앤다.
     Ok(real)
@@ -81,11 +81,11 @@ pub fn read_file(worktree: &Path, rel: &str) -> Result<FileContent> {
     let p = resolve_inside(worktree, rel)?;
     let meta = std::fs::metadata(&p)?;
     if meta.is_dir() {
-        bail!("폴더는 미리 볼 수 없습니다");
+        bail!(tr!("폴더는 미리 볼 수 없습니다", "Folders can't be previewed"));
     }
     if !meta.is_file() {
         // named pipe·소켓·장치 파일은 열면 멈출 수 있다.
-        bail!("일반 파일이 아니라 미리 볼 수 없습니다");
+        bail!(tr!("일반 파일이 아니라 미리 볼 수 없습니다", "Not a regular file, so it can't be previewed"));
     }
     let size = meta.len();
     let mut buf = Vec::new();
@@ -117,27 +117,27 @@ pub fn is_image(rel: &str) -> bool {
 /// 그림 파일 바이트(워크트리 안, 그림 확장자, 크기 상한). rev 가 있으면 그 커밋의 내용(예: HEAD)을 git 에서 읽는다.
 pub fn read_image(worktree: &Path, rel: &str, rev: Option<&str>) -> Result<Vec<u8>> {
     if !is_image(rel) {
-        bail!("그림 파일이 아닙니다: {rel}");
+        bail!(tr!("그림 파일이 아닙니다: {rel}", "Not an image file: {rel}"));
     }
     if let Some(rev) = rev {
         crate::git::safe_rel_path(rel)?;
         if rev != "HEAD" && !(rev.len() >= 7 && rev.len() <= 64 && rev.chars().all(|c| c.is_ascii_hexdigit())) {
-            bail!("알 수 없는 커밋: {rev}");
+            bail!(tr!("알 수 없는 커밋: {rev}", "Unknown commit: {rev}"));
         }
         let spec = format!("{rev}:{rel}");
         let size: u64 = crate::git::run(worktree, &["cat-file", "-s", &spec])?.trim().parse().unwrap_or(u64::MAX);
         if size > MAX_IMAGE_BYTES {
-            bail!("그림이 너무 큽니다 ({} MB)", size / 1024 / 1024);
+            bail!(tr!("그림이 너무 큽니다 ({} MB)", "Image is too large ({} MB)", size / 1024 / 1024));
         }
         return crate::git::run_bytes(worktree, &["cat-file", "blob", &spec]);
     }
     let p = resolve_inside(worktree, rel)?;
     let meta = std::fs::metadata(&p)?;
     if !meta.is_file() {
-        bail!("일반 파일이 아니라 볼 수 없습니다");
+        bail!(tr!("일반 파일이 아니라 볼 수 없습니다", "Not a regular file, so it can't be shown"));
     }
     if meta.len() > MAX_IMAGE_BYTES {
-        bail!("그림이 너무 큽니다 ({} MB)", meta.len() / 1024 / 1024);
+        bail!(tr!("그림이 너무 큽니다 ({} MB)", "Image is too large ({} MB)", meta.len() / 1024 / 1024));
     }
     Ok(std::fs::read(&p)?)
 }

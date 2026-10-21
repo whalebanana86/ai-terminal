@@ -1,6 +1,6 @@
 // 앱 전역 상태. "focus" 하나를 세 패널이 함께 구독한다.
 import { create } from "zustand";
-import { lang } from "./i18n";
+import { lang, t } from "./i18n";
 import { api, errorText, type AppInfo, type ChatInfo, type ExecInfo, type LinkedSession, type LiveRun, type RepoSummary } from "./api";
 import { mergeSessions } from "./logic";
 
@@ -168,7 +168,7 @@ export const useStore = create<State>((set, get) => ({
         const repos = await api.repoList();
         if (seq === repoSeq) set({ repos });
       } catch (e) {
-        get().toast("error", `저장소 목록을 읽지 못했습니다: ${errorText(e)}`);
+        get().toast("error", t("저장소 목록을 읽지 못했습니다: {error}", { error: errorText(e) }));
       }
     }),
 
@@ -328,7 +328,8 @@ async function loadSessions() {
   {
     if (!get().sessionsLoading) set({ sessionsLoading: true });
     try {
-      const raw = await api.sessions();
+      // 백엔드는 제목 없는 세션에 "(제목 없음)" 을 넣는다(세션 정보는 언어와 상관없이 캐시되므로 화면에서 번역)
+      const raw = (await api.sessions()).map((s) => (s.title === "(제목 없음)" ? { ...s, title: t("(제목 없음)") } : s));
       if (seq !== sessionSeq) return;
       // 내용이 그대로면 상태를 바꾸지 않는다(다시 그리기·GPU 칠하기 없음). 에이전트가 일하는 동안 자주 불린다.
       const key = JSON.stringify(raw);
@@ -338,7 +339,7 @@ async function loadSessions() {
       // 세션에서 저장소가 새로 발견되었을 수 있다.
       if (raw.some((s) => s.repoId && !get().repos.some((r) => r.id === s.repoId))) await get().refreshRepos();
     } catch (e) {
-      get().toast("error", `세션 목록을 읽지 못했습니다: ${errorText(e)}`);
+      get().toast("error", t("세션 목록을 읽지 못했습니다: {error}", { error: errorText(e) }));
     } finally {
       if (get().sessionsLoading) set({ sessionsLoading: false });
     }

@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
-    "check": "tsc --noEmit -p . && vitest run && cd src-tauri && cargo test"
+    "check": "tsc --noEmit -p . && vitest run && cd src-tauri && cargo test",
+    "postinstall": "bash scripts/install_app.sh",
+    "install-app": "bash scripts/install_app.sh"
   },
   "dependencies": {
     "@shikijs/langs": "4.5.0",

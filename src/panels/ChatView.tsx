@@ -2,6 +2,7 @@ import { Channel } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText, type ChatEvent, type ChatInfo, type Transcript } from "../api";
 import { useStore } from "../store";
+import { t } from "../i18n";
 
 /** 도구 실행: 시작 이벤트와 결과 이벤트를 같은 id 로 합친 것 */
 interface ToolItem {
@@ -38,9 +39,9 @@ export function foldChatEvents(events: ChatEvent[]): Item[] {
           if (e.output !== null) prev.output = e.output;
           if (e.summary) prev.summary = e.summary;
         } else {
-          const t: ToolItem = { kind: "tool", id: e.id, name: e.name, summary: e.summary, status: e.status, output: e.output };
-          if (e.id) tools.set(e.id, t);
-          items.push(t);
+          const tool: ToolItem = { kind: "tool", id: e.id, name: e.name, summary: e.summary, status: e.status, output: e.output };
+          if (e.id) tools.set(e.id, tool);
+          items.push(tool);
         }
         break;
       }
@@ -59,7 +60,7 @@ export function foldChatEvents(events: ChatEvent[]): Item[] {
         items.push({ kind: "turnEnd", costUsd: e.costUsd, isError: e.isError, text: e.text });
         break;
       case "exit":
-        items.push({ kind: "note", text: `에이전트 프로세스가 끝났습니다 (코드 ${e.code ?? "?"}).` });
+        items.push({ kind: "note", text: t("에이전트 프로세스가 끝났습니다 (코드 {code}).", { code: e.code ?? "?" }) });
         break;
       default:
         break;
@@ -121,11 +122,11 @@ export function ChatView({ chat }: { chat: ChatInfo }) {
   }, [items]);
 
   const send = async () => {
-    const t = text.trim();
-    if (!t) return;
+    const msg = text.trim();
+    if (!msg) return;
     setSending(true);
     try {
-      await api.chatSend(chat.id, t);
+      await api.chatSend(chat.id, msg);
       setText("");
       stick.current = true;
     } catch (e) {
@@ -147,13 +148,13 @@ export function ChatView({ chat }: { chat: ChatInfo }) {
     <div className="chat" data-testid="chat-view">
       <div className="chat-bar">
         <span className="muted small">
-          {chat.agent === "claude" ? `허락 범위: ${modeLabel(chat.mode)}` : `허락 범위: ${chat.mode === "workspace-write" ? "이 워크트리 안에서 쓰기" : "읽기만"}`}
-          {!chat.alive && " · 프로세스 종료됨"}
+          {t("허락 범위: {mode}", { mode: chat.agent === "claude" ? modeLabel(chat.mode) : chat.mode === "workspace-write" ? t("이 워크트리 안에서 쓰기") : t("읽기만") })}
+          {!chat.alive && ` · ${t("프로세스 종료됨")}`}
         </span>
         <span className="spacer" />
         {chat.busy && (
           <button className="btn btn-small" onClick={() => api.chatInterrupt(chat.id).catch((e) => toast("error", errorText(e)))}>
-            중단
+            {t("중단")}
           </button>
         )}
       </div>
@@ -168,7 +169,7 @@ export function ChatView({ chat }: { chat: ChatInfo }) {
         {pastItems.length > 0 && (
           <div className="past">
             <button className="past-toggle" onClick={() => setShowPast(!showPast)} aria-expanded={showPast}>
-              {showPast ? "▾" : "▸"} 이전 대화 {pastItems.length}개
+              {showPast ? "▾" : "▸"} {t("이전 대화 {n}개", { n: pastItems.length })}
             </button>
             {showPast &&
               pastItems.map((i, n) => (
@@ -177,11 +178,11 @@ export function ChatView({ chat }: { chat: ChatInfo }) {
                 </div>
               ))}
             <div className="resume-divider">
-              <span>여기서부터 이어감</span>
+              <span>{t("여기서부터 이어감")}</span>
             </div>
           </div>
         )}
-        {items.length === 0 && <div className="muted pad">메시지를 보내면 에이전트가 이 워크트리에서 이어서 작업해요.</div>}
+        {items.length === 0 && <div className="muted pad">{t("메시지를 보내면 에이전트가 이 워크트리에서 이어서 작업해요.")}</div>}
         {items.map((it, i) => {
           switch (it.kind) {
             case "user":
@@ -224,7 +225,7 @@ export function ChatView({ chat }: { chat: ChatInfo }) {
                     aria-expanded={expanded}
                   >
                     <span className="tool-dot" />
-                    <span className="tool-name">{it.name || "도구"}</span>
+                    <span className="tool-name">{it.name || t("도구")}</span>
                     <span className="tool-text">{it.summary}</span>
                   </button>
                   {expanded && it.output && <pre className="chat-tool-out">{it.output}</pre>}
@@ -235,22 +236,22 @@ export function ChatView({ chat }: { chat: ChatInfo }) {
               return (
                 <div key={i} className={`perm${it.resolved === null ? " pending" : ""}`} data-testid="permission-card">
                   <div>
-                    <b>{it.tool}</b> 사용 허락을 요청합니다
+                    <b>{it.tool}</b> {t("사용 허락을 요청합니다")}
                   </div>
                   {/* 실제로 실행될 명령·경로·내용. 모델이 쓴 설명은 참고로만 아래에 둔다. */}
                   <pre className="perm-summary">{it.summary}</pre>
-                  {it.description && it.description !== it.summary && <div className="muted small">모델 설명: {it.description}</div>}
+                  {it.description && it.description !== it.summary && <div className="muted small">{t("모델 설명: {text}", { text: it.description })}</div>}
                   {it.resolved === null ? (
                     <div className="perm-actions">
                       <button className="btn btn-small btn-danger" onClick={() => answer(it.requestId, false)}>
-                        거부
+                        {t("거부")}
                       </button>
                       <button className="btn btn-small btn-primary" onClick={() => answer(it.requestId, true)} data-action="allow">
-                        허용
+                        {t("허용")}
                       </button>
                     </div>
                   ) : (
-                    <div className="muted small">{it.resolved ? "허용함" : "거부함"}</div>
+                    <div className="muted small">{it.resolved ? t("허용함") : t("거부함")}</div>
                   )}
                 </div>
               );
@@ -259,21 +260,21 @@ export function ChatView({ chat }: { chat: ChatInfo }) {
                 <div
                   key={i}
                   className={`turn-end${it.isError ? " err" : ""}`}
-                  title={it.costUsd != null ? `CLI 가 보고한 API 환산 누적 비용 $${it.costUsd.toFixed(3)} (구독 사용 시 실제 청구와 다름)` : undefined}
+                  title={it.costUsd != null ? t("CLI 가 보고한 API 환산 누적 비용 ${cost} (구독 사용 시 실제 청구와 다름)", { cost: it.costUsd.toFixed(3) }) : undefined}
                 >
-                  {it.isError ? `오류로 끝남${it.text ? `: ${it.text}` : ""}` : "응답 끝"}
+                  {it.isError ? (it.text ? t("오류로 끝남: {text}", { text: it.text }) : t("오류로 끝남")) : t("응답 끝")}
                 </div>
               );
           }
         })}
-        {chat.busy && !pendingPermission && <div className="typing">답하는 중…</div>}
+        {chat.busy && !pendingPermission && <div className="typing">{t("답하는 중…")}</div>}
         <div ref={bottom} />
       </div>
       <div className="chat-input">
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={chat.busy ? "에이전트가 답하는 중입니다" : "메시지 (Enter 보내기, Shift+Enter 줄바꿈)"}
+          placeholder={chat.busy ? t("에이전트가 답하는 중입니다") : t("메시지 (Enter 보내기, Shift+Enter 줄바꿈)")}
           rows={3}
           disabled={!chat.alive}
           onKeyDown={(e) => {
@@ -285,7 +286,7 @@ export function ChatView({ chat }: { chat: ChatInfo }) {
           data-testid="chat-input"
         />
         <button className="btn btn-primary" disabled={chat.busy || sending || !text.trim() || !chat.alive} onClick={send}>
-          보내기
+          {t("보내기")}
         </button>
       </div>
     </div>
@@ -295,12 +296,12 @@ export function ChatView({ chat }: { chat: ChatInfo }) {
 function modeLabel(m: string) {
   switch (m) {
     case "acceptEdits":
-      return "파일 편집은 자동 허락";
+      return t("파일 편집은 자동 허락");
     case "plan":
-      return "계획만 세우기 (수정 안 함)";
+      return t("계획만 세우기 (수정 안 함)");
     case "bypassPermissions":
-      return "모두 허락 (위험)";
+      return t("모두 허락 (위험)");
     default:
-      return "도구마다 허락 묻기";
+      return t("도구마다 허락 묻기");
   }
 }

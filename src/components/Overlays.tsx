@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { t } from "../i18n";
 import { useStore } from "../store";
 import { useWtColor } from "../wtColors";
 
@@ -37,10 +38,10 @@ export function ConfirmDialog() {
         <p className="modal-body">{req.body}</p>
         <div className="modal-actions">
           <button className="btn" autoFocus={req.danger} onClick={() => req.resolve(false)}>
-            취소
+            {t("취소")}
           </button>
           <button ref={okRef} className={req.danger ? "btn btn-danger" : "btn btn-primary"} onClick={() => req.resolve(true)}>
-            {req.confirmLabel ?? "확인"}
+            {req.confirmLabel ?? t("확인")}
           </button>
         </div>
       </div>
@@ -140,10 +141,10 @@ export function PromptDialog() {
         {error && <div className="banner banner-error">{error}</div>}
         <div className="modal-actions">
           <button type="button" className="btn" onClick={() => req.resolve(null)}>
-            취소
+            {t("취소")}
           </button>
           <button type="submit" className={req.danger ? "btn btn-danger" : "btn btn-primary"}>
-            {req.confirmLabel ?? "확인"}
+            {req.confirmLabel ?? t("확인")}
           </button>
         </div>
       </form>

@@ -12,11 +12,11 @@ use crate::git::{self, check, fingerprint, run, run_raw, safe_rel_path, validate
 /// `git check-ref-format --branch` 로 브랜치 이름이 올바른지 확인한다.
 pub fn validate_branch_name(repo: &Path, name: &str) -> Result<()> {
     if name.is_empty() || name.starts_with('-') || name.contains(char::is_whitespace) {
-        bail!("올바르지 않은 브랜치 이름: {name:?}");
+        bail!(tr!("올바르지 않은 브랜치 이름: {name:?}", "Invalid branch name: {name:?}"));
     }
     let out = run_raw(repo, &["check-ref-format", "--branch", name], None, READ_TIMEOUT)?;
     if out.code != 0 {
-        bail!("올바르지 않은 브랜치 이름: {name}");
+        bail!(tr!("올바르지 않은 브랜치 이름: {name}", "Invalid branch name: {name}"));
     }
     Ok(())
 }
@@ -40,7 +40,7 @@ pub fn delete_branch(repo: &Path, name: &str, force: bool) -> Result<String> {
     validate_branch_name(repo, name)?;
     // 워크트리에서 쓰는 중인 브랜치는 git 도 막지만, 메시지를 알기 쉽게 먼저 확인한다.
     if let Some(w) = git::worktrees(repo)?.into_iter().find(|w| w.branch.as_deref() == Some(name)) {
-        bail!("'{name}' 은(는) 워크트리 {} 에서 사용 중이라 지울 수 없습니다", w.path);
+        bail!(tr!("'{name}' 은(는) 워크트리 {} 에서 사용 중이라 지울 수 없습니다", "Can't delete '{name}' because it's in use by worktree {}", w.path));
     }
     run(repo, &["branch", if force { "-D" } else { "-d" }, "--", name])
 }
@@ -75,10 +75,10 @@ pub fn compare(repo: &Path, a: &str, b: &str) -> Result<Compare> {
 pub fn worktree_add(repo: &Path, path: &str, new_branch: Option<&str>, base: Option<&str>) -> Result<String> {
     let p = Path::new(path);
     if !p.is_absolute() {
-        bail!("워크트리 경로는 절대 경로여야 합니다");
+        bail!(tr!("워크트리 경로는 절대 경로여야 합니다", "Worktree path must be absolute"));
     }
     if p.exists() && std::fs::read_dir(p).map(|mut d| d.next().is_some()).unwrap_or(true) {
-        bail!("이미 있는 폴더입니다(비어 있지 않음): {path}");
+        bail!(tr!("이미 있는 폴더입니다(비어 있지 않음): {path}", "Folder already exists and is not empty: {path}"));
     }
     if let Some(b) = base {
         validate_rev(b)?;
@@ -103,9 +103,9 @@ pub fn worktree_add(repo: &Path, path: &str, new_branch: Option<&str>, base: Opt
 pub fn worktree_remove(repo: &Path, path: &str, force: bool) -> Result<String> {
     let list = git::worktrees(repo)?;
     let canon = std::fs::canonicalize(path).map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| path.to_string());
-    let w = list.iter().find(|w| w.path == canon || w.path == path).ok_or_else(|| anyhow!("이 저장소의 워크트리가 아닙니다: {path}"))?;
+    let w = list.iter().find(|w| w.path == canon || w.path == path).ok_or_else(|| anyhow!(tr!("이 저장소의 워크트리가 아닙니다: {path}", "Not a worktree of this repository: {path}")))?;
     if w.is_main {
-        bail!("메인 워크트리는 지울 수 없습니다");
+        bail!(tr!("메인 워크트리는 지울 수 없습니다", "The main worktree can't be deleted"));
     }
     let target = w.path.clone();
     let mut args = vec!["worktree", "remove"];
@@ -163,9 +163,9 @@ fn file_diff_exact(worktree: &Path, rel: &str, staged: bool) -> Result<String> {
     }
     args.extend(["--", rel]);
     let bytes = git::run_bytes(worktree, &args)?;
-    let text = String::from_utf8(bytes).map_err(|_| anyhow!("UTF-8 이 아닌 파일은 hunk 단위로 다룰 수 없습니다. 파일 단위(+ / −)로 스테이지하세요."))?;
+    let text = String::from_utf8(bytes).map_err(|_| anyhow!(tr!("UTF-8 이 아닌 파일은 hunk 단위로 다룰 수 없습니다. 파일 단위(+ / −)로 스테이지하세요.", "Non-UTF-8 files can't be staged per hunk. Stage the whole file (+ / −) instead.")))?;
     if text.starts_with("diff --cc") || text.contains("\n@@@ ") {
-        bail!("충돌 중인 파일은 hunk 단위로 다룰 수 없습니다. 위쪽 진행 배너에서 해결하세요.");
+        bail!(tr!("충돌 중인 파일은 hunk 단위로 다룰 수 없습니다. 위쪽 진행 배너에서 해결하세요.", "Files with conflicts can't be staged per hunk. Resolve them from the progress banner above."));
     }
     Ok(text)
 }
@@ -184,17 +184,17 @@ pub fn apply_hunk(worktree: &Path, rel: &str, action: &str, index: usize, expect
     safe_rel_path(rel)?;
     let staged_source = action == "unstage";
     let raw = file_diff_exact(worktree, rel, staged_source)?;
-    let (header, hunks) = split_patch(&raw).ok_or_else(|| anyhow!("변경을 찾을 수 없습니다. 다시 읽어 주세요."))?;
-    let hunk = hunks.get(index).ok_or_else(|| anyhow!("변경 조각이 바뀌었습니다. 다시 읽어 주세요."))?;
+    let (header, hunks) = split_patch(&raw).ok_or_else(|| anyhow!(tr!("변경을 찾을 수 없습니다. 다시 읽어 주세요.", "Change not found. Please reload.")))?;
+    let hunk = hunks.get(index).ok_or_else(|| anyhow!(tr!("변경 조각이 바뀌었습니다. 다시 읽어 주세요.", "The hunk has changed. Please reload.")))?;
     if fingerprint(hunk) != expected_id {
-        bail!("그 사이 파일이 바뀌었습니다. 화면을 다시 읽은 뒤 시도하세요.");
+        bail!(tr!("그 사이 파일이 바뀌었습니다. 화면을 다시 읽은 뒤 시도하세요.", "The file changed in the meantime. Reload and try again."));
     }
     let patch = format!("{header}{hunk}");
     let args: Vec<&str> = match action {
         "stage" => vec!["apply", "--cached", "--whitespace=nowarn", "-"],
         "unstage" => vec!["apply", "--cached", "-R", "--whitespace=nowarn", "-"],
         "discard" => vec!["apply", "-R", "--whitespace=nowarn", "-"],
-        _ => bail!("알 수 없는 작업: {action}"),
+        _ => bail!(tr!("알 수 없는 작업: {action}", "Unknown action: {action}")),
     };
     let out = run_raw(worktree, &args, Some(patch.as_bytes()), READ_TIMEOUT)?;
     check(&args, out)?;
@@ -242,11 +242,11 @@ pub fn discard_paths(worktree: &Path, paths: &[String]) -> Result<()> {
 /// 스테이지된 것만 커밋
 pub fn commit_staged(worktree: &Path, message: &str, amend: bool) -> Result<String> {
     if message.trim().is_empty() {
-        bail!("커밋 메시지를 입력하세요");
+        bail!(tr!("커밋 메시지를 입력하세요", "Enter a commit message"));
     }
     let staged = run(worktree, &["diff", "--cached", "--name-only", "-z"])?;
     if staged.trim_matches('\0').is_empty() && !amend {
-        bail!("스테이지된 변경이 없습니다");
+        bail!(tr!("스테이지된 변경이 없습니다", "No staged changes"));
     }
     let mut args = vec!["commit", "-F", "-"];
     if amend {
@@ -268,7 +268,7 @@ pub struct OpResult {
 }
 
 fn git_dir(worktree: &Path) -> Result<std::path::PathBuf> {
-    let loc = git::locate(worktree)?.ok_or_else(|| anyhow!("Git 저장소가 아닙니다"))?;
+    let loc = git::locate(worktree)?.ok_or_else(|| anyhow!(tr!("Git 저장소가 아닙니다", "Not a Git repository")))?;
     Ok(std::path::PathBuf::from(loc.git_dir))
 }
 
@@ -315,11 +315,11 @@ pub fn rebase(worktree: &Path, onto: &str) -> Result<OpResult> {
 /// 진행 중인 merge/rebase/cherry-pick/revert 에 대해 continue | abort | skip
 pub fn op_control(worktree: &Path, action: &str) -> Result<OpResult> {
     let gd = git_dir(worktree)?;
-    let op = git::operation_in_progress(&gd).ok_or_else(|| anyhow!("진행 중인 병합/rebase 가 없습니다"))?;
+    let op = git::operation_in_progress(&gd).ok_or_else(|| anyhow!(tr!("진행 중인 병합/rebase 가 없습니다", "No merge or rebase in progress")))?;
     let args: Vec<&str> = match (op.as_str(), action) {
         ("merge", "continue") => {
             if conflicted(worktree)? {
-                bail!("아직 해결하지 않은 충돌 파일이 있습니다");
+                bail!(tr!("아직 해결하지 않은 충돌 파일이 있습니다", "Some conflicted files are still unresolved"));
             }
             vec!["commit", "--no-edit"]
         }
@@ -331,7 +331,7 @@ pub fn op_control(worktree: &Path, action: &str) -> Result<OpResult> {
         ("revert", a @ ("continue" | "abort" | "skip")) => vec!["revert", if a == "continue" { "--continue" } else if a == "abort" { "--abort" } else { "--skip" }],
         ("am", a @ ("continue" | "abort" | "skip")) => vec!["am", if a == "continue" { "--continue" } else if a == "abort" { "--abort" } else { "--skip" }],
         ("bisect", "abort") => vec!["bisect", "reset"],
-        (op, a) => bail!("{op} 에서는 {a} 를 할 수 없습니다"),
+        (op, a) => bail!(tr!("{op} 에서는 {a} 를 할 수 없습니다", "Can't {a} during {op}")),
     };
     let out = run_raw(worktree, &args, None, COMMIT_TIMEOUT)?;
     let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), out.stderr);
@@ -356,10 +356,10 @@ pub fn resolve(worktree: &Path, rel: &str, side: &str) -> Result<()> {
         "mark" => {
             let text = std::fs::read_to_string(worktree.join(rel)).unwrap_or_default();
             if text.lines().any(|l| l.starts_with("<<<<<<< ") || l.starts_with(">>>>>>> ")) {
-                bail!("파일에 아직 충돌 표시(<<<<<<< / >>>>>>>)가 남아 있습니다");
+                bail!(tr!("파일에 아직 충돌 표시(<<<<<<< / >>>>>>>)가 남아 있습니다", "The file still has conflict markers (<<<<<<< / >>>>>>>)"));
             }
         }
-        _ => bail!("알 수 없는 해결 방법: {side}"),
+        _ => bail!(tr!("알 수 없는 해결 방법: {side}", "Unknown resolution: {side}")),
     }
     run(worktree, &["add", "--", rel]).map(|_| ())
 }

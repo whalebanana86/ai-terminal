@@ -212,14 +212,14 @@ impl AppCore {
         if self.is_known_worktree(path) {
             Ok(())
         } else {
-            bail!("등록된 저장소의 워크트리가 아닙니다: {path}")
+            bail!(tr!("등록된 저장소의 워크트리가 아닙니다: {path}", "Not a worktree of a registered repository: {path}"))
         }
     }
 
     // ───────────── 저장소 ─────────────
 
     pub fn add_repo(&self, path: &str) -> Result<RepoRow> {
-        let loc = git::locate(Path::new(path))?.ok_or_else(|| anyhow!("Git 저장소가 아닙니다: {path}"))?;
+        let loc = git::locate(Path::new(path))?.ok_or_else(|| anyhow!(tr!("Git 저장소가 아닙니다: {path}", "Not a Git repository: {path}")))?;
         let main = git::worktrees(Path::new(&loc.toplevel))?
             .into_iter()
             .find(|w| w.is_main)
@@ -227,7 +227,7 @@ impl AppCore {
             .unwrap_or(loc.toplevel.clone());
         let name = repo_name(&main);
         self.db.upsert_repo(&loc.common_dir, &main, &name, true)?;
-        self.db.repos()?.into_iter().find(|r| r.id == loc.common_dir).ok_or_else(|| anyhow!("저장 실패"))
+        self.db.repos()?.into_iter().find(|r| r.id == loc.common_dir).ok_or_else(|| anyhow!(tr!("저장 실패", "Failed to save")))
     }
 
     pub fn list_repos(&self) -> Result<Vec<RepoSummary>> {
@@ -241,7 +241,7 @@ impl AppCore {
                     Err(e) => (Vec::new(), Some(e.to_string())),
                 }
             } else {
-                (Vec::new(), Some("저장소 폴더를 찾을 수 없습니다".into()))
+                (Vec::new(), Some(tr!("저장소 폴더를 찾을 수 없습니다", "Repository folder not found")))
             };
             out.push(RepoSummary { row, exists, worktrees, error });
         }
@@ -422,12 +422,12 @@ impl AppCore {
     }
 
     pub fn transcript(&self, id: &str) -> Result<Transcript> {
-        let meta = self.find_session(id).ok_or_else(|| anyhow!("세션을 찾을 수 없습니다: {id}"))?;
+        let meta = self.find_session(id).ok_or_else(|| anyhow!(tr!("세션을 찾을 수 없습니다: {id}", "Session not found: {id}")))?;
         let path = PathBuf::from(&meta.source_path);
         match meta.agent.as_str() {
             "claude" => sessions::claude_transcript(&path),
             "codex" => sessions::codex_transcript(&path),
-            other => bail!("알 수 없는 에이전트: {other}"),
+            other => bail!(tr!("알 수 없는 에이전트: {other}", "Unknown agent: {other}")),
         }
     }
 
@@ -480,17 +480,17 @@ impl AppCore {
         let _open = self.open_lock.lock();
         let (program, mut args, cwd, session_id): (String, Vec<String>, String, Option<String>) = match (req.agent.as_str(), req.mode.as_str()) {
             (agent @ ("claude" | "codex"), "resume") => {
-                let sid = req.session_id.clone().ok_or_else(|| anyhow!("재개할 세션을 고르세요"))?;
-                let meta = self.find_session(&sid).ok_or_else(|| anyhow!("세션을 찾을 수 없습니다: {sid}"))?;
+                let sid = req.session_id.clone().ok_or_else(|| anyhow!(tr!("재개할 세션을 고르세요", "Choose a session to resume")))?;
+                let meta = self.find_session(&sid).ok_or_else(|| anyhow!(tr!("세션을 찾을 수 없습니다: {sid}", "Session not found: {sid}")))?;
                 if meta.agent != agent {
-                    bail!("세션 종류가 맞지 않습니다");
+                    bail!(tr!("세션 종류가 맞지 않습니다", "Session type does not match"));
                 }
                 if !sessions::is_safe_session_id(&meta.external_id) {
-                    bail!("세션 id 형식이 올바르지 않습니다: {}", meta.external_id);
+                    bail!(tr!("세션 id 형식이 올바르지 않습니다: {}", "Invalid session ID format: {}", meta.external_id));
                 }
-                let cwd = meta.cwd.clone().ok_or_else(|| anyhow!("세션에 작업 폴더 기록이 없습니다"))?;
+                let cwd = meta.cwd.clone().ok_or_else(|| anyhow!(tr!("세션에 작업 폴더 기록이 없습니다", "The session has no recorded working folder")))?;
                 if !Path::new(&cwd).is_dir() {
-                    bail!("세션이 작업하던 폴더가 없습니다: {cwd}\n워크트리가 삭제되었을 수 있습니다.");
+                    bail!(tr!("세션이 작업하던 폴더가 없습니다: {cwd}\n워크트리가 삭제되었을 수 있습니다.", "The session's working folder no longer exists: {cwd}\nThe worktree may have been deleted."));
                 }
                 for dead in self.chats.dead_for_session(&sid) {
                     self.chats.close(&dead);
@@ -504,9 +504,9 @@ impl AppCore {
                 (agent.to_string(), args, cwd, Some(sid))
             }
             (agent @ ("claude" | "codex"), "new") => {
-                let cwd = req.cwd.clone().ok_or_else(|| anyhow!("작업 폴더를 고르세요"))?;
+                let cwd = req.cwd.clone().ok_or_else(|| anyhow!(tr!("작업 폴더를 고르세요", "Choose a working folder")))?;
                 if !Path::new(&cwd).is_dir() {
-                    bail!("폴더가 없습니다: {cwd}");
+                    bail!(tr!("폴더가 없습니다: {cwd}", "Folder not found: {cwd}"));
                 }
                 if agent == "claude" {
                     // 세션 id 를 미리 정해 실행과 세션을 즉시 연결한다.
@@ -517,7 +517,7 @@ impl AppCore {
                     (agent.to_string(), vec!["-C".to_string(), cwd2], cwd, None)
                 }
             }
-            _ => bail!("지원하지 않는 실행 요청입니다"),
+            _ => bail!(tr!("지원하지 않는 실행 요청입니다", "Unsupported launch request")),
         };
         // 첫 지시: `--` 뒤에 두어 '-' 로 시작해도 옵션으로 해석되지 않게 한다(셸을 거치지 않으므로 따옴표 문제 없음).
         if req.mode == "new" {
@@ -593,10 +593,10 @@ impl AppCore {
     /// 외부에서 실행 중이면 사용자가 확인(force)한 경우에만 연다.
     pub fn ensure_not_open(&self, session_id: &str, force: bool) -> Result<()> {
         if let Some(e) = self.execs.lock().values().find(|e| e.session_id.as_deref() == Some(session_id) && !e.exited) {
-            bail!("이 세션은 이미 앱의 터미널에서 실행 중입니다 (실행 {})", e.id);
+            bail!(tr!("이 세션은 이미 앱의 터미널에서 실행 중입니다 (실행 {})", "This session is already running in the app's terminal (run {})", e.id));
         }
         if self.chats.find_by_session(session_id).is_some() {
-            bail!("이 세션은 이미 앱의 채팅으로 열려 있습니다");
+            bail!(tr!("이 세션은 이미 앱의 채팅으로 열려 있습니다", "This session is already open as a chat in the app"));
         }
         if !force {
             // 5초 주기 결과는 오래되었을 수 있으니 열기 직전에 다시 훑는다(libproc, 수 ms).
@@ -650,14 +650,14 @@ impl AppCore {
                     self.chats.close(&dead);
                 }
                 self.ensure_not_open(sid, force)?;
-                let meta = self.find_session(sid).ok_or_else(|| anyhow!("세션을 찾을 수 없습니다: {sid}"))?;
+                let meta = self.find_session(sid).ok_or_else(|| anyhow!(tr!("세션을 찾을 수 없습니다: {sid}", "Session not found: {sid}")))?;
                 if meta.agent != agent {
-                    bail!("세션 종류가 맞지 않습니다");
+                    bail!(tr!("세션 종류가 맞지 않습니다", "Session type does not match"));
                 }
-                let cwd = meta.cwd.clone().ok_or_else(|| anyhow!("세션에 작업 폴더 기록이 없습니다"))?;
+                let cwd = meta.cwd.clone().ok_or_else(|| anyhow!(tr!("세션에 작업 폴더 기록이 없습니다", "The session has no recorded working folder")))?;
                 (Some(meta.external_id), cwd)
             }
-            None => (None, cwd.ok_or_else(|| anyhow!("작업 폴더를 고르세요"))?.to_string()),
+            None => (None, cwd.ok_or_else(|| anyhow!(tr!("작업 폴더를 고르세요", "Choose a working folder")))?.to_string()),
         };
         let info = self.chats.start(StartChat { agent: agent.to_string(), resume_id, cwd, mode: mode.to_string() }, on_change)?;
         (self.events)("chat-changed", json!(info));
