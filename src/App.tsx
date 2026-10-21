@@ -9,6 +9,7 @@ import { AgentPanel } from "./panels/AgentPanel";
 import { FilePanel } from "./panels/FilePanel";
 import { GitPanel } from "./panels/GitPanel";
 import { attachFileDrop } from "./fileDrop";
+import { t } from "./i18n";
 import { useStore } from "./store";
 import { termPasters } from "./termPaste";
 import { useWtColor } from "./wtColors";
@@ -40,7 +41,7 @@ export default function App() {
       }),
       listen<{ id: string; code: number | null }>("exec-exit", async (e) => {
         await st().refreshExecs();
-        st().toast(e.payload.code === 0 ? "info" : "error", `에이전트 프로세스가 종료되었습니다 (코드 ${e.payload.code ?? "?"})`);
+        st().toast(e.payload.code === 0 ? "info" : "error", t("에이전트 프로세스가 종료되었습니다 (코드 {code})", { code: e.payload.code ?? "?" }));
         void st().refreshSessions();
       }),
       listen("chat-changed", () => void st().refreshChats()),
@@ -82,7 +83,7 @@ export default function App() {
           paste?.(text);
           return !!paste;
         },
-        () => useStore.getState().toast("info", "터미널이나 입력칸 위에 놓으면 파일 경로가 들어가요"),
+        () => useStore.getState().toast("info", t("터미널이나 입력칸 위에 놓으면 파일 경로가 들어가요")),
       ),
     [],
   );
@@ -95,7 +96,7 @@ export default function App() {
     <div className="app" style={{ "--wt": wtColor } as React.CSSProperties}>
       <TopBar />
       {!restored ? (
-        <div className="boot">세션과 저장소를 읽는 중…</div>
+        <div className="boot">{t("세션과 저장소를 읽는 중…")}</div>
       ) : (
         <Group orientation="horizontal" className="panes" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
           <Panel id="git" defaultSize="33" minSize="18" className="pane">

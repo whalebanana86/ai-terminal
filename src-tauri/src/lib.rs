@@ -1,3 +1,5 @@
+#[macro_use]
+pub mod i18n;
 pub mod chat;
 pub mod commands;
 pub mod core;
@@ -101,6 +103,7 @@ pub fn run() {
             commands::git_checkout,
             commands::fs_list,
             commands::fs_read,
+            commands::set_lang,
             commands::fs_read_image,
             commands::sessions_list,
             commands::session_transcript,

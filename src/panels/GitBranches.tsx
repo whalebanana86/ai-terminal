@@ -6,6 +6,7 @@ import { useWtColors, colorOf } from "../wtColors";
 import * as ga from "../gitActions";
 import { baseName, branchLabel, relativeTime } from "../logic";
 import { useStore } from "../store";
+import { t } from "../i18n";
 
 /** 머리글의 현재 브랜치 표시 겸 빠른 전환 메뉴 */
 /** 머리글 브랜치 칩: 전환만 한다. 만들기·지우기·병합 같은 관리는 브랜치 탭에서. */
@@ -26,7 +27,7 @@ export function BranchSwitcher({ worktree, status, graph, onManage }: { worktree
       window.removeEventListener("keydown", esc, true);
     };
   }, [open]);
-  const label = status.detached ? `브랜치 없음 (${status.head?.slice(0, 7) ?? ""})` : branchLabel(status.branch);
+  const label = status.detached ? t("브랜치 없음 ({sha})", { sha: status.head?.slice(0, 7) ?? "" }) : branchLabel(status.branch);
   const needle = q.trim().toLowerCase();
   const refs = graph.refs.filter((r) => r.kind !== "tag" && (!needle || r.short.toLowerCase().includes(needle)));
   const pick = (r: GitRef) => {
@@ -35,12 +36,12 @@ export function BranchSwitcher({ worktree, status, graph, onManage }: { worktree
   };
   return (
     <div className="switcher" ref={box}>
-      <button className="branch-chip strong as-button" data-testid="git-current-branch" onClick={() => setOpen(!open)} title="눌러서 브랜치 전환 (체크아웃)">
+      <button className="branch-chip strong as-button" data-testid="git-current-branch" onClick={() => setOpen(!open)} title={t("눌러서 브랜치 전환 (체크아웃)")}>
         {label}
       </button>
       {open && (
-        <div className="switcher-pop" role="dialog" aria-label="브랜치 바꾸기">
-          <input className="text-input" autoFocus placeholder="브랜치 찾기" value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="switcher-pop" role="dialog" aria-label={t("브랜치 바꾸기")}>
+          <input className="text-input" autoFocus placeholder={t("브랜치 찾기")} value={q} onChange={(e) => setQ(e.target.value)} />
           <ul className="switcher-list">
             {refs.map((r) => {
               const cur = r.kind === "branch" && r.short === status.branch;
@@ -49,11 +50,11 @@ export function BranchSwitcher({ worktree, status, graph, onManage }: { worktree
                 <li key={r.name}>
                   <button className={`switcher-item${cur ? " cur" : ""}`} disabled={cur} onClick={() => pick(r)}>
                     <span className={`ref ref-${r.kind}`}>{r.short}</span>
-                    {cur && <span className="muted small">현재</span>}
+                    {cur && <span className="muted small">{t("현재")}</span>}
                     {other && (
                       <span className="muted small wt-name">
                         → <WtDot path={other.path} />
-                        {baseName(other.path)} 워크트리 보기
+                        {t("{name} 워크트리 보기", { name: baseName(other.path) })}
                       </span>
                     )}
                     {r.track && <span className="muted small">{r.track}</span>}
@@ -61,7 +62,7 @@ export function BranchSwitcher({ worktree, status, graph, onManage }: { worktree
                 </li>
               );
             })}
-            {!refs.length && <li className="muted pad">일치하는 브랜치가 없습니다</li>}
+            {!refs.length && <li className="muted pad">{t("일치하는 브랜치가 없습니다")}</li>}
           </ul>
           <button
             className="link-btn switcher-manage"
@@ -70,7 +71,7 @@ export function BranchSwitcher({ worktree, status, graph, onManage }: { worktree
               onManage();
             }}
           >
-            브랜치 만들기·지우기·병합은 브랜치 탭에서 →
+            {t("브랜치 만들기·지우기·병합은 브랜치 탭에서 →")}
           </button>
         </div>
       )}
@@ -87,9 +88,9 @@ export function BranchesView({ worktree, repoPath, graph, status }: { worktree: 
   const cur = status.branch;
   const needle = q.trim().toLowerCase();
   const groups: [string, GitRef[]][] = [
-    ["로컬 브랜치", graph.refs.filter((r) => r.kind === "branch")],
-    ["원격 브랜치", graph.refs.filter((r) => r.kind === "remote")],
-    ["태그", graph.refs.filter((r) => r.kind === "tag")],
+    [t("로컬 브랜치"), graph.refs.filter((r) => r.kind === "branch")],
+    [t("원격 브랜치"), graph.refs.filter((r) => r.kind === "remote")],
+    [t("태그"), graph.refs.filter((r) => r.kind === "tag")],
   ];
 
   const itemsFor = (r: GitRef): MenuItem[] => {
@@ -97,21 +98,21 @@ export function BranchesView({ worktree, repoPath, graph, status }: { worktree: 
     const usedBy = r.kind === "branch" ? graph.worktrees.find((w) => w.branch === r.short) : undefined;
     const list: MenuItem[] = [];
     if (r.kind !== "tag") {
-      list.push({ label: "이 브랜치로 전환…", hint: "지금 워크트리를 체크아웃합니다", disabled: isCur, onClick: () => ga.checkout(worktree, r.short, r.kind === "remote" ? "remote" : "branch", graph.worktrees) });
+      list.push({ label: t("이 브랜치로 전환…"), hint: t("지금 워크트리를 체크아웃합니다"), disabled: isCur, onClick: () => ga.checkout(worktree, r.short, r.kind === "remote" ? "remote" : "branch", graph.worktrees) });
     }
     if (r.kind === "branch") {
-      list.push({ label: "새 워크트리에서 열기…", disabled: !!usedBy, hint: usedBy ? `이미 ${usedBy.path} 에서 사용 중` : "지금 워크트리를 건드리지 않습니다", onClick: () => ga.newWorktree(repoPath, { existingBranch: r.short }) });
+      list.push({ label: t("새 워크트리에서 열기…"), disabled: !!usedBy, hint: usedBy ? t("이미 {path} 에서 사용 중", { path: usedBy.path }) : t("지금 워크트리를 건드리지 않습니다"), onClick: () => ga.newWorktree(repoPath, { existingBranch: r.short }) });
     }
-    if (usedBy && usedBy.path !== worktree) list.push({ label: `그 워크트리 보기 (${baseName(usedBy.path)})`, onClick: () => useStore.getState().setFocusWorktree(usedBy.path) });
+    if (usedBy && usedBy.path !== worktree) list.push({ label: t("그 워크트리 보기 ({name})", { name: baseName(usedBy.path) }), onClick: () => useStore.getState().setFocusWorktree(usedBy.path) });
     list.push(
       { separator: true, label: "" },
-      { label: "지금 브랜치에 병합…", hint: `${r.short} → ${cur ?? "?"}`, disabled: isCur || !cur, onClick: () => ga.merge(worktree, cur, r.short) },
-      { label: "지금 브랜치를 이 위로 리베이스…", hint: `⚠ ${cur ?? "?"} 의 커밋 해시가 바뀝니다`, disabled: isCur || !cur, onClick: () => ga.rebase(worktree, cur, r.short, status.upstream) },
+      { label: t("지금 브랜치에 병합…"), hint: `${r.short} → ${cur ?? "?"}`, disabled: isCur || !cur, onClick: () => ga.merge(worktree, cur, r.short) },
+      { label: t("지금 브랜치를 이 위로 리베이스…"), hint: t("⚠ {branch} 의 커밋 해시가 바뀝니다", { branch: cur ?? "?" }), disabled: isCur || !cur, onClick: () => ga.rebase(worktree, cur, r.short, status.upstream) },
       { separator: true, label: "" },
-      { label: "여기서 새 브랜치…", onClick: () => ga.createBranch(worktree, r.short, r.short) },
+      { label: t("여기서 새 브랜치…"), onClick: () => ga.createBranch(worktree, r.short, r.short) },
     );
     if (r.kind === "branch") {
-      list.push({ label: "브랜치 삭제…", danger: true, disabled: !!usedBy, hint: usedBy ? "워크트리에서 사용 중" : undefined, onClick: () => ga.deleteBranch(repoPath, r) });
+      list.push({ label: t("브랜치 삭제…"), danger: true, disabled: !!usedBy, hint: usedBy ? t("워크트리에서 사용 중") : undefined, onClick: () => ga.deleteBranch(repoPath, r) });
     }
     return list;
   };
@@ -119,9 +120,9 @@ export function BranchesView({ worktree, repoPath, graph, status }: { worktree: 
   return (
     <div className="branches">
       <div className="filters">
-        <input className="search" placeholder="브랜치 찾기" value={q} onChange={(e) => setQ(e.target.value)} aria-label="브랜치 찾기" />
-        <button className="btn btn-small" onClick={() => ga.createBranch(worktree, "HEAD", "현재 HEAD")}>
-          새 브랜치
+        <input className="search" placeholder={t("브랜치 찾기")} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t("브랜치 찾기")} />
+        <button className="btn btn-small" onClick={() => ga.createBranch(worktree, "HEAD", t("현재 HEAD"))}>
+          {t("새 브랜치")}
         </button>
       </div>
       <div className="branch-groups">
@@ -137,7 +138,7 @@ export function BranchesView({ worktree, repoPath, graph, status }: { worktree: 
                 {shown.map((r) => {
                   const isCur = r.kind === "branch" && r.short === cur;
                   const usedBy = r.kind === "branch" ? graph.worktrees.find((w) => w.branch === r.short) : undefined;
-                  const t = timeOf.get(r.target);
+                  const ts = timeOf.get(r.target);
                   return (
                     <li
                       key={r.name}
@@ -148,21 +149,21 @@ export function BranchesView({ worktree, repoPath, graph, status }: { worktree: 
                         setMenu({ x: e.clientX, y: e.clientY, items: itemsFor(r) });
                       }}
                       onDoubleClick={() => r.kind !== "tag" && !isCur && ga.checkout(worktree, r.short, r.kind === "remote" ? "remote" : "branch", graph.worktrees)}
-                      title="더블클릭: 이 브랜치로 전환 · 우클릭/⋯: 메뉴"
+                      title={t("더블클릭: 이 브랜치로 전환 · 우클릭/⋯: 메뉴")}
                     >
                       <span className={`ref ref-${r.kind}${isCur ? " ref-focus" : ""}`}>{r.short}</span>
                       {usedBy && (
-                        <span className="muted small wt-name" title={`${usedBy.path} 워크트리가 쓰는 중`}>
+                        <span className="muted small wt-name" title={t("{path} 워크트리가 쓰는 중", { path: usedBy.path })}>
                           <WtDot path={usedBy.path} />
                           {baseName(usedBy.path)}
                         </span>
                       )}
                       {r.track && <span className="muted small">{r.track}</span>}
                       <span className="spacer" />
-                      {t ? <span className="muted small">{relativeTime(t * 1000, now)}</span> : null}
+                      {ts ? <span className="muted small">{relativeTime(ts * 1000, now)}</span> : null}
                       <button
                         className="btn btn-ghost btn-small"
-                        aria-label={`${r.short} 메뉴`}
+                        aria-label={t("{name} 메뉴", { name: r.short })}
                         onClick={(e) => setMenu({ x: e.clientX, y: e.clientY, items: itemsFor(r) })}
                       >
                         <MoreHorizontal size={15} aria-hidden />
@@ -193,22 +194,22 @@ export function WorktreesView({ graph, repoPath }: { graph: GraphData | null; re
   return (
     <div className="worktrees">
       <div className="filters">
-        <span className="muted">워크트리 = 같은 저장소를 다른 브랜치로 연 작업 폴더. 워크트리마다 에이전트를 따로 돌리면 서로 방해하지 않아요.</span>
+        <span className="muted">{t("워크트리 = 같은 저장소를 다른 브랜치로 연 작업 폴더. 워크트리마다 에이전트를 따로 돌리면 서로 방해하지 않아요.")}</span>
         <span className="spacer" />
         <button className="btn btn-small btn-primary" onClick={() => ga.newWorktree(repoPath, { base: "HEAD" })}>
-          <FolderOpen size={13} aria-hidden /> 새 워크트리
+          <FolderOpen size={13} aria-hidden /> {t("새 워크트리")}
         </button>
         {prunable && (
           <button
             className="btn btn-small"
-            title="폴더가 사라진 워크트리 등록 정리 (git worktree prune)"
+            title={t("폴더가 사라진 워크트리 등록 정리 (git worktree prune)")}
             onClick={async () => {
               await api.worktreePrune(repoPath).catch((e) => useStore.getState().toast("error", errorText(e)));
               useStore.getState().bumpGit();
               void useStore.getState().refreshRepos();
             }}
           >
-            정리
+            {t("정리")}
           </button>
         )}
       </div>
@@ -223,35 +224,35 @@ export function WorktreesView({ graph, repoPath }: { graph: GraphData | null; re
               <div className="wt-line">
                 <WtDot path={w.path} />
                 <b>{baseName(w.path)}</b>
-                {w.isMain && <span className="tag">메인</span>}
-                {w.locked !== null && <span className="tag">잠김</span>}
-                {!w.exists && <span className="tag tag-warn">폴더 없음</span>}
+                {w.isMain && <span className="tag">{t("메인")}</span>}
+                {w.locked !== null && <span className="tag">{t("잠김")}</span>}
+                {!w.exists && <span className="tag tag-warn">{t("폴더 없음")}</span>}
                 <span className="spacer" />
                 {w.path === focus?.worktreePath ? (
-                  <span className="tag tag-on">보는 중</span>
+                  <span className="tag tag-on">{t("보는 중")}</span>
                 ) : (
                   w.exists && (
-                    <button className="btn btn-small" onClick={() => setFocus(w.path)} title="이 워크트리로 화면을 옮깁니다 (체크아웃하지 않음)">
-                      열기
+                    <button className="btn btn-small" onClick={() => setFocus(w.path)} title={t("이 워크트리로 화면을 옮깁니다 (체크아웃하지 않음)")}>
+                      {t("열기")}
                     </button>
                   )
                 )}
                 <button
                   className="icon-btn ghost"
-                  aria-label={`${baseName(w.path)} 메뉴`}
+                  aria-label={t("{name} 메뉴", { name: baseName(w.path) })}
                   data-action="wt-menu"
                   onClick={(e) =>
                     setMenu({
                       x: e.clientX,
                       y: e.clientY,
                       items: [
-                        { label: "Finder 에서 보기", disabled: !w.exists, onClick: () => void api.revealInFinder(w.path) },
+                        { label: t("Finder 에서 보기"), disabled: !w.exists, onClick: () => void api.revealInFinder(w.path) },
                         { separator: true, label: "" },
                         {
-                          label: w.exists ? "워크트리 삭제…" : "사라진 워크트리 정리…",
+                          label: w.exists ? t("워크트리 삭제…") : t("사라진 워크트리 정리…"),
                           danger: true,
                           disabled: w.isMain,
-                          hint: w.isMain ? "메인 워크트리는 지울 수 없어요" : "워크트리 폴더를 지웁니다. 커밋은 남아요",
+                          hint: w.isMain ? t("메인 워크트리는 지울 수 없어요") : t("워크트리 폴더를 지웁니다. 커밋은 남아요"),
                           testId: "wt-delete",
                           onClick: () => ga.removeWorktree(repoPath, w),
                         },
@@ -270,9 +271,10 @@ export function WorktreesView({ graph, repoPath }: { graph: GraphData | null; re
               </div>
               {(here.length > 0 || ext > 0) && (
                 <div className="wt-line muted">
-                  세션 {here.length}개{running ? ` · 앱에서 실행 ${running}` : ""}
-                  {ext ? ` · 외부 실행 ${ext}` : ""}
-                  {latest ? ` · 최근 ${relativeTime(latest.updatedAt, now)}` : ""}
+                  {t("세션 {n}개", { n: here.length })}
+                  {running ? ` · ${t("앱에서 실행 {n}", { n: running })}` : ""}
+                  {ext ? ` · ${t("외부 실행 {n}", { n: ext })}` : ""}
+                  {latest ? ` · ${t("최근 {time}", { time: relativeTime(latest.updatedAt, now) })}` : ""}
                 </div>
               )}
             </li>

@@ -1,10 +1,11 @@
 // 화면과 무관한 순수 로직. 단위 테스트 대상(logic.test.ts).
 import type { ChangeKind, ChatInfo, ExecInfo, LinkedSession, LiveRun, StatusEntry } from "./api";
+import { t } from "./i18n";
 
 /** Claude 가 detached/저장소 아님일 때 쓰는 "HEAD" 를 사람이 읽을 이름으로 */
 export function branchLabel(b: string | null | undefined): string {
   if (!b) return "—";
-  if (b === "HEAD") return "브랜치 없음";
+  if (b === "HEAD") return t("브랜치 없음|브랜치 이름 자리");
   return b;
 }
 
@@ -48,7 +49,7 @@ export function pendingSessionFromExec(e: ExecInfo): LinkedSession {
     id: e.sessionId ?? `exec:${e.id}`,
     agent: e.agent,
     externalId: e.sessionId?.split(":")[1] ?? "",
-    title: e.agent === "claude" ? "새 Claude 세션" : "새 Codex 세션",
+    title: e.agent === "claude" ? t("새 Claude 세션") : t("새 Codex 세션"),
     firstPrompt: null,
     cwd: e.cwd,
     lastCwd: null,
@@ -110,7 +111,7 @@ export function pendingSessionFromChat(c: ChatInfo): LinkedSession {
       exitCode: null,
     }),
     id: c.sessionId ?? `chat:${c.id}`,
-    title: c.agent === "claude" ? "새 Claude 채팅" : "새 Codex 채팅",
+    title: c.agent === "claude" ? t("새 Claude 채팅") : t("새 Codex 채팅"),
     worktreePath: c.cwd,
     runningExecId: null,
     otherWorktrees: [],
@@ -125,13 +126,13 @@ export function externalRunOf(sessionId: string, runs: LiveRun[]): LiveRun | nul
 export function clientLabel(client: string): string {
   switch (client) {
     case "cli":
-      return "터미널";
+      return t("터미널");
     case "sdk":
-      return "SDK/다른 앱";
+      return t("SDK/다른 앱");
     case "desktop":
       return "Codex Desktop";
     case "app-server":
-      return "Codex 앱 서버";
+      return t("Codex 앱 서버");
     case "vscode":
       return "VS Code";
     default:
@@ -149,13 +150,13 @@ export function activity(updatedAt: number, now: number): "live" | "recent" | "i
 
 export function relativeTime(ms: number, now: number): string {
   const s = Math.max(0, Math.round((now - ms) / 1000));
-  if (s < 60) return "방금";
+  if (s < 60) return t("방금");
   const m = Math.round(s / 60);
-  if (m < 60) return `${m}분 전`;
+  if (m < 60) return t("{n}분 전", { n: m });
   const h = Math.round(m / 60);
-  if (h < 24) return `${h}시간 전`;
+  if (h < 24) return t("{n}시간 전", { n: h });
   const d = Math.round(h / 24);
-  if (d < 30) return `${d}일 전`;
+  if (d < 30) return t("{n}일 전", { n: d });
   const date = new Date(ms);
   return `${date.getFullYear()}.${date.getMonth() + 1}.${date.getDate()}`;
 }
@@ -219,20 +220,20 @@ export function kindLabel(k: ChangeKind | string | undefined): string {
     case "modified":
     case "edit":
     case "update":
-      return "수정";
+      return t("수정|파일 상태");
     case "added":
     case "add":
     case "write":
-      return "추가";
+      return t("추가|파일 상태");
     case "deleted":
     case "delete":
-      return "삭제";
+      return t("삭제|파일 상태");
     case "renamed":
-      return "이름 변경";
+      return t("이름 변경|파일 상태");
     case "untracked":
-      return "새 파일";
+      return t("새 파일|파일 상태");
     case "conflicted":
-      return "충돌";
+      return t("충돌|파일 상태");
     default:
       return String(k ?? "");
   }
@@ -241,8 +242,8 @@ export function kindLabel(k: ChangeKind | string | undefined): string {
 /** 위험한 Git 작업 전에 보여 줄 경고 문구. 경고가 없으면 null */
 export function checkoutWarning(dirtyCount: number, target: string, otherSessionsHere: number): string | null {
   const parts: string[] = [];
-  if (dirtyCount > 0) parts.push(`이 워크트리에 커밋하지 않은 변경 ${dirtyCount}개가 있어요. 충돌하지 않는 변경은 '${target}' 으로 함께 옮겨집니다.`);
-  if (otherSessionsHere > 0) parts.push(`이 워크트리에서 일하는 에이전트가 ${otherSessionsHere}개 있어요. 브랜치를 바꾸면 에이전트가 갑자기 다른 파일을 보게 됩니다.`);
+  if (dirtyCount > 0) parts.push(t("이 워크트리에 커밋하지 않은 변경 {n}개가 있어요. 충돌하지 않는 변경은 '{target}' 으로 함께 옮겨집니다.", { n: dirtyCount, target }));
+  if (otherSessionsHere > 0) parts.push(t("이 워크트리에서 일하는 에이전트가 {n}개 있어요. 브랜치를 바꾸면 에이전트가 갑자기 다른 파일을 보게 됩니다.", { n: otherSessionsHere }));
   return parts.length ? parts.join("\n") : null;
 }
 

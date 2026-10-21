@@ -130,7 +130,7 @@ fn lines_preview(text: &str, max_lines: usize) -> String {
     let mut s = out.join("\n");
     if total > max_lines {
         out.clear();
-        s.push_str(&format!("\n… ({}줄 더)", total - max_lines));
+        s.push_str(&tr!("\n… ({}줄 더)", "\n… ({} more lines)", total - max_lines));
     }
     s
 }
@@ -142,7 +142,7 @@ pub fn permission_summary(tool: &str, input: &Value) -> String {
         "Bash" => get("command").to_string(),
         "Write" => format!("{}\n{}", get("file_path"), lines_preview(get("content"), 30)),
         "Edit" => format!("{}\n- {}\n+ {}", get("file_path"), lines_preview(get("old_string"), 12), lines_preview(get("new_string"), 12)),
-        "MultiEdit" => format!("{} (편집 {}곳)", get("file_path"), input.get("edits").and_then(Value::as_array).map(|a| a.len()).unwrap_or(0)),
+        "MultiEdit" => tr!("{} (편집 {}곳)", "{} ({} edits)", get("file_path"), input.get("edits").and_then(Value::as_array).map(|a| a.len()).unwrap_or(0)),
         "NotebookEdit" => format!("{}\n{}", get("notebook_path"), lines_preview(get("new_source"), 20)),
         "WebFetch" => get("url").to_string(),
         _ => serde_json::to_string_pretty(input).unwrap_or_default(),
@@ -185,7 +185,7 @@ fn ev_size(ev: &ChatEvent) -> usize {
 fn base_command(program: &str, cwd: &str) -> Result<Command> {
     #[cfg(debug_assertions)]
     let program = std::env::var(format!("AITERM_{}_BIN", program.to_uppercase())).unwrap_or_else(|_| program.to_string());
-    let path = crate::env::which(&program).ok_or_else(|| anyhow!("'{program}' 명령을 찾을 수 없습니다"))?;
+    let path = crate::env::which(&program).ok_or_else(|| anyhow!(tr!("'{program}' 명령을 찾을 수 없습니다", "Command '{program}' not found")))?;
     let mut cmd = Command::new(path);
     cmd.current_dir(cwd).env_clear().envs(shell_env()).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
     // 자식이 새 프로세스 그룹을 갖게 해 중지 때 그룹 전체를 정리한다.
@@ -253,7 +253,7 @@ impl Chat {
 
     fn write_line(&self, v: &Value) -> Result<()> {
         let mut g = self.stdin.lock();
-        let stdin = g.as_mut().ok_or_else(|| anyhow!("Claude 프로세스가 끝났습니다. 채팅을 닫고 다시 여세요."))?;
+        let stdin = g.as_mut().ok_or_else(|| anyhow!(tr!("Claude 프로세스가 끝났습니다. 채팅을 닫고 다시 여세요.", "The Claude process has ended. Close the chat and open it again.")))?;
         writeln!(stdin, "{v}")?;
         stdin.flush()?;
         Ok(())
@@ -443,11 +443,11 @@ impl ChatManager {
 
     pub fn start(&self, req: StartChat, on_change: Arc<dyn Fn(&ChatInfo) + Send + Sync>) -> Result<ChatInfo> {
         if !std::path::Path::new(&req.cwd).is_dir() {
-            bail!("작업 폴더가 없습니다: {}", req.cwd);
+            bail!(tr!("작업 폴더가 없습니다: {}", "Working folder not found: {}", req.cwd));
         }
         if let Some(r) = &req.resume_id {
             if !crate::sessions::is_safe_session_id(r) {
-                bail!("세션 id 형식이 올바르지 않습니다");
+                bail!(tr!("세션 id 형식이 올바르지 않습니다", "Invalid session ID format"));
             }
         }
         let id = uuid::Uuid::new_v4().to_string();
@@ -456,7 +456,7 @@ impl ChatManager {
             ("claude", None) => None, // 아래에서 --session-id 로 정한다
             ("codex", Some(r)) => Some(format!("codex:{r}")),
             ("codex", None) => None,
-            _ => bail!("지원하지 않는 에이전트입니다"),
+            _ => bail!(tr!("지원하지 않는 에이전트입니다", "Unsupported agent")),
         };
         let chat = Arc::new(Chat {
             id: id.clone(),
@@ -506,7 +506,7 @@ impl ChatManager {
                     chat.state.lock().session_id = Some(format!("claude:{sid}"));
                 }
             }
-            let mut child = cmd.spawn().context("claude 를 실행하지 못했습니다")?;
+            let mut child = cmd.spawn().with_context(|| tr!("claude 를 실행하지 못했습니다", "Failed to start claude"))?;
             let stdin = child.stdin.take().unwrap();
             chat.state.lock().pid = Some(child.id());
             *chat.stdin.lock() = Some(stdin);
@@ -520,12 +520,12 @@ impl ChatManager {
 
     /// 지금까지의 이벤트를 먼저 보내고 이후 이벤트를 계속 보낸다.
     pub fn attach(&self, id: &str, sink: Sink) -> Result<u64> {
-        let chat = self.get(id).ok_or_else(|| anyhow!("채팅을 찾을 수 없습니다"))?;
+        let chat = self.get(id).ok_or_else(|| anyhow!(tr!("채팅을 찾을 수 없습니다", "Chat not found")))?;
         let sid = self.next_sink.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut st = chat.state.lock();
         for ev in &st.events {
             if !sink(ev) {
-                return Err(anyhow!("화면에 연결하지 못했습니다"));
+                return Err(anyhow!(tr!("화면에 연결하지 못했습니다", "Failed to connect to the view")));
             }
         }
         st.sinks.push((sid, sink));
@@ -539,18 +539,18 @@ impl ChatManager {
     }
 
     pub fn send(&self, id: &str, text: &str, on_change: Arc<dyn Fn(&ChatInfo) + Send + Sync>) -> Result<()> {
-        let chat = self.get(id).ok_or_else(|| anyhow!("채팅을 찾을 수 없습니다"))?;
+        let chat = self.get(id).ok_or_else(|| anyhow!(tr!("채팅을 찾을 수 없습니다", "Chat not found")))?;
         if text.trim().is_empty() {
-            bail!("보낼 내용을 입력하세요");
+            bail!(tr!("보낼 내용을 입력하세요", "Enter a message to send"));
         }
         // busy 확인과 설정을 한 잠금 안에서: 두 번 눌러도 턴이 하나만 시작된다.
         let turn = {
             let mut st = chat.state.lock();
             if !st.alive {
-                bail!("에이전트 프로세스가 끝났습니다. 채팅을 닫고 다시 여세요.");
+                bail!(tr!("에이전트 프로세스가 끝났습니다. 채팅을 닫고 다시 여세요.", "The agent process has ended. Close the chat and open it again."));
             }
             if st.busy {
-                bail!("에이전트가 아직 답하는 중입니다");
+                bail!(tr!("에이전트가 아직 답하는 중입니다", "The agent is still responding"));
             }
             st.busy = true;
             st.turn += 1;
@@ -578,24 +578,24 @@ impl ChatManager {
                 cmd.args(["exec", "--json", "--skip-git-repo-check", "-s", sandbox, "-C", &chat.cwd, "-"]);
             }
         }
-        let mut child = cmd.spawn().map_err(|e| fail(anyhow!("codex 를 실행하지 못했습니다: {e}")))?;
+        let mut child = cmd.spawn().map_err(|e| fail(anyhow!(tr!("codex 를 실행하지 못했습니다: {e}", "Failed to start codex: {e}"))))?;
         let mut stdin = child.stdin.take().unwrap();
         chat.state.lock().pid = Some(child.id());
         // 프롬프트를 쓰고 닫는다(EOF = 프롬프트 끝). 쓰기는 잠금 밖에서 한다.
         let write = stdin.write_all(text.as_bytes());
         drop(stdin);
         spawn_reader(chat.clone(), child, false, turn, on_change);
-        write.map_err(|e| anyhow!("codex 에 메시지를 보내지 못했습니다: {e}"))
+        write.map_err(|e| anyhow!(tr!("codex 에 메시지를 보내지 못했습니다: {e}", "Failed to send the message to codex: {e}")))
     }
 
     /// Claude 도구 승인 요청에 답한다. 허용 시 도구 입력은 요청 때 받은 원본을 그대로 돌려준다.
     pub fn respond_permission(&self, id: &str, request_id: &str, allow: bool) -> Result<()> {
-        let chat = self.get(id).ok_or_else(|| anyhow!("채팅을 찾을 수 없습니다"))?;
-        let original = chat.state.lock().pending.remove(request_id).ok_or_else(|| anyhow!("이미 답했거나 없는 승인 요청입니다"))?;
+        let chat = self.get(id).ok_or_else(|| anyhow!(tr!("채팅을 찾을 수 없습니다", "Chat not found")))?;
+        let original = chat.state.lock().pending.remove(request_id).ok_or_else(|| anyhow!(tr!("이미 답했거나 없는 승인 요청입니다", "This permission request was already answered or does not exist")))?;
         let response = if allow {
             json!({"behavior":"allow","updatedInput": original})
         } else {
-            json!({"behavior":"deny","message":"사용자가 AI Terminal 에서 거부했습니다"})
+            json!({"behavior":"deny","message": tr!("사용자가 AI Terminal 에서 거부했습니다", "Denied by the user in AI Terminal")})
         };
         chat.write_line(&json!({"type":"control_response","response":{"subtype":"success","request_id":request_id,"response":response}}))?;
         chat.push(ChatEvent::PermissionResolved { request_id: request_id.to_string(), allowed: allow });
@@ -604,7 +604,7 @@ impl ChatManager {
 
     /// 지금 답하는 중인 턴만 멈춘다(채팅은 유지).
     pub fn interrupt(&self, id: &str) -> Result<()> {
-        let chat = self.get(id).ok_or_else(|| anyhow!("채팅을 찾을 수 없습니다"))?;
+        let chat = self.get(id).ok_or_else(|| anyhow!(tr!("채팅을 찾을 수 없습니다", "Chat not found")))?;
         if !chat.state.lock().busy {
             return Ok(());
         }

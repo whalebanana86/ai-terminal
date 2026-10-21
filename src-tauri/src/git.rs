@@ -37,7 +37,7 @@ impl std::fmt::Display for GitError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let msg = self.stderr.trim();
         if msg.is_empty() {
-            write!(f, "git {} 실패 (종료 코드 {})", self.args, self.code)
+            f.write_str(&tr!("git {} 실패 (종료 코드 {})", "git {} failed (exit code {})", self.args, self.code))
         } else {
             write!(f, "{msg}")
         }
@@ -82,7 +82,7 @@ pub(crate) fn run_cmd(mut cmd: Command, args: &[&str], input: Option<&[u8]>, tim
     if input.is_some() {
         cmd.stdin(Stdio::piped());
     }
-    let mut child = cmd.spawn().context("git 실행 파일을 찾을 수 없습니다")?;
+    let mut child = cmd.spawn().with_context(|| tr!("git 실행 파일을 찾을 수 없습니다", "git executable not found"))?;
     // 입력은 별도 스레드에서 쓴다. 출력 파이프가 차서 git 이 멈추면 쓰기도 멈추는 교착을 막는다.
     let in_t = match (input, child.stdin.take()) {
         (Some(data), Some(mut stdin)) => {
@@ -113,7 +113,7 @@ pub(crate) fn run_cmd(mut cmd: Command, args: &[&str], input: Option<&[u8]>, tim
         if Instant::now() > deadline {
             let _ = child.kill();
             let _ = child.wait();
-            bail!("git {} 이(가) {}초 안에 끝나지 않아 중단했습니다", args.join(" "), timeout.as_secs());
+            bail!(tr!("git {} 이(가) {}초 안에 끝나지 않아 중단했습니다", "git {} did not finish within {} s and was stopped", args.join(" "), timeout.as_secs()));
         }
         std::thread::sleep(Duration::from_millis(5));
     };
@@ -639,7 +639,7 @@ pub fn commit_detail(repo: &Path, sha: &str) -> Result<CommitDetail> {
     let raw = run(repo, &["show", "-s", "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%cn%x1f%ct%x1f%B", sha, "--"])?;
     let f: Vec<&str> = raw.splitn(8, '\x1f').collect();
     if f.len() < 8 {
-        bail!("커밋 정보를 읽을 수 없습니다: {sha}");
+        bail!(tr!("커밋 정보를 읽을 수 없습니다: {sha}", "Can't read commit info: {sha}"));
     }
     let parents: Vec<String> = f[1].split(' ').filter(|s| !s.is_empty()).map(str::to_string).collect();
     let files_raw = if let Some(p0) = parents.first() {
@@ -663,7 +663,7 @@ pub fn commit_detail(repo: &Path, sha: &str) -> Result<CommitDetail> {
 /// 사용자 입력이 git 옵션으로 해석되지 않게 막는다.
 pub fn validate_rev(rev: &str) -> Result<()> {
     if rev.is_empty() || rev.starts_with('-') || rev.contains(['\0', '\n', ' ']) {
-        bail!("올바르지 않은 리비전: {rev:?}");
+        bail!(tr!("올바르지 않은 리비전: {rev:?}", "Invalid revision: {rev:?}"));
     }
     Ok(())
 }
@@ -845,7 +845,7 @@ pub fn safe_rel_path(rel: &str) -> Result<()> {
         // "." / "./" 처럼 워크트리 전체를 가리키는 경로는 파일 작업에 쓰지 않는다
         || p.components().all(|c| matches!(c, std::path::Component::CurDir))
     {
-        bail!("올바르지 않은 경로: {rel}");
+        bail!(tr!("올바르지 않은 경로: {rel}", "Invalid path: {rel}"));
     }
     Ok(())
 }
@@ -912,16 +912,16 @@ pub fn push(worktree: &Path, set_upstream_remote: Option<&str>) -> Result<String
 
 pub fn commit(worktree: &Path, paths: &[String], message: &str) -> Result<String> {
     if message.trim().is_empty() {
-        bail!("커밋 메시지를 입력하세요");
+        bail!(tr!("커밋 메시지를 입력하세요", "Enter a commit message"));
     }
     if paths.is_empty() {
-        bail!("커밋할 파일을 하나 이상 고르세요");
+        bail!(tr!("커밋할 파일을 하나 이상 고르세요", "Select at least one file to commit"));
     }
     for p in paths {
         safe_rel_path(p)?;
         if p.ends_with('/') {
             // status 가 "dir/" 로 보여 주는 건 중첩 저장소/링크 워크트리다. 커밋하면 gitlink 가 된다.
-            bail!("'{p}' 는 안쪽에 다른 Git 저장소(또는 워크트리)가 있는 폴더라 커밋하지 않습니다");
+            bail!(tr!("'{p}' 는 안쪽에 다른 Git 저장소(또는 워크트리)가 있는 폴더라 커밋하지 않습니다", "'{p}' contains another Git repository (or worktree), so it won't be committed"));
         }
     }
     // 1) 디스크에 있거나 index 에 있는 경로만 add (git mv 의 원래 경로처럼 둘 다 없는 경로는 add 가 실패한다)
@@ -952,7 +952,7 @@ pub fn commit(worktree: &Path, paths: &[String], message: &str) -> Result<String
     let committable: Vec<&str> =
         paths.iter().filter(|p| in_index.contains(*p) || in_head.contains(*p)).map(String::as_str).collect();
     if committable.is_empty() {
-        bail!("커밋할 변경이 남아 있지 않습니다");
+        bail!(tr!("커밋할 변경이 남아 있지 않습니다", "No changes left to commit"));
     }
     // 메시지는 표준입력으로 넘겨 따옴표·줄바꿈 문제를 없앤다. 경로를 주면 그 파일만 커밋된다(--only).
     let mut args: Vec<&str> = vec!["commit", "-F", "-", "--"];
@@ -970,7 +970,7 @@ pub fn checkout(worktree: &Path, target: &str, kind: &str) -> Result<String> {
     let out = match kind {
         "branch" => run(worktree, &["switch", target])?,
         "remote" => {
-            let local = target.split_once('/').map(|(_, b)| b).ok_or_else(|| anyhow!("원격 브랜치 이름이 아닙니다"))?;
+            let local = target.split_once('/').map(|(_, b)| b).ok_or_else(|| anyhow!(tr!("원격 브랜치 이름이 아닙니다", "Not a remote branch name")))?;
             validate_rev(local)?;
             let exists = run_raw(worktree, &["rev-parse", "--verify", "-q", &format!("refs/heads/{local}")], None, READ_TIMEOUT)?.code == 0;
             if exists {

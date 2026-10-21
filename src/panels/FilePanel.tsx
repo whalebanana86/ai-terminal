@@ -5,8 +5,10 @@ import { api, errorText, type ChangeKind, type DirEntry, type FileContent, type 
 import { Empty, WtDot } from "../components/Overlays";
 import { FileIcon, imageMime } from "../fileIcons";
 import { escapeHtml, highlightLines } from "../highlight";
+import { t } from "../i18n";
 import { baseName, decorationMap, kindLabel, kindLetter } from "../logic";
 import { useStore } from "../store";
+import { onThemeChange } from "../theme";
 import { PanelHead } from "./GitPanel";
 
 export function FilePanel() {
@@ -15,15 +17,15 @@ export function FilePanel() {
   const wt = focus?.worktreePath ?? null;
   return (
     <section className="panel" data-pane="3" tabIndex={-1}>
-      <PanelHead title="파일">
+      <PanelHead title={t("파일")}>
         {wt && (
-          <button className="icon-btn ghost" onClick={() => void api.revealInFinder(wt)} title="Finder 에서 보기" aria-label="Finder 에서 보기">
+          <button className="icon-btn ghost" onClick={() => void api.revealInFinder(wt)} title={t("Finder 에서 보기")} aria-label={t("Finder 에서 보기")}>
             <FolderOpen size={14} aria-hidden />
           </button>
         )}
       </PanelHead>
       {!wt ? (
-        <Empty title="볼 워크트리가 없습니다">위에서 워크트리를 고르세요.</Empty>
+        <Empty title={t("볼 워크트리가 없습니다")}>{t("위에서 워크트리를 고르세요.")}</Empty>
       ) : (
         <Group orientation="vertical" className="file-split">
           <Panel id="tree" defaultSize={viewer ? "45" : "100"} minSize="15">
@@ -128,7 +130,7 @@ function FileTree({ worktree }: { worktree: string }) {
             <span className="twisty">{open ? "▾" : "▸"}</span>
             <FileIcon name={e.name} dir open={open} />
             <span className="name">{e.name}</span>
-            {n ? <span className="dir-count" title={`안에 바뀐 파일 ${n}개`}>{n}</span> : null}
+            {n ? <span className="dir-count" title={t("안에 바뀐 파일 {n}개", { n })}>{n}</span> : null}
           </li>,
         );
         if (open) rows.push(...renderDir(e.rel, depth + 1));
@@ -181,14 +183,14 @@ function FileTree({ worktree }: { worktree: string }) {
         </span>
         <span className="spacer" />
         <label className="chk">
-          <input type="checkbox" checked={onlyChanged} onChange={(e) => setOnlyChanged(e.target.checked)} /> 바뀐 파일만 ({changed.length})
+          <input type="checkbox" checked={onlyChanged} onChange={(e) => setOnlyChanged(e.target.checked)} /> {t("바뀐 파일만 ({n})", { n: changed.length })}
         </label>
-        <label className="chk" title=".gitignore 로 Git 이 무시하는 파일(빌드 결과물 등)">
-          <input type="checkbox" checked={showIgnored} onChange={(e) => setShowIgnored(e.target.checked)} /> 숨김 파일
+        <label className="chk" title={t(".gitignore 로 Git 이 무시하는 파일(빌드 결과물 등)")}>
+          <input type="checkbox" checked={showIgnored} onChange={(e) => setShowIgnored(e.target.checked)} /> {t("숨김 파일")}
         </label>
       </div>
       {err && <div className="banner banner-error">{err}</div>}
-      <ul className="tree" aria-label="파일 트리">
+      <ul className="tree" aria-label={t("파일 트리")}>
         {onlyChanged
           ? changed.map((e) => {
               const on = viewer?.kind === "file" && viewer.rel === e.path;
@@ -201,7 +203,7 @@ function FileTree({ worktree }: { worktree: string }) {
               );
             })
           : renderDir("", 0)}
-        {onlyChanged && !changed.length && <li className="muted pad">변경된 파일이 없습니다</li>}
+        {onlyChanged && !changed.length && <li className="muted pad">{t("변경된 파일이 없습니다")}</li>}
       </ul>
     </div>
   );
@@ -213,6 +215,9 @@ function FileViewer({ worktree }: { worktree: string }) {
   const viewer = useStore((s) => s.viewer)!;
   const openViewer = useStore((s) => s.openViewer);
   const fileTick = useFileTick(viewer.rel);
+  // 화면 모드가 바뀌면 코드 색(밝게/어둡게 테마)을 다시 칠한다
+  const [themeTick, setThemeTick] = useState(0);
+  useEffect(() => onThemeChange(() => setThemeTick((n) => n + 1)), []);
   const [content, setContent] = useState<FileContent | null>(null);
   const [diff, setDiff] = useState<FileDiff[] | null>(null);
   const [lines, setLines] = useState<string[] | null>(null);
@@ -255,7 +260,7 @@ function FileViewer({ worktree }: { worktree: string }) {
       alive = false;
     };
     // 커밋 diff 는 변하지 않지만, 워크트리 파일은 외부 변경 때마다 다시 읽는다.
-  }, [worktree, key, viewer.kind === "commit-file" ? 0 : fileTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [worktree, key, viewer.kind === "commit-file" ? 0 : fileTick, themeTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const title = viewer.rel;
   return (
@@ -268,19 +273,19 @@ function FileViewer({ worktree }: { worktree: string }) {
         {viewer.kind === "file" && (
           <div className="seg">
             <button className={mode === "preview" ? "on" : ""} onClick={() => openViewer({ ...viewer, mode: "preview" })}>
-              내용
+              {t("내용")}
             </button>
-            <button className={mode === "diff" ? "on" : ""} onClick={() => openViewer({ ...viewer, mode: "diff" })} title="마지막 커밋과 비교한 전체 변경">
-              변경
+            <button className={mode === "diff" ? "on" : ""} onClick={() => openViewer({ ...viewer, mode: "diff" })} title={t("마지막 커밋과 비교한 전체 변경")}>
+              {t("변경")}
             </button>
             {!isImage && (
-              <button className={mode === "stage" ? "on" : ""} onClick={() => openViewer({ ...viewer, mode: "stage" })} title="바뀐 부분(조각)만 골라 커밋에 담기">
-                일부 담기
+              <button className={mode === "stage" ? "on" : ""} onClick={() => openViewer({ ...viewer, mode: "stage" })} title={t("바뀐 부분(조각)만 골라 커밋에 담기")}>
+                {t("일부 담기")}
               </button>
             )}
           </div>
         )}
-        <button className="btn btn-ghost btn-small" onClick={() => openViewer(null)} aria-label="닫기">
+        <button className="btn btn-ghost btn-small" onClick={() => openViewer(null)} aria-label={t("닫기")}>
           ✕
         </button>
       </div>
@@ -288,14 +293,14 @@ function FileViewer({ worktree }: { worktree: string }) {
       <div className="viewer-body">
         {isImage ? (
           viewer.kind === "commit-file" ? (
-            <ImageBox worktree={worktree} rel={viewer.rel} rev={viewer.sha} label={`커밋 ${viewer.sha.slice(0, 7)}`} />
+            <ImageBox worktree={worktree} rel={viewer.rel} rev={viewer.sha} label={t("커밋 {sha}", { sha: viewer.sha.slice(0, 7) })} />
           ) : mode === "diff" ? (
             <div className="img-compare">
-              <ImageBox worktree={worktree} rel={viewer.rel} rev="HEAD" label="마지막 커밋" />
-              <ImageBox worktree={worktree} rel={viewer.rel} label="지금" />
+              <ImageBox worktree={worktree} rel={viewer.rel} rev="HEAD" label={t("마지막 커밋")} />
+              <ImageBox worktree={worktree} rel={viewer.rel} label={t("지금")} />
             </div>
           ) : (
-            <ImageBox worktree={worktree} rel={viewer.rel} label="지금" />
+            <ImageBox worktree={worktree} rel={viewer.rel} label={t("지금")} />
           )
         ) : mode === "stage" && viewer.kind === "file" ? (
           <StageView worktree={worktree} rel={viewer.rel} />
@@ -303,10 +308,10 @@ function FileViewer({ worktree }: { worktree: string }) {
           diff ? <DiffView diff={diff} /> : <div className="loading">…</div>
         ) : content ? (
           content.binary ? (
-            <Empty title="바이너리 파일">{(content.size / 1024).toFixed(1)} KB</Empty>
+            <Empty title={t("바이너리 파일")}>{(content.size / 1024).toFixed(1)} KB</Empty>
           ) : (
             <>
-              {content.truncated && <div className="banner">처음 1MB 만 보여 줍니다</div>}
+              {content.truncated && <div className="banner">{t("처음 1MB 만 보여 줍니다")}</div>}
               <pre className="code" data-testid="file-preview">
                 {(lines ?? []).map((l, i) => (
                   <div key={i} className="code-line">
@@ -369,16 +374,16 @@ function ImageBox({ worktree, rel, rev, label }: { worktree: string; rel: string
           </span>
         )}
         {url && (
-          <button className="link-btn" onClick={() => setActual(!actual)} title="실제 크기 ↔ 창에 맞춤">
-            {actual ? "맞춤" : "실제 크기"}
+          <button className="link-btn" onClick={() => setActual(!actual)} title={t("실제 크기 ↔ 창에 맞춤")}>
+            {actual ? t("맞춤") : t("실제 크기")}
           </button>
         )}
       </figcaption>
       <div className={`img-stage${actual ? " actual" : ""}`} onClick={() => url && setActual(!actual)}>
         {url ? (
-          <img src={url} alt={rel} onLoad={(e) => setDims([e.currentTarget.naturalWidth, e.currentTarget.naturalHeight])} onError={() => setErr("이 형식은 그릴 수 없습니다")} />
+          <img src={url} alt={rel} onLoad={(e) => setDims([e.currentTarget.naturalWidth, e.currentTarget.naturalHeight])} onError={() => setErr(t("이 형식은 그릴 수 없습니다"))} />
         ) : err ? (
-          <div className="muted small pad">{missing ? (rev ? "마지막 커밋에는 없던 그림이에요" : "지금은 없는 그림이에요(지워짐)") : err}</div>
+          <div className="muted small pad">{missing ? (rev ? t("마지막 커밋에는 없던 그림이에요") : t("지금은 없는 그림이에요(지워짐)")) : err}</div>
         ) : (
           <div className="loading">…</div>
         )}
@@ -418,7 +423,7 @@ export function StageView({ worktree, rel }: { worktree: string; rel: string }) 
 
   const apply = async (action: "stage" | "unstage" | "discard", index: number, id: string) => {
     if (action === "discard") {
-      const ok = await ask({ title: "이 부분의 변경 버리기", body: `${rel} 의 이 부분을 바뀌기 전으로 되돌립니다. 되돌릴 수 없어요.`, danger: true, confirmLabel: "버리기" });
+      const ok = await ask({ title: t("이 부분의 변경 버리기"), body: t("{rel} 의 이 부분을 바뀌기 전으로 되돌립니다. 되돌릴 수 없어요.", { rel }), danger: true, confirmLabel: t("버리기") });
       if (!ok) return;
     }
     setBusy(true);
@@ -437,7 +442,7 @@ export function StageView({ worktree, rel }: { worktree: string; rel: string }) 
   if (!data) return <div className="loading">…</div>;
   const total = [...data[0], ...data[1]].reduce((n, f) => n + f.hunks.reduce((m, h) => m + h.lines.length, 0), 0);
   if (total > MAX_DIFF_LINES)
-    return <Empty title="변경이 너무 큽니다">{total}줄이 바뀌어 부분 선택을 생략했어요. 왼쪽 목록의 + / − 로 파일 전체를 담거나 빼세요.</Empty>;
+    return <Empty title={t("변경이 너무 큽니다")}>{t("{n}줄이 바뀌어 부분 선택을 생략했어요. 왼쪽 목록의 + / − 로 파일 전체를 담거나 빼세요.", { n: total })}</Empty>;
   const [unstaged, staged] = data;
   const section = (title: string, files: FileDiff[], side: "unstaged" | "staged") => (
     <div className="stage-section" data-side={side}>
@@ -445,7 +450,7 @@ export function StageView({ worktree, rel }: { worktree: string; rel: string }) 
         {title} <span className="count">{files.reduce((n, f) => n + f.hunks.length, 0)}</span>
       </div>
       {!files.length || !files.some((f) => f.hunks.length) ? (
-        <div className="muted pad small">{side === "unstaged" ? "담을 변경이 없어요" : "아직 담은 부분이 없어요"}</div>
+        <div className="muted pad small">{side === "unstaged" ? t("담을 변경이 없어요") : t("아직 담은 부분이 없어요")}</div>
       ) : (
         files.map((f, fi) =>
           f.hunks.map((h, hi) => (
@@ -455,17 +460,17 @@ export function StageView({ worktree, rel }: { worktree: string; rel: string }) 
                 <span className="spacer" />
                 {side === "unstaged" ? (
                   <>
-                    <button className="btn btn-small btn-ghost danger-text" disabled={busy} onClick={() => apply("discard", hi, h.id)} title="이 부분 변경 버리기 (되돌릴 수 없음)">
-                      <Trash2 size={12} aria-hidden /> 버리기
+                    <button className="btn btn-small btn-ghost danger-text" disabled={busy} onClick={() => apply("discard", hi, h.id)} title={t("이 부분 변경 버리기 (되돌릴 수 없음)")}>
+                      <Trash2 size={12} aria-hidden /> {t("버리기")}
                     </button>
                     <span className="gap" />
-                    <button className="btn btn-small" disabled={busy} onClick={() => apply("stage", hi, h.id)} data-action="stage-hunk" title="이 부분만 커밋에 담기 (git add -p)">
-                      담기
+                    <button className="btn btn-small" disabled={busy} onClick={() => apply("stage", hi, h.id)} data-action="stage-hunk" title={t("이 부분만 커밋에 담기 (git add -p)")}>
+                      {t("담기")}
                     </button>
                   </>
                 ) : (
-                  <button className="btn btn-small" disabled={busy} onClick={() => apply("unstage", hi, h.id)} data-action="unstage-hunk" title="이 부분을 커밋에서 빼기">
-                    빼기
+                  <button className="btn btn-small" disabled={busy} onClick={() => apply("unstage", hi, h.id)} data-action="unstage-hunk" title={t("이 부분을 커밋에서 빼기")}>
+                    {t("빼기")}
                   </button>
                 )}
               </div>
@@ -485,8 +490,8 @@ export function StageView({ worktree, rel }: { worktree: string; rel: string }) 
   );
   return (
     <div className="diff stage-view" data-testid="stage-view">
-      {section("아직 안 담은 부분", unstaged, "unstaged")}
-      {section("커밋에 담은 부분", staged, "staged")}
+      {section(t("아직 안 담은 부분"), unstaged, "unstaged")}
+      {section(t("커밋에 담은 부분"), staged, "staged")}
     </div>
   );
 }
@@ -512,11 +517,11 @@ function capDiff(diff: FileDiff[]): { files: FileDiff[]; hidden: number } {
 }
 
 export function DiffView({ diff: full }: { diff: FileDiff[] }) {
-  if (!full.length) return <Empty title="변경 없음">마지막 커밋과 같아요.</Empty>;
+  if (!full.length) return <Empty title={t("변경 없음")}>{t("마지막 커밋과 같아요.")}</Empty>;
   const { files: diff, hidden } = capDiff(full);
   return (
     <div className="diff" data-testid="diff-view">
-      {hidden > 0 && <div className="banner">변경이 커서 앞의 {MAX_DIFF_LINES}줄만 보여 줍니다 ({hidden}줄 생략).</div>}
+      {hidden > 0 && <div className="banner">{t("변경이 커서 앞의 {max}줄만 보여 줍니다 ({hidden}줄 생략).", { max: MAX_DIFF_LINES, hidden })}</div>}
       {diff.map((f, fi) => (
         <div key={fi} className="diff-file">
           <div className="diff-file-head">
@@ -524,7 +529,7 @@ export function DiffView({ diff: full }: { diff: FileDiff[] }) {
             <span className="add">+{f.additions}</span>
             <span className="del">−{f.deletions}</span>
           </div>
-          {f.binary && <div className="muted pad">바이너리 파일이 바뀌었습니다</div>}
+          {f.binary && <div className="muted pad">{t("바이너리 파일이 바뀌었습니다")}</div>}
           {f.hunks.map((h, hi) => (
             <div key={hi} className="hunk">
               <div className="hunk-head">{h.header}</div>

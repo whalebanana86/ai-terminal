@@ -298,6 +298,7 @@ export const api = {
   checkout: (path: string, target: string, kind: "branch" | "remote" | "commit") =>
     invoke<string>("git_checkout", { path, target, kind }),
   fsList: (worktree: string, rel: string) => invoke<DirEntry[]>("fs_list", { worktree, rel }),
+  setLang: (lang: string) => invoke<void>("set_lang", { lang }),
   fsRead: (worktree: string, rel: string) => invoke<FileContent>("fs_read", { worktree, rel }),
   /** 그림 파일 바이트. rev 가 "HEAD"(또는 커밋 해시)면 그때의 그림 */
   fsReadImage: (worktree: string, rel: string, rev?: string) => invoke<ArrayBuffer>("fs_read_image", { worktree, rel, rev: rev ?? null }),

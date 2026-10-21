@@ -124,7 +124,7 @@ fn one_line(s: &str, n: usize) -> String {
 
 /// 압축(.zst) 여부와 관계없이 줄 단위로 읽는다.
 fn open_lines(path: &Path) -> Result<Box<dyn BufRead>> {
-    let f = File::open(path).with_context(|| format!("{} 를 열 수 없습니다", path.display()))?;
+    let f = File::open(path).with_context(|| tr!("{} 를 열 수 없습니다", "Can't open {}", path.display()))?;
     if path.extension().is_some_and(|e| e == "zst") {
         Ok(Box::new(BufReader::new(zstd::stream::read::Decoder::new(f)?)))
     } else {
@@ -208,6 +208,10 @@ fn claude_user_text(v: &Value) -> Option<String> {
     if v.get("type")?.as_str()? != "user" || v.get("isMeta").and_then(Value::as_bool) == Some(true) {
         return None;
     }
+    // 대화가 길어져 앞부분을 요약해 넣은 글(사람이 쓴 게 아님)
+    if v.get("isCompactSummary").and_then(Value::as_bool) == Some(true) {
+        return None;
+    }
     let content = v.get("message")?.get("content")?;
     let text = match content {
         Value::String(s) => s.clone(),
@@ -220,6 +224,38 @@ fn claude_user_text(v: &Value) -> Option<String> {
         _ => return None,
     };
     (!is_claude_noise(&text)).then_some(text)
+}
+
+/// 일하는 중에 대기열로 보낸 사람 요청. Claude Code 는 이것을 user 메시지가 아니라
+/// `{"type":"attachment","attachment":{"type":"queued_command","commandMode":"prompt","origin":{"kind":"human"},"prompt":…}}`
+/// 로 적는다. 백그라운드 작업 알림(task-notification)·다른 에이전트가 보낸 말(peer)은 빼고 사람이 보낸 것만.
+fn claude_queued_text(v: &Value) -> Option<String> {
+    if v.get("type")?.as_str()? != "attachment" {
+        return None;
+    }
+    let a = v.get("attachment")?;
+    if a.get("type")?.as_str()? != "queued_command" || a.get("commandMode").and_then(Value::as_str) != Some("prompt") {
+        return None;
+    }
+    if !matches!(a.get("origin").and_then(|o| o.get("kind")).and_then(Value::as_str), None | Some("human")) {
+        return None;
+    }
+    let text = match a.get("prompt")? {
+        Value::String(s) => s.clone(),
+        Value::Array(items) => items
+            .iter()
+            .filter(|i| i.get("type").and_then(Value::as_str) == Some("text"))
+            .filter_map(|i| i.get("text").and_then(Value::as_str))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => return None,
+    };
+    (!is_claude_noise(&text)).then_some(text)
+}
+
+/// 사람이 보낸 요청: 보통 user 메시지 또는 일하는 중에 대기열로 보낸 것
+fn claude_human_text(v: &Value) -> Option<String> {
+    claude_user_text(v).or_else(|| claude_queued_text(v))
 }
 
 /// CLI 인자로 넘길 세션 id 로 안전한지 (옵션으로 해석될 수 있는 값 거부)
@@ -302,7 +338,7 @@ pub fn parse_claude_session(path: &Path) -> Option<SessionMeta> {
                 meta.last_cwd = v.get("cwd").and_then(Value::as_str).map(str::to_string);
             }
             if meta.last_prompt.is_none()
-                && let Some(t) = claude_user_text(&v)
+                && let Some(t) = claude_human_text(&v)
             {
                 meta.last_prompt = Some(one_line(&t, 300));
                 meta.last_prompt_at = v.get("timestamp").and_then(Value::as_str).and_then(parse_iso_ms).unwrap_or(0);
@@ -536,6 +572,65 @@ pub struct SessionIndex {
     claude: HashMap<PathBuf, ((u64, i64), Option<SessionMeta>)>,
     rollout: HashMap<PathBuf, ((u64, i64), Option<RolloutHeader>)>,
     codex_tail: HashMap<PathBuf, ((u64, i64), Option<(String, i64)>)>,
+    /// Claude 기록에서 가장 최근 사람 요청을 어디까지 찾아봤는지(파일 길이)와 찾은 것
+    claude_prompt: HashMap<PathBuf, (u64, Option<(String, i64)>)>,
+}
+
+/// 사람 요청일 수 있는 줄만 골라 JSON 으로 읽는다(도구 결과 같은 큰 줄은 건너뜀)
+fn human_prompt_in_line(line: &[u8]) -> Option<(String, i64)> {
+    if line.len() > 1024 * 1024 {
+        return None;
+    }
+    let has = |pat: &[u8]| line.windows(pat.len()).any(|w| w == pat);
+    if !has(b"\"type\":\"user\"") && !has(b"\"queued_command\"") {
+        return None;
+    }
+    let v: Value = serde_json::from_slice(line).ok()?;
+    if v.get("isSidechain").and_then(Value::as_bool) == Some(true) {
+        return None;
+    }
+    let text = claude_human_text(&v)?;
+    let at = v.get("timestamp").and_then(Value::as_str).and_then(parse_iso_ms).unwrap_or(0);
+    Some((one_line(&text, 300), at))
+}
+
+/// 파일 [from, to) 의 완전한 줄들에서 마지막 사람 요청. 반환: (찾은 것, 끝까지 읽은 위치)
+fn scan_prompts_forward(path: &Path, from: u64, to: u64) -> (Option<(String, i64)>, u64) {
+    let Ok(mut f) = File::open(path) else { return (None, from) };
+    if f.seek(SeekFrom::Start(from)).is_err() {
+        return (None, from);
+    }
+    let mut buf = Vec::new();
+    if f.take(to - from).read_to_end(&mut buf).is_err() {
+        return (None, from);
+    }
+    // 아직 쓰는 중인 마지막 줄은 다음에 읽는다
+    let Some(end) = buf.iter().rposition(|&b| b == b'\n') else { return (None, from) };
+    let found = buf[..end].split(|&b| b == b'\n').filter_map(human_prompt_in_line).last();
+    (found, from + end as u64 + 1)
+}
+
+/// 파일 끝에서부터 거꾸로, 사람 요청이 나올 때까지 넓혀 가며 찾는다(최대 64MB)
+fn scan_prompts_backward(path: &Path, len: u64) -> Option<(String, i64)> {
+    for window in [1u64 << 20, 4 << 20, 16 << 20, 64 << 20] {
+        let start = len.saturating_sub(window);
+        let Ok(mut f) = File::open(path) else { return None };
+        let mut buf = Vec::new();
+        if f.seek(SeekFrom::Start(start)).is_err() || f.take(len - start).read_to_end(&mut buf).is_err() {
+            return None;
+        }
+        let mut lines: Vec<&[u8]> = buf.split(|&b| b == b'\n').collect();
+        if start > 0 && !lines.is_empty() {
+            lines.remove(0); // 잘린 첫 줄
+        }
+        if let Some(found) = lines.into_iter().rev().find_map(human_prompt_in_line) {
+            return Some(found);
+        }
+        if start == 0 {
+            break;
+        }
+    }
+    None
 }
 
 impl SessionIndex {
@@ -545,7 +640,13 @@ impl SessionIndex {
             && *s == stamp {
                 return m.clone();
             }
-        let meta = parse_claude_session(path);
+        let mut meta = parse_claude_session(path);
+        if let Some(m) = meta.as_mut()
+            && let Some(found) = self.latest_claude_prompt(path, stamp.0)
+        {
+            m.last_prompt = Some(found.0);
+            m.last_prompt_at = found.1;
+        }
         self.claude.insert(path.to_path_buf(), (stamp, meta.clone()));
         meta
     }
@@ -565,6 +666,7 @@ impl SessionIndex {
         let files = claude_session_files();
         let keep: std::collections::HashSet<_> = files.iter().cloned().collect();
         self.claude.retain(|k, _| keep.contains(k));
+        self.claude_prompt.retain(|k, _| keep.contains(k));
         files.iter().filter_map(|p| self.claude_meta(p)).collect()
     }
 
@@ -654,6 +756,25 @@ impl SessionIndex {
             }
         }
         out
+    }
+
+    /// Claude 기록의 가장 최근 사람 요청. 도구 결과가 아주 많은 세션은 요청이 끝에서 수 MB 앞에 있을 수 있어
+    /// 처음에는 거꾸로 넓혀 가며 찾고, 그 뒤로는 새로 붙은 부분만 읽는다(기록은 뒤에 덧붙기만 한다).
+    fn latest_claude_prompt(&mut self, path: &Path, len: u64) -> Option<(String, i64)> {
+        let (found, scanned) = match self.claude_prompt.get(path) {
+            Some((done, prev)) if *done <= len => {
+                let (new, upto) = scan_prompts_forward(path, *done, len);
+                (new.or_else(|| prev.clone()), upto)
+            }
+            _ => {
+                let found = scan_prompts_backward(path, len);
+                // 끝의 완전한 줄까지 읽은 것으로 친다
+                let (tail, upto) = scan_prompts_forward(path, len.saturating_sub(64 * 1024), len);
+                (tail.or(found), upto)
+            }
+        };
+        self.claude_prompt.insert(path.to_path_buf(), (scanned, found.clone()));
+        found
     }
 
     /// Codex rollout 끝부분의 가장 최근 사용자 요청. 압축(.zst)된 옛 기록은 건너뛴다(새 요청이 생길 일이 없다).
@@ -771,6 +892,12 @@ pub fn claude_transcript(path: &Path) -> Result<Transcript> {
         }
         let ts = v.get("timestamp").and_then(Value::as_str).and_then(parse_iso_ms);
         match v.get("type").and_then(Value::as_str) {
+            // 일하는 중에 대기열로 보낸 요청도 대화에 보인다
+            Some("attachment") => {
+                if let Some(t) = claude_queued_text(&v) {
+                    c.push("user", t, None, ts, false);
+                }
+            }
             Some("user") => {
                 if let Some(t) = claude_user_text(&v) {
                     c.push("user", t, None, ts, false);
@@ -951,6 +1078,10 @@ mod tests {
                 serde_json::json!({"type":"user","isSidechain":true,"cwd":"/repo","gitBranch":"zzz","timestamp":"2026-10-01T00:00:03Z","message":{"content":"sub"}}),
                 serde_json::json!({"type":"user","cwd":"/repo","gitBranch":"main","timestamp":"2026-10-01T00:05:00Z","message":{"content":"고마워"}}),
                 serde_json::json!({"type":"ai-title","aiTitle":"버튼 색 변경","sessionId":"x"}),
+                // 일하는 중에 보낸 요청(대기열) — 사람이 보낸 것만 센다
+                serde_json::json!({"type":"attachment","timestamp":"2026-10-01T00:06:00Z","attachment":{"type":"queued_command","commandMode":"prompt","origin":{"kind":"human"},"prompt":"테두리도 둥글게 바꿔 줘"}}),
+                serde_json::json!({"type":"attachment","timestamp":"2026-10-01T00:07:00Z","attachment":{"type":"queued_command","commandMode":"task-notification","origin":{"kind":"task-notification"},"prompt":"<task-notification>끝</task-notification>"}}),
+                serde_json::json!({"type":"attachment","timestamp":"2026-10-01T00:08:00Z","attachment":{"type":"queued_command","commandMode":"prompt","origin":{"kind":"peer"},"prompt":"다른 에이전트가 보낸 말"}}),
             ],
         );
         let m = parse_claude_session(&p).unwrap();
@@ -961,15 +1092,43 @@ mod tests {
         assert_eq!(m.first_prompt.as_deref(), Some("버튼 색을 바꿔 줘"));
         assert_eq!(m.title, "버튼 색 변경");
         assert_eq!(m.origin.as_deref(), Some("cli"));
-        // 가장 최근 사용자 요청(사이드체인·메타 제외)과 시각
-        assert_eq!(m.last_prompt.as_deref(), Some("고마워"));
-        assert_eq!(m.last_prompt_at, parse_iso_ms("2026-10-01T00:05:00Z").unwrap());
+        // 가장 최근 사람 요청(사이드체인·메타·작업 알림·다른 에이전트 말 제외, 대기열 요청 포함)과 시각
+        assert_eq!(m.last_prompt.as_deref(), Some("테두리도 둥글게 바꿔 줘"));
+        assert_eq!(m.last_prompt_at, parse_iso_ms("2026-10-01T00:06:00Z").unwrap());
 
         let t = claude_transcript(&p).unwrap();
         let kinds: Vec<_> = t.items.iter().map(|i| i.kind.as_str()).collect();
-        assert_eq!(kinds, vec!["user", "assistant", "tool", "user"]);
+        assert_eq!(kinds, vec!["user", "assistant", "tool", "user", "user"], "대기열 요청도 대화에 보인다");
         assert_eq!(t.touched_files.len(), 1);
         assert_eq!(t.touched_files[0].path, "/repo/a.css");
+    }
+
+    #[test]
+    fn latest_human_prompt_far_from_the_end_and_appended_later() {
+        // 사람 요청 뒤로 큰 도구 결과가 3MB 넘게 쌓인 세션(긴 작업). 1MB 꼬리만 보면 못 찾던 경우
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("abcd-1234.jsonl");
+        let big = "x".repeat(400 * 1024);
+        let mut text = String::new();
+        let line = |v: serde_json::Value| v.to_string() + "\n";
+        text += &line(serde_json::json!({"type":"user","cwd":"/r","timestamp":"2026-10-01T00:00:00Z","message":{"content":"버튼 추가해 줘"}}));
+        text += &line(serde_json::json!({"type":"user","isCompactSummary":true,"cwd":"/r","timestamp":"2026-10-01T00:00:01Z","message":{"content":"This session is being continued"}}));
+        for _ in 0..8 {
+            text += &line(serde_json::json!({"type":"user","cwd":"/r","timestamp":"2026-10-01T00:00:02Z","message":{"content":[{"type":"tool_result","content":big}]}}));
+            text += &line(serde_json::json!({"type":"user","cwd":"/r","timestamp":"2026-10-01T00:00:03Z","message":{"content":"<task-notification>끝</task-notification>"}}));
+        }
+        std::fs::write(&p, &text).unwrap();
+        let mut idx = SessionIndex::default();
+        let m = idx.claude_meta(&p).unwrap();
+        assert_eq!(m.last_prompt.as_deref(), Some("버튼 추가해 줘"), "요약·작업 알림은 사람 요청이 아니다");
+        // 일하는 중에 대기열로 보낸 요청이 덧붙으면 새로 붙은 부분만 읽어 바로 안다
+        let mut f = std::fs::OpenOptions::new().append(true).open(&p).unwrap();
+        std::io::Write::write_all(&mut f, line(serde_json::json!({"type":"attachment","timestamp":"2026-10-01T00:09:00Z","attachment":{"type":"queued_command","commandMode":"prompt","origin":{"kind":"human"},"prompt":"색도 바꿔 줘"}})).as_bytes()).unwrap();
+        drop(f);
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let m = idx.claude_meta(&p).unwrap();
+        assert_eq!(m.last_prompt.as_deref(), Some("색도 바꿔 줘"));
+        assert_eq!(m.last_prompt_at, parse_iso_ms("2026-10-01T00:09:00Z").unwrap());
     }
 
     #[test]
