@@ -1,5 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { api, errorText, externalRunning, type Agent, type ChatInfo, type LinkedSession, type LiveRun, type Transcript, type WorktreeStatus } from "../api";
 import { ChevronDown, FolderGit2, GitBranch, Info, Play, Plus, RefreshCw, Square, X } from "lucide-react";
@@ -12,6 +12,18 @@ import { ChatView } from "./ChatView";
 const TerminalView = lazy(() => import("./TerminalView").then((m) => ({ default: m.TerminalView })));
 
 type DetailTab = "talk" | "history" | "files";
+
+/** 세션 목록 날짜 묶음 이름 */
+export function dayGroup(ms: number, now = Date.now()): string {
+  const d = new Date(ms);
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const day = 86_400_000;
+  if (d.getTime() >= today.getTime()) return "오늘";
+  if (d.getTime() >= today.getTime() - day) return "어제";
+  if (d.getTime() >= today.getTime() - 6 * day) return "이번 주";
+  return "이전";
+}
 
 /** 외부에서 실행 중이라 거부되면 사용자에게 묻고, 동의하면 force 로 다시 시도한다. */
 async function withExternalConfirm<T>(fn: (force: boolean) => Promise<T>): Promise<T | null> {
@@ -114,7 +126,13 @@ function SessionList() {
         </button>
       </div>
       <ul className="sessions" role="listbox" aria-label="에이전트 세션">
-        {list.map((s) => (
+        {list.map((s, i) => (
+          <Fragment key={s.id}>
+          {dayGroup(s.updatedAt) !== (i > 0 ? dayGroup(list[i - 1].updatedAt) : null) && (
+            <li className="day-head" aria-hidden>
+              {dayGroup(s.updatedAt)}
+            </li>
+          )}
           <SessionItem
             key={s.id}
             dupHint={(titleCount.get(s.title) ?? 0) > 1 ? (s.externalId || s.id).replace(/^.*:/, "").slice(-6) : null}
@@ -125,11 +143,12 @@ function SessionList() {
             ext={externalRunOf(s.id, liveRuns)}
             chat={chats.find((c) => c.sessionId === s.id || `chat:${c.id}` === s.id) ?? null}
           />
+          </Fragment>
         ))}
         {!list.length && (
           <li className="muted pad">
             {!folder
-              ? "위에서 폴더(저장소·워크트리)를 고르세요."
+              ? "위에서 워크트리를 고르세요."
               : inFolder.length
                 ? "검색 조건에 맞는 세션이 없습니다."
                 : `${baseName(folder)} 에서 작업한 세션이 아직 없습니다. '+ 새 세션' 으로 시작하세요.`}
@@ -191,7 +210,7 @@ function SessionItemView({ s, selected, onSelect, now, ext, chat, dupHint }: Ite
         {s.worktreePath && (bs.changedSinceLast || (bs.current ?? bs.last)) && (
           <span
             className={`branch-chip small${bs.changedSinceLast ? " warn" : ""}`}
-            title={`세션 시작: ${branchLabel(bs.start)} · 마지막 작업: ${branchLabel(bs.last)} · 지금 폴더: ${bs.unknownCurrent ? "알 수 없음" : branchLabel(bs.current)}`}
+            title={`세션 시작: ${branchLabel(bs.start)} · 마지막 작업: ${branchLabel(bs.last)} · 지금 워크트리: ${bs.unknownCurrent ? "알 수 없음" : branchLabel(bs.current)}`}
           >
             <GitBranch size={11} aria-hidden />{" "}
             {bs.changedSinceLast ? `${branchLabel(bs.last)} → ${bs.currentDetached ? "브랜치 없음" : branchLabel(bs.current)}` : branchLabel(bs.current ?? bs.last)}
@@ -279,7 +298,7 @@ function SessionDetail() {
   if (!session) {
     return (
       <div className="session-detail">
-        <Empty title="세션을 고르세요">위 목록에서 대화를 고르면 왼쪽 Git 과 오른쪽 파일이 그 대화가 작업한 폴더를 보여 줍니다.</Empty>
+        <Empty title="세션을 고르세요">위 목록에서 대화를 고르면 왼쪽 Git 과 오른쪽 파일이 그 대화가 작업한 워크트리를 보여 줍니다.</Empty>
       </div>
     );
   }
@@ -375,7 +394,7 @@ function SessionHeader({
           ["plan", "계획만 세우기 (수정 안 함)"],
         ]
       : [
-          ["workspace-write", "이 폴더 안에서 쓰기 허락"],
+          ["workspace-write", "이 워크트리 안에서 쓰기 허락"],
           ["read-only", "읽기만 허락"],
         ];
   const copy = (t: string) => void navigator.clipboard.writeText(t);
@@ -426,7 +445,7 @@ function SessionHeader({
           <FolderGit2 size={12} aria-hidden /> {s.worktreePath ? baseName(s.worktreePath) : s.cwd ? `${baseName(s.cwd)} (Git 아님)` : "?"}
         </span>
         {s.worktreePath && (
-          <span data-testid="session-branches" title={`세션 시작: ${branchLabel(bs.start)} · 마지막 작업: ${branchLabel(bs.last)} · 지금 폴더: ${branchText}`} className={bs.changedSinceLast ? "warn-text" : ""}>
+          <span data-testid="session-branches" title={`세션 시작: ${branchLabel(bs.start)} · 마지막 작업: ${branchLabel(bs.last)} · 지금 워크트리: ${branchText}`} className={bs.changedSinceLast ? "warn-text" : ""}>
             <GitBranch size={12} aria-hidden /> {bs.changedSinceLast ? `${branchLabel(bs.last)}에서 작업 → 지금 ${branchText}` : branchText}
           </span>
         )}
@@ -440,7 +459,7 @@ function SessionHeader({
         <div className="sh-grid">
           <span className="muted">저장소</span>
           <span>{s.repoName ?? <span className="muted">Git 저장소 아님</span>}</span>
-          <span className="muted">폴더</span>
+          <span className="muted">워크트리</span>
           <span className="path-text copyable" title="눌러서 복사" onClick={() => copy(s.worktreePath ?? s.cwd ?? "")}>
             {s.worktreePath ?? s.cwd}
           </span>
@@ -693,7 +712,7 @@ function NewSessionDialog({ onClose }: { onClose: () => void }) {
           ["plan", "계획만 세우기 (수정 안 함)"],
         ]
       : [
-          ["workspace-write", "이 폴더 안에서 쓰기 허락"],
+          ["workspace-write", "이 워크트리 안에서 쓰기 허락"],
           ["read-only", "읽기만 허락"],
         ];
 
@@ -706,8 +725,8 @@ function NewSessionDialog({ onClose }: { onClose: () => void }) {
           {card(agent === "codex", () => setAgent("codex"), "Codex", "OpenAI", info && !info.codex ? "설치되지 않음" : null)}
         </div>
         <label className="form-row col">
-          <span className="muted">작업할 폴더 (지금 브랜치를 바꾸지 않고 그 폴더에서 바로 실행해요)</span>
-          <select value={cwd} onChange={(e) => void pickFolder(e.target.value)} aria-label="작업 폴더">
+          <span className="muted">작업할 워크트리 (브랜치를 바꾸지 않고 그 워크트리에서 바로 실행해요)</span>
+          <select value={cwd} onChange={(e) => void pickFolder(e.target.value)} aria-label="작업할 워크트리">
             {cwd && !options.some((o) => o.w.path === cwd) && <option value={cwd}>{cwd}</option>}
             {options.map((o) => (
               <option key={o.w.path} value={o.w.path}>
@@ -715,7 +734,7 @@ function NewSessionDialog({ onClose }: { onClose: () => void }) {
               </option>
             ))}
             <option value="__new_wt__">＋ 새 워크트리 만들어서 시작…</option>
-            <option value="__other__">다른 폴더 고르기…</option>
+            <option value="__other__">Git 밖의 다른 폴더 고르기…</option>
           </select>
         </label>
         <div className="choice-row">

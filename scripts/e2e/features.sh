@@ -53,7 +53,7 @@ check "demo-two 가 side 로 체크아웃됨" "$(G "$R/demo-two" rev-parse --abb
 check "Git 패널도 side" "$(js "return document.querySelector('[data-testid=git-current-branch]').innerText")" "side"
 js "document.querySelector('[data-testid=git-current-branch]').click(); await wait(300);
     [...document.querySelectorAll('.switcher-item')].find(b => b.innerText.startsWith('main')).click();
-    await confirmDialog('그 폴더 열기'); await wait(1200); return 1" >/dev/null
+    await confirmDialog('그 워크트리 보기'); await wait(1200); return 1" >/dev/null
 check "main 은 다른 워크트리 사용 중 → 그 워크트리로 화면 이동" "$(js "return st().focus.worktreePath")" "$R/demo"
 check "그동안 demo-two HEAD 는 그대로" "$(G "$R/demo-two" rev-parse --abbrev-ref HEAD)" "side"
 
@@ -84,7 +84,7 @@ check "브랜치도 함께 삭제(병합됨)" "$(G "$R/demo" branch --list agent
 echo "── 4. hunk 단위 스테이징"
 sed -i '' -e 's/^line 2$/line 2 changed/' -e 's/^line 38$/line 38 changed/' "$R/demo/big.txt"
 js "await focus('$R/demo'); await tab('changes'); document.querySelector('[data-testid=unstaged-list] li[data-path=\"big.txt\"] .path').click(); await wait(1200);
-    const sv = await until(() => document.querySelector('[data-testid=stage-view]'));
+    const sv = await until(() => document.querySelector('[data-testid=changes-stage] [data-testid=stage-view]'));
     const hunks = sv.querySelectorAll('[data-side=unstaged] .hunk'); hunks[1].querySelector('[data-action=stage-hunk]').click(); await wait(1200);
     return document.querySelectorAll('[data-side=unstaged] .hunk').length + ',' + document.querySelectorAll('[data-side=staged] .hunk').length" > /tmp/aiterm-feat-hunks.txt
 check "두 번째 hunk 만 스테이지됨 (화면 미스테이지1,스테이지1)" "$(cat /tmp/aiterm-feat-hunks.txt)" "1,1"
@@ -118,7 +118,8 @@ G "$R/demo" switch -q -c topic HEAD~1 2>/dev/null || G "$R/demo" switch -q -c to
 echo t > "$R/demo/t.txt"; G "$R/demo" add t.txt; G "$R/demo" commit -qm topic-commit
 js "await focus('$R/demo'); await tab('graph'); const row = [...document.querySelectorAll('.grow')].find(r => r.innerText.includes('main') && r.querySelector('.ref-branch'));
     row.dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, clientX: 200, clientY: 200})); await wait(300);
-    [...document.querySelectorAll('.menu-item')].find(b => b.innerText.includes(\"이 위로 리베이스\")).click();
+    document.querySelector('.menu [data-action=\"ref:main\"]').click(); await wait(200);
+    [...document.querySelectorAll('.submenu .menu-item')].find(b => b.innerText.includes(\"이 위로 리베이스\")).click();
     await confirmDialog('리베이스'); await wait(2500); return 1" >/dev/null
 check "topic 이 main 위로 올라감 (main 이 조상)" "$(G "$R/demo" merge-base --is-ancestor main topic && echo yes)" "yes"
 check "topic 커밋 1개 유지" "$(G "$R/demo" rev-list --count main..topic)" "1"

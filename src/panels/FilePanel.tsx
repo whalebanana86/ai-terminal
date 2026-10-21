@@ -22,7 +22,7 @@ export function FilePanel() {
         )}
       </PanelHead>
       {!wt ? (
-        <Empty title="볼 폴더가 없습니다">위에서 폴더를 고르세요.</Empty>
+        <Empty title="볼 워크트리가 없습니다">위에서 워크트리를 고르세요.</Empty>
       ) : (
         <Group orientation="vertical" className="file-split">
           <Panel id="tree" defaultSize={viewer ? "45" : "100"} minSize="15">
@@ -302,7 +302,6 @@ function FileViewer({ worktree }: { worktree: string }) {
   );
 }
 
-/** 한 파일의 스테이지 안 된/된 변경을 hunk 단위로 보여 주고 스테이지·취소·버리기 */
 /** 이 파일이 바뀐 신호(또는 .git 변경)일 때만 값이 바뀐다 → 다른 파일 이벤트로는 다시 읽지 않는다. */
 function useFileTick(rel: string): number {
   const fs = useStore((s) => (s.changedPaths.includes(rel) ? s.fsTick : -1));
@@ -312,7 +311,8 @@ function useFileTick(rel: string): number {
   return last.current * 100000 + git;
 }
 
-function StageView({ worktree, rel }: { worktree: string; rel: string }) {
+/** 한 파일의 바뀐 부분(hunk)을 담기·빼기·버리기. 깃 패널 '변경 사항' 아래와 오른쪽 보기에서 함께 쓴다. */
+export function StageView({ worktree, rel }: { worktree: string; rel: string }) {
   const fileTick = useFileTick(rel);
   const toast = useStore((s) => s.toast);
   const ask = useStore((s) => s.ask);

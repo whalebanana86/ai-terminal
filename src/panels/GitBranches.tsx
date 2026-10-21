@@ -7,7 +7,8 @@ import { baseName, branchLabel, relativeTime } from "../logic";
 import { useStore } from "../store";
 
 /** 머리글의 현재 브랜치 표시 겸 빠른 전환 메뉴 */
-export function BranchSwitcher({ worktree, status, graph, repoPath }: { worktree: string; status: WorktreeStatus; graph: GraphData; repoPath: string }) {
+/** 머리글 브랜치 칩: 전환만 한다. 만들기·지우기·병합 같은 관리는 브랜치 탭에서. */
+export function BranchSwitcher({ worktree, status, graph, onManage }: { worktree: string; status: WorktreeStatus; graph: GraphData; onManage: () => void }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const box = useRef<HTMLDivElement>(null);
@@ -39,27 +40,6 @@ export function BranchSwitcher({ worktree, status, graph, repoPath }: { worktree
       {open && (
         <div className="switcher-pop" role="dialog" aria-label="브랜치 바꾸기">
           <input className="text-input" autoFocus placeholder="브랜치 찾기" value={q} onChange={(e) => setQ(e.target.value)} />
-          <div className="switcher-actions">
-            <button
-              className="btn btn-small"
-              onClick={() => {
-                setOpen(false);
-                void ga.createBranch(worktree, "HEAD", `현재 HEAD (${label})`);
-              }}
-            >
-              새 브랜치…
-            </button>
-            <button
-              className="btn btn-small"
-              title="지금 워크트리를 건드리지 않고 다른 폴더에서 작업"
-              onClick={() => {
-                setOpen(false);
-                void ga.newWorktree(repoPath, { base: status.branch ?? "HEAD" });
-              }}
-            >
-              새 워크트리…
-            </button>
-          </div>
           <ul className="switcher-list">
             {refs.map((r) => {
               const cur = r.kind === "branch" && r.short === status.branch;
@@ -69,7 +49,7 @@ export function BranchSwitcher({ worktree, status, graph, repoPath }: { worktree
                   <button className={`switcher-item${cur ? " cur" : ""}`} disabled={cur} onClick={() => pick(r)}>
                     <span className={`ref ref-${r.kind}`}>{r.short}</span>
                     {cur && <span className="muted small">현재</span>}
-                    {other && <span className="muted small">📁 {baseName(other.path)} 에서 사용 중 · 누르면 그 폴더로</span>}
+                    {other && <span className="muted small">→ {baseName(other.path)} 워크트리 보기</span>}
                     {r.track && <span className="muted small">{r.track}</span>}
                   </button>
                 </li>
@@ -77,6 +57,15 @@ export function BranchSwitcher({ worktree, status, graph, repoPath }: { worktree
             })}
             {!refs.length && <li className="muted pad">일치하는 브랜치가 없습니다</li>}
           </ul>
+          <button
+            className="link-btn switcher-manage"
+            onClick={() => {
+              setOpen(false);
+              onManage();
+            }}
+          >
+            브랜치 만들기·지우기·병합은 브랜치 탭에서 →
+          </button>
         </div>
       )}
     </div>
@@ -102,12 +91,12 @@ export function BranchesView({ worktree, repoPath, graph, status }: { worktree: 
     const usedBy = r.kind === "branch" ? graph.worktrees.find((w) => w.branch === r.short) : undefined;
     const list: MenuItem[] = [];
     if (r.kind !== "tag") {
-      list.push({ label: "이 브랜치로 전환…", hint: "지금 폴더를 체크아웃합니다", disabled: isCur, onClick: () => ga.checkout(worktree, r.short, r.kind === "remote" ? "remote" : "branch", graph.worktrees) });
+      list.push({ label: "이 브랜치로 전환…", hint: "지금 워크트리를 체크아웃합니다", disabled: isCur, onClick: () => ga.checkout(worktree, r.short, r.kind === "remote" ? "remote" : "branch", graph.worktrees) });
     }
     if (r.kind === "branch") {
       list.push({ label: "새 워크트리에서 열기…", disabled: !!usedBy, hint: usedBy ? `이미 ${usedBy.path} 에서 사용 중` : "지금 워크트리를 건드리지 않습니다", onClick: () => ga.newWorktree(repoPath, { existingBranch: r.short }) });
     }
-    if (usedBy && usedBy.path !== worktree) list.push({ label: `그 폴더로 가기 (${baseName(usedBy.path)})`, onClick: () => useStore.getState().setFocusWorktree(usedBy.path) });
+    if (usedBy && usedBy.path !== worktree) list.push({ label: `그 워크트리 보기 (${baseName(usedBy.path)})`, onClick: () => useStore.getState().setFocusWorktree(usedBy.path) });
     list.push(
       { separator: true, label: "" },
       { label: "지금 브랜치에 병합…", hint: `${r.short} → ${cur ?? "?"}`, disabled: isCur || !cur, onClick: () => ga.merge(worktree, cur, r.short) },
@@ -192,7 +181,7 @@ export function WorktreesView({ graph, repoPath }: { graph: GraphData | null; re
   return (
     <div className="worktrees">
       <div className="filters">
-        <span className="muted">같은 저장소를 여러 폴더로 열어, 폴더마다 다른 브랜치에서 에이전트를 동시에 돌릴 수 있어요.</span>
+        <span className="muted">워크트리 = 같은 저장소를 다른 브랜치로 연 작업 폴더. 워크트리마다 에이전트를 따로 돌리면 서로 방해하지 않아요.</span>
         <span className="spacer" />
         <button className="btn btn-small btn-primary" onClick={() => ga.newWorktree(repoPath, { base: "HEAD" })}>
           <FolderOpen size={13} aria-hidden /> 새 워크트리
@@ -229,7 +218,7 @@ export function WorktreesView({ graph, repoPath }: { graph: GraphData | null; re
                   <span className="tag tag-on">보는 중</span>
                 ) : (
                   w.exists && (
-                    <button className="btn btn-small" onClick={() => setFocus(w.path)} title="이 폴더로 화면을 옮깁니다 (체크아웃하지 않음)">
+                    <button className="btn btn-small" onClick={() => setFocus(w.path)} title="이 워크트리로 화면을 옮깁니다 (체크아웃하지 않음)">
                       열기
                     </button>
                   )
@@ -249,7 +238,7 @@ export function WorktreesView({ graph, repoPath }: { graph: GraphData | null; re
                           label: w.exists ? "워크트리 삭제…" : "사라진 워크트리 정리…",
                           danger: true,
                           disabled: w.isMain,
-                          hint: w.isMain ? "메인 워크트리는 지울 수 없어요" : "폴더를 지웁니다. 커밋은 남아요",
+                          hint: w.isMain ? "메인 워크트리는 지울 수 없어요" : "워크트리 폴더를 지웁니다. 커밋은 남아요",
                           testId: "wt-delete",
                           onClick: () => ga.removeWorktree(repoPath, w),
                         },

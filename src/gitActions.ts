@@ -51,9 +51,9 @@ export async function checkout(worktree: string, target: string, kind: "branch" 
     const other = usedElsewhere(local, worktree, worktrees);
     if (other) {
       const go = await st().ask({
-        title: `${local} 은(는) 다른 폴더에서 쓰는 중`,
-        body: `Git 은 한 브랜치를 두 워크트리(폴더)에서 동시에 열 수 없어요.\n${other.path}\n\n그 폴더를 대신 열까요? (화면만 옮기고 체크아웃하지 않아요)`,
-        confirmLabel: "그 폴더 열기",
+        title: `${local} 은(는) 다른 워크트리에서 쓰는 중`,
+        body: `Git 은 한 브랜치를 두 워크트리에서 동시에 열 수 없어요.\n${other.path}\n\n그 워크트리를 대신 볼까요? (화면만 옮기고 체크아웃하지 않아요)`,
+        confirmLabel: "그 워크트리 보기",
       });
       if (go) st().setFocusWorktree(other.path);
       return;
@@ -63,9 +63,9 @@ export async function checkout(worktree: string, target: string, kind: "branch" 
   const ok = await st().ask({
     title: kind === "commit" ? "커밋으로 이동 (브랜치 없음 상태)" : `${local} 로 전환 (체크아웃)`,
     body:
-      `폴더 ${baseName(worktree)} 를 ${kind === "commit" ? "커밋 " + target.slice(0, 10) + " (브랜치 없음 상태)" : local} 로 바꿉니다.` +
+      `워크트리 ${baseName(worktree)} 를 ${kind === "commit" ? "커밋 " + target.slice(0, 10) + " (브랜치 없음 상태)" : local} 로 바꿉니다.` +
       (kind === "remote" ? `\n로컬 브랜치가 없으면 ${target} 를 추적하는 '${local}' 을 만듭니다.` : "") +
-      `\n폴더 안의 파일이 그 브랜치 내용으로 바뀌어요.${warn ? "\n\n⚠ " + warn : ""}`,
+      `\n워크트리 안의 파일이 그 브랜치 내용으로 바뀌어요.${warn ? "\n\n⚠ " + warn : ""}`,
     danger: !!warn,
     confirmLabel: "전환",
   });
@@ -82,8 +82,8 @@ export async function newWorktree(repoPath: string, opts: { base?: string; exist
   const values = await st().promptForm({
     title: opts.existingBranch ? `'${opts.existingBranch}' 을(를) 새 워크트리로 열기` : "새 워크트리",
     body: opts.existingBranch
-      ? "지금 워크트리는 그대로 두고, 다른 폴더에서 이 브랜치를 엽니다."
-      : `${opts.base ?? "HEAD"} 에서 새 브랜치를 만들어 다른 폴더에서 엽니다. 지금 워크트리는 바뀌지 않습니다.`,
+      ? "지금 워크트리는 그대로 두고, 새 워크트리(별도 폴더)에서 이 브랜치를 엽니다."
+      : `${opts.base ?? "HEAD"} 에서 새 브랜치를 만들어 새 워크트리(별도 폴더)에서 엽니다. 지금 워크트리는 바뀌지 않습니다.`,
     fields: [
       ...(opts.existingBranch ? [] : [{ key: "branch", label: "새 브랜치 이름", value: opts.suggestName ?? "", placeholder: "feature/agent-task" }]),
       { key: "path", label: "폴더 위치", value: `${parent}/${repoName}-${slug}` },
@@ -170,7 +170,7 @@ export async function createBranch(worktree: string, start: string, startLabel: 
     body: `${startLabel} 에서 시작합니다.`,
     fields: [
       { key: "name", label: "브랜치 이름", value: "", placeholder: "feature/..." },
-      { key: "checkout", label: "만든 뒤 지금 폴더를 이 브랜치로 전환", value: "false", checkbox: true },
+      { key: "checkout", label: "만든 뒤 지금 워크트리를 이 브랜치로 전환", value: "false", checkbox: true },
     ],
     confirmLabel: "만들기",
     validate: (v) => (v.name.trim() ? null : "이름을 입력하세요"),

@@ -1,16 +1,17 @@
-import { Minus, Plus, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Maximize2, Minus, Plus, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText, type StatusEntry, type WorktreeStatus } from "../api";
 import { Empty } from "../components/Overlays";
 import { isNestedRepoEntry, kindLabel, kindLetter } from "../logic";
 import { useStore } from "../store";
+import { StageView } from "./FilePanel";
 
 /** 스테이지된 변경(index ≠ HEAD) */
 export const isStaged = (e: StatusEntry) => e.kind !== "ignored" && e.kind !== "untracked" && e.kind !== "conflicted" && e.index !== ".";
 /** 스테이지 안 된 변경(워크트리 ≠ index, 새 파일, 충돌) */
 export const isUnstaged = (e: StatusEntry) => e.kind !== "ignored" && (e.worktree !== "." || e.kind === "untracked" || e.kind === "conflicted");
 
-/** 변경 사항 탭: 스테이지/안 됨을 나눠 보여 주고, 스테이지된 것만 커밋한다. hunk 단위는 오른쪽 '스테이징' 보기에서. */
+/** 변경 사항 탭: 스테이지/안 됨을 나눠 보여 주고, 스테이지된 것만 커밋한다. 파일을 누르면 바로 아래에서 부분(hunk) 단위로 담는다. */
 export function ChangesView({ worktree, status, onChanged }: { worktree: string; status: WorktreeStatus | null; onChanged: () => void }) {
   const [msg, setMsg] = useState("");
   const [amend, setAmend] = useState(false);
@@ -18,13 +19,35 @@ export function ChangesView({ worktree, status, onChanged }: { worktree: string;
   const toast = useStore((s) => s.toast);
   const ask = useStore((s) => s.ask);
   const openViewer = useStore((s) => s.openViewer);
-  const viewer = useStore((s) => s.viewer);
+  const [sel, setSel] = useState<string | null>(null);
+  const [listH, setListH] = useState(() => Number(localStorage.getItem("aiterm.changesListH")) || 180);
+  const box = useRef<HTMLDivElement>(null);
   const entries = useMemo(() => (status?.entries ?? []).filter((e) => e.kind !== "ignored"), [status]);
   const staged = entries.filter(isStaged);
   const unstaged = entries.filter(isUnstaged);
   useEffect(() => {
     setAmend(false);
+    setSel(null);
   }, [worktree]);
+  // 고른 파일이 목록에서 사라지면(커밋·되돌림) 아래 칸도 닫는다.
+  const selGone = sel !== null && !entries.some((e) => e.path === sel);
+  useEffect(() => {
+    if (selGone) setSel(null);
+  }, [selGone]);
+  const startResize = (ev: React.MouseEvent) => {
+    ev.preventDefault();
+    const top = box.current?.getBoundingClientRect().top ?? 0;
+    const max = (box.current?.clientHeight ?? 600) - 120;
+    let h = listH;
+    const move = (e: MouseEvent) => setListH((h = Math.max(80, Math.min(max, e.clientY - top))));
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      localStorage.setItem("aiterm.changesListH", String(Math.round(h)));
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
 
   const act = async (label: string, fn: () => Promise<unknown>, quiet = true) => {
     setBusy(true);
@@ -73,14 +96,16 @@ export function ChangesView({ worktree, status, onChanged }: { worktree: string;
 
   const row = (e: StatusEntry, side: "staged" | "unstaged") => {
     const nested = isNestedRepoEntry(e.path);
-    const on = viewer?.kind === "file" && viewer.rel === e.path;
+    const on = sel === e.path;
+    // 새 파일·중첩 저장소는 나눌 부분이 없으니 오른쪽에서 내용을 보여 준다.
+    const wholeOnly = e.kind === "untracked" || nested;
     const kind = side === "staged" ? e.kind : e.kind === "untracked" ? "untracked" : e.worktree === "D" ? "deleted" : e.kind;
     return (
       <li key={`${side}:${e.path}`} className={on ? "on" : ""} data-path={e.path} data-side={side}>
         <span className={`kind kind-${kind}`} title={kindLabel(kind)}>
           {kindLetter(kind)}
         </span>
-        <span className="path" onClick={() => openViewer({ kind: "file", rel: e.path, mode: e.kind === "untracked" || nested ? "preview" : "stage" })}>
+        <span className="path" onClick={() => (wholeOnly ? openViewer({ kind: "file", rel: e.path, mode: "preview" }) : setSel(on ? null : e.path))}>
           {e.path}
           {e.origPath && <span className="muted"> ← {e.origPath}</span>}
         </span>
@@ -111,8 +136,8 @@ export function ChangesView({ worktree, status, onChanged }: { worktree: string;
   };
 
   return (
-    <div className="changes">
-      <div className="changes-scroll">
+    <div className="changes" ref={box}>
+      <div className="changes-scroll" style={sel ? { flex: `0 0 ${listH}px` } : undefined}>
         <div className="changes-head">
           <b>바뀐 파일</b> <span className="count">{unstaged.length}</span>
           <span className="spacer" />
@@ -132,9 +157,30 @@ export function ChangesView({ worktree, status, onChanged }: { worktree: string;
         </div>
         <ul className="file-list" data-testid="staged-list">
           {staged.map((e) => row(e, "staged"))}
-          {!staged.length && <li className="muted small pad-s">커밋할 파일을 + 로 담으세요. 파일을 누르면 오른쪽에서 일부 줄만 담을 수도 있어요.</li>}
+          {!staged.length && <li className="muted small pad-s">커밋할 파일을 + 로 담으세요. 파일을 누르면 바로 아래에서 일부 줄만 담을 수도 있어요.</li>}
         </ul>
       </div>
+      {sel && (
+        <div className="changes-stage" data-testid="changes-stage">
+          <div className="split-grip" onMouseDown={startResize} title="끌어서 크기 조절" />
+          <div className="changes-stage-head">
+            <span className="path-text" title={sel}>
+              {sel}
+            </span>
+            <span className="muted small">일부만 담기</span>
+            <span className="spacer" />
+            <button className="icon-btn" title="오른쪽 넓은 보기에서 열기" aria-label="오른쪽에서 크게 보기" onClick={() => openViewer({ kind: "file", rel: sel, mode: "stage" })}>
+              <Maximize2 size={13} aria-hidden />
+            </button>
+            <button className="icon-btn" title="닫기" aria-label="부분 담기 닫기" onClick={() => setSel(null)}>
+              <X size={13} aria-hidden />
+            </button>
+          </div>
+          <div className="changes-stage-body">
+            <StageView worktree={worktree} rel={sel} />
+          </div>
+        </div>
+      )}
       <div className="commit-box">
         {(staged.length > 0 || amend) && (
           <div className="commit-preview muted small" data-testid="commit-preview">

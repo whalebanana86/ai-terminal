@@ -1778,3 +1778,76 @@ li:hover .hover-only,
 .gap {
   width: 10px;
 }
+
+.day-head {
+  list-style: none;
+  padding: 8px 10px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--fg-faint);
+}
+.switcher-manage {
+  text-align: left;
+  padding: 4px 4px 0;
+}
+
+.menu-item.has-sub {
+  position: relative;
+  padding-right: 24px;
+}
+.menu-caret {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--fg-faint);
+}
+.menu-item.has-sub.open {
+  background: var(--bg-3);
+}
+.submenu {
+  min-width: 250px;
+}
+
+/* 변경 사항 탭 아래의 부분 담기 칸 */
+.changes-stage {
+  flex: 1;
+  min-height: 100px;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+  position: relative;
+}
+.split-grip {
+  position: absolute;
+  top: -4px;
+  left: 0;
+  right: 0;
+  height: 7px;
+  cursor: row-resize;
+  z-index: 2;
+}
+.split-grip:hover {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.changes-stage-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+.changes-stage-head .path-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.changes-stage-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}

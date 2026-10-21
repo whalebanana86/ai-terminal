@@ -31,10 +31,10 @@ export function TopBar() {
       <div className="brand" data-tauri-drag-region>
         AI Terminal
       </div>
-      <label className="folder-select" title="볼 폴더(저장소·워크트리)를 고릅니다. 체크아웃은 하지 않아요.">
+      <label className="folder-select" title="볼 워크트리를 고릅니다(저장소마다 하나 이상). 체크아웃은 하지 않아요.">
         <FolderGit2 size={14} aria-hidden />
-        <select aria-label="볼 폴더 고르기" value={focus?.worktreePath ?? ""} onChange={(e) => e.target.value && setFocus(e.target.value)}>
-          <option value="">폴더를 고르세요…</option>
+        <select aria-label="볼 워크트리 고르기" value={focus?.worktreePath ?? ""} onChange={(e) => e.target.value && setFocus(e.target.value)}>
+          <option value="">워크트리를 고르세요…</option>
           {repos.map((r) => (
             <optgroup key={r.id} label={r.name}>
               {r.worktrees

@@ -95,7 +95,7 @@ export function GitPanel() {
     if (!wtPath) return;
     const ok = await ask({
       title: "원격에서 받기",
-      body: `${baseName(wtPath)} 의 ${status?.branch ?? "현재 브랜치"} 를 원격에서 받아옵니다.\n내 커밋과 섞어야 하는 경우에는 아무것도 바꾸지 않고 멈춰요(병합 커밋·리베이스 없음).${dirty ? `\n\n커밋하지 않은 변경 ${dirty}개가 있어요.` : ""}${runningHere ? `\n이 폴더에서 에이전트 ${runningHere}개가 실행 중이에요.` : ""}`,
+      body: `${baseName(wtPath)} 의 ${status?.branch ?? "현재 브랜치"} 를 원격에서 받아옵니다.\n내 커밋과 섞어야 하는 경우에는 아무것도 바꾸지 않고 멈춰요(병합 커밋·리베이스 없음).${dirty ? `\n\n커밋하지 않은 변경 ${dirty}개가 있어요.` : ""}${runningHere ? `\n이 워크트리에서 에이전트 ${runningHere}개가 실행 중이에요.` : ""}`,
       confirmLabel: "받기",
     });
     if (ok) await runOp("받기", () => api.pull(wtPath));
@@ -127,29 +127,32 @@ export function GitPanel() {
     // 같은 이름의 로컬 브랜치가 있으면 원격 브랜치는 따로 보여 주지 않는다.
     const refs = graph.refs.filter((r) => r.target === sha && r.kind !== "tag" && !(r.kind === "remote" && localNames.has(r.short.split("/").slice(1).join("/"))));
     const items: MenuItem[] = [];
+    // 브랜치마다 한 줄("브랜치 x ▸")로 접고, 그 브랜치로 할 일은 하위 메뉴에 둔다.
     for (const r of refs) {
       const isCur = r.kind === "branch" && r.short === cur;
       if (isCur) continue; // 지금 브랜치 자신에게 할 동작은 없다
       const usedElsewhere = r.kind === "branch" && graph.worktrees.some((w) => w.branch === r.short);
-      items.push({ header: true, label: r.kind === "remote" ? `원격 브랜치 ${r.short}` : `브랜치 ${r.short}` });
-      items.push({
-        label: usedElsewhere ? "그 폴더로 가기" : "이 브랜치로 전환…",
-        hint: usedElsewhere ? "다른 워크트리가 이미 쓰고 있어요" : "지금 폴더를 체크아웃합니다",
-        onClick: () => ga.checkout(wtPath, r.short, r.kind === "remote" ? "remote" : "branch", graph.worktrees),
-      });
+      const children: MenuItem[] = [
+        {
+          label: usedElsewhere ? "그 워크트리 보기" : "이 브랜치로 전환…",
+          hint: usedElsewhere ? "다른 워크트리가 이미 쓰고 있어요" : "지금 워크트리를 체크아웃합니다",
+          onClick: () => ga.checkout(wtPath, r.short, r.kind === "remote" ? "remote" : "branch", graph.worktrees),
+        },
+      ];
       if (r.kind === "branch" && !usedElsewhere) {
-        items.push({ label: "새 워크트리에서 열기…", hint: "지금 폴더는 그대로 둡니다", onClick: () => ga.newWorktree(repo?.path ?? wtPath, { existingBranch: r.short }) });
+        children.push({ label: "새 워크트리에서 열기…", hint: "지금 워크트리는 그대로 둡니다", onClick: () => ga.newWorktree(repo?.path ?? wtPath, { existingBranch: r.short }) });
       }
       // 지금 위치와 같은 커밋이면 병합·리베이스는 아무 변화가 없으므로 보여 주지 않는다.
       if (cur && sha !== status?.head) {
-        items.push({ label: "지금 브랜치에 병합…", hint: `${r.short} → ${cur}`, onClick: () => ga.merge(wtPath, cur, r.short) });
-        items.push({ label: "지금 브랜치를 이 위로 리베이스…", hint: `⚠ ${cur} 의 커밋 해시가 바뀝니다`, onClick: () => ga.rebase(wtPath, cur, r.short, status?.upstream ?? null) });
+        children.push({ label: "지금 브랜치에 병합…", hint: `${r.short} → ${cur}`, onClick: () => ga.merge(wtPath, cur, r.short) });
+        children.push({ label: "지금 브랜치를 이 위로 리베이스…", hint: `⚠ ${cur} 의 커밋 해시가 바뀝니다`, onClick: () => ga.rebase(wtPath, cur, r.short, status?.upstream ?? null) });
       }
+      items.push({ label: `${r.kind === "remote" ? "원격 " : ""}브랜치 ${r.short}`, children, testId: `ref:${r.short}` });
     }
+    if (items.length) items.push({ separator: true, label: "" });
     items.push(
-      { header: true, label: `커밋 ${sha.slice(0, 7)}` },
       { label: "여기서 새 브랜치…", onClick: () => ga.createBranch(wtPath, sha, sha.slice(0, 10)) },
-      { label: "여기서 새 워크트리…", hint: "새 브랜치 + 새 폴더", onClick: () => ga.newWorktree(repo?.path ?? wtPath, { base: sha }) },
+      { label: "여기서 새 워크트리…", hint: "새 브랜치 + 새 워크트리", onClick: () => ga.newWorktree(repo?.path ?? wtPath, { base: sha }) },
       { label: "이 커밋으로 이동…", hint: "⚠ 브랜치 없이 커밋을 직접 봅니다", onClick: () => ga.checkout(wtPath, sha, "commit", graph.worktrees) },
       { label: "커밋 해시 복사", onClick: () => void navigator.clipboard.writeText(sha) },
     );
@@ -161,7 +164,7 @@ export function GitPanel() {
     return (
       <section className="panel" data-pane="1" tabIndex={-1}>
         <PanelHead title="Git" />
-        <Empty title="볼 폴더가 없습니다">위에서 폴더를 고르거나 '저장소 추가' 로 Git 저장소를 여세요.</Empty>
+        <Empty title="볼 워크트리가 없습니다">위에서 워크트리를 고르거나 '저장소 추가' 로 Git 저장소를 여세요.</Empty>
       </section>
     );
   }
@@ -191,12 +194,12 @@ export function GitPanel() {
           <span className="repo-name">{repo?.name ?? baseName(wtPath)}</span>
           <span className="muted">/</span>
           <span title={wtPath}>{baseName(wtPath)}</span>
-          {wt?.isMain === false && <span className="tag" title="같은 저장소를 다른 폴더로 연 워크트리">추가 워크트리</span>}
+          {wt?.isMain === false && <span className="tag" title="같은 저장소를 다른 브랜치로 연 작업 폴더">추가 워크트리</span>}
         </div>
         <div className="git-focus-line">
           <span className="muted">브랜치</span>
           {graph && status ? (
-            <BranchSwitcher worktree={wtPath} status={status} graph={graph} repoPath={repo?.path ?? wtPath} />
+            <BranchSwitcher worktree={wtPath} status={status} graph={graph} onManage={() => setTab("branches")} />
           ) : (
             <span className="branch-chip strong" data-testid="git-current-branch">
               …
@@ -212,7 +215,7 @@ export function GitPanel() {
         {sessionHere && bs?.changedSinceLast && bs.last && dismissed !== `${sessionHere.id}:${bs.last}:${bs.current}` && (
           <div className="banner banner-warn one-line" data-testid="branch-mismatch">
             <span>
-              이 세션은 <b>{branchLabel(bs.last)}</b>에서 작업했어요. 지금 폴더는 <b>{bs.currentDetached ? "브랜치 없음" : branchLabel(bs.current)}</b>입니다.
+              이 세션은 <b>{branchLabel(bs.last)}</b>에서 작업했어요. 지금 워크트리는 <b>{bs.currentDetached ? "브랜치 없음" : branchLabel(bs.current)}</b>입니다.
             </span>
             <span className="spacer" />
             {graph && bs.last !== "HEAD" && (
@@ -232,9 +235,9 @@ export function GitPanel() {
         {(
           [
             ["graph", "그래프", null],
+            ["worktrees", "워크트리", graph?.worktrees.length ?? repo?.worktrees.length ?? null],
             ["changes", "변경 사항", dirty || null],
             ["branches", "브랜치", graph ? graph.refs.filter((r) => r.kind === "branch").length : null],
-            ["worktrees", "워크트리", graph?.worktrees.length ?? repo?.worktrees.length ?? null],
           ] as [Tab, string, number | null][]
         ).map(([k, label, n]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => setTab(k)} data-tab={k}>
@@ -243,7 +246,7 @@ export function GitPanel() {
         ))}
         <span className="spacer" />
         {tab === "graph" && (
-          <button className="btn btn-ghost btn-small" onClick={() => setToHead((n) => n + 1)} title="지금 폴더가 가리키는 커밋으로 스크롤">
+          <button className="btn btn-ghost btn-small" onClick={() => setToHead((n) => n + 1)} title="지금 워크트리가 가리키는 커밋으로 스크롤">
             <Crosshair size={12} aria-hidden /> 현재 위치
           </button>
         )}

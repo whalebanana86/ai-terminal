@@ -147,7 +147,7 @@ export function ChatView({ chat }: { chat: ChatInfo }) {
     <div className="chat" data-testid="chat-view">
       <div className="chat-bar">
         <span className="muted small">
-          {chat.agent === "claude" ? `허락 범위: ${modeLabel(chat.mode)}` : `허락 범위: ${chat.mode === "workspace-write" ? "이 폴더 안에서 쓰기" : "읽기만"}`}
+          {chat.agent === "claude" ? `허락 범위: ${modeLabel(chat.mode)}` : `허락 범위: ${chat.mode === "workspace-write" ? "이 워크트리 안에서 쓰기" : "읽기만"}`}
           {!chat.alive && " · 프로세스 종료됨"}
         </span>
         <span className="spacer" />
@@ -181,7 +181,7 @@ export function ChatView({ chat }: { chat: ChatInfo }) {
             </div>
           </div>
         )}
-        {items.length === 0 && <div className="muted pad">메시지를 보내면 에이전트가 이 폴더에서 이어서 작업해요.</div>}
+        {items.length === 0 && <div className="muted pad">메시지를 보내면 에이전트가 이 워크트리에서 이어서 작업해요.</div>}
         {items.map((it, i) => {
           switch (it.kind) {
             case "user":

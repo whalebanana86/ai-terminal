@@ -162,14 +162,17 @@ export interface MenuItem {
   hint?: string;
   /** 테스트·자동화용 data-action */
   testId?: string;
+  /** 하위 메뉴(마우스를 올리거나 → 키로 펼침) */
+  children?: MenuItem[];
 }
 
-/** 우클릭 메뉴. 바깥을 누르거나 Esc 로 닫힌다. */
+/** 우클릭 메뉴. 바깥을 누르거나 Esc 로 닫힌다. 항목에 children 이 있으면 하위 메뉴로 펼친다. */
 export function ContextMenu({ x, y, items, onClose }: { x: number; y: number; items: MenuItem[]; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x, y });
+  const [sub, setSub] = useState<{ index: number; x: number; y: number } | null>(null);
   useEffect(() => {
-    const el = ref.current;
+    const el = ref.current?.querySelector<HTMLElement>(":scope > .menu");
     if (el) {
       // 화면 밖으로 나가지 않게
       const r = el.getBoundingClientRect();
@@ -189,15 +192,55 @@ export function ContextMenu({ x, y, items, onClose }: { x: number; y: number; it
       window.removeEventListener("blur", onClose);
     };
   }, [x, y, onClose]);
+  const openSub = (i: number, el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    const right = r.right + 260 < window.innerWidth;
+    setSub({ index: i, x: right ? r.right + 2 : r.left - 262, y: r.top - 4 });
+  };
   return (
-    <div className="menu" ref={ref} style={{ left: pos.x, top: pos.y }} role="menu">
-      {items.map((it, i) =>
+    <div ref={ref}>
+      <MenuList items={items} style={{ left: pos.x, top: pos.y }} onClose={onClose} onOpenSub={openSub} activeSub={sub?.index ?? null} onHoverPlain={() => setSub(null)} />
+      {sub && items[sub.index]?.children && (
+        <MenuList items={items[sub.index].children!} style={{ left: sub.x, top: Math.min(sub.y, window.innerHeight - 40 * items[sub.index].children!.length - 10) }} onClose={onClose} sub />
+      )}
+    </div>
+  );
+}
+
+function MenuList(props: {
+  items: MenuItem[];
+  style: React.CSSProperties;
+  onClose: () => void;
+  onOpenSub?: (i: number, el: HTMLElement) => void;
+  onHoverPlain?: () => void;
+  activeSub?: number | null;
+  sub?: boolean;
+}) {
+  return (
+    <div className={`menu${props.sub ? " submenu" : ""}`} style={props.style} role="menu">
+      {props.items.map((it, i) =>
         it.separator ? (
           <div key={i} className="menu-sep" />
         ) : it.header ? (
           <div key={i} className="menu-header">
             {it.label}
           </div>
+        ) : it.children ? (
+          <button
+            key={i}
+            role="menuitem"
+            aria-haspopup="menu"
+            aria-expanded={props.activeSub === i}
+            className={`menu-item has-sub${props.activeSub === i ? " open" : ""}`}
+            onMouseEnter={(e) => props.onOpenSub?.(i, e.currentTarget)}
+            onClick={(e) => props.onOpenSub?.(i, e.currentTarget)}
+            onKeyDown={(e) => e.key === "ArrowRight" && props.onOpenSub?.(i, e.currentTarget)}
+            data-action={it.testId}
+          >
+            <span className="menu-label">{it.label}</span>
+            {it.hint && <span className="menu-hint">{it.hint}</span>}
+            <span className="menu-caret">▸</span>
+          </button>
         ) : (
           <button
             key={i}
@@ -206,8 +249,9 @@ export function ContextMenu({ x, y, items, onClose }: { x: number; y: number; it
             disabled={it.disabled}
             title={it.hint}
             data-action={it.testId}
+            onMouseEnter={() => props.onHoverPlain?.()}
             onClick={() => {
-              onClose();
+              props.onClose();
               it.onClick?.();
             }}
           >

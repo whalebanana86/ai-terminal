@@ -203,7 +203,7 @@ function badges(p: { refs: GitRef[]; worktrees: Worktree[]; focusWorktree: strin
     out.push({
       key: `wt:${w.path}`,
       cls: `ref ref-wt${mine ? " ref-focus" : ""}`,
-      title: mine ? "지금 보는 폴더가 가리키는 커밋" : `다른 폴더(워크트리) ${w.path} 가 가리키는 커밋`,
+      title: mine ? "지금 보는 워크트리가 가리키는 커밋" : `다른 워크트리 ${w.path} 가 가리키는 커밋`,
       label: mine ? "현재" : `📁 ${baseName(w.path)}`,
       rank: mine ? 0 : 3,
     });
