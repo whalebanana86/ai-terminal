@@ -225,6 +225,8 @@ function FileViewer({ worktree }: { worktree: string }) {
         } else if (mode === "diff") {
           const d = await api.diffFile(worktree, viewer.rel);
           if (alive) setDiff(d);
+        } else if (mode === "stage") {
+          // StageView 가 직접 읽는다
         } else {
           const c = await api.fsRead(worktree, viewer.rel);
           if (!alive) return;
@@ -258,8 +260,11 @@ function FileViewer({ worktree }: { worktree: string }) {
             <button className={mode === "preview" ? "on" : ""} onClick={() => openViewer({ ...viewer, mode: "preview" })}>
               내용
             </button>
-            <button className={mode === "diff" ? "on" : ""} onClick={() => openViewer({ ...viewer, mode: "diff" })}>
+            <button className={mode === "diff" ? "on" : ""} onClick={() => openViewer({ ...viewer, mode: "diff" })} title="HEAD 대비 전체 변경">
               변경
+            </button>
+            <button className={mode === "stage" ? "on" : ""} onClick={() => openViewer({ ...viewer, mode: "stage" })} title="hunk 단위 스테이지">
+              스테이징
             </button>
           </div>
         )}
@@ -269,7 +274,9 @@ function FileViewer({ worktree }: { worktree: string }) {
       </div>
       {err && <div className="banner banner-error">{err}</div>}
       <div className="viewer-body">
-        {mode === "diff" ? (
+        {mode === "stage" && viewer.kind === "file" ? (
+          <StageView worktree={worktree} rel={viewer.rel} />
+        ) : mode === "diff" ? (
           diff ? <DiffView diff={diff} /> : <div className="loading">…</div>
         ) : content ? (
           content.binary ? (
@@ -291,6 +298,98 @@ function FileViewer({ worktree }: { worktree: string }) {
           <div className="loading">…</div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** 한 파일의 스테이지 안 된/된 변경을 hunk 단위로 보여 주고 스테이지·취소·버리기 */
+function StageView({ worktree, rel }: { worktree: string; rel: string }) {
+  const fsTick = useStore((s) => s.fsTick);
+  const statusTick = useStore((s) => s.statusTick);
+  const toast = useStore((s) => s.toast);
+  const ask = useStore((s) => s.ask);
+  const [data, setData] = useState<[FileDiff[], FileDiff[]] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [nonce, setNonce] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    api.diffSplit(worktree, rel).then(
+      (d) => alive && (setData(d), setErr(null)),
+      (e) => alive && setErr(errorText(e)),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [worktree, rel, fsTick, statusTick, nonce]);
+
+  const apply = async (action: "stage" | "unstage" | "discard", index: number, id: string) => {
+    if (action === "discard") {
+      const ok = await ask({ title: "이 조각의 변경 버리기", body: `${rel} 의 이 변경 조각을 워크트리에서 되돌립니다. 되돌릴 수 없습니다.`, danger: true, confirmLabel: "버리기" });
+      if (!ok) return;
+    }
+    setBusy(true);
+    try {
+      await api.hunk(worktree, rel, action, index, id);
+    } catch (e) {
+      toast("error", errorText(e));
+    } finally {
+      setBusy(false);
+      setNonce((n) => n + 1);
+      useStore.getState().bumpGit();
+    }
+  };
+
+  if (err) return <div className="banner banner-error">{err}</div>;
+  if (!data) return <div className="loading">…</div>;
+  const [unstaged, staged] = data;
+  const section = (title: string, files: FileDiff[], side: "unstaged" | "staged") => (
+    <div className="stage-section" data-side={side}>
+      <div className="stage-title">
+        {title} <span className="count">{files.reduce((n, f) => n + f.hunks.length, 0)}</span>
+      </div>
+      {!files.length || !files.some((f) => f.hunks.length) ? (
+        <div className="muted pad small">{side === "unstaged" ? "스테이지할 변경이 없습니다" : "스테이지된 변경이 없습니다"}</div>
+      ) : (
+        files.map((f, fi) =>
+          f.hunks.map((h, hi) => (
+            <div key={`${fi}:${hi}:${h.id}`} className="hunk" data-hunk={hi}>
+              <div className="hunk-head hunk-bar">
+                <span>{h.header}</span>
+                <span className="spacer" />
+                {side === "unstaged" ? (
+                  <>
+                    <button className="btn btn-small btn-ghost" disabled={busy} onClick={() => apply("discard", hi, h.id)}>
+                      버리기
+                    </button>
+                    <button className="btn btn-small" disabled={busy} onClick={() => apply("stage", hi, h.id)} data-action="stage-hunk">
+                      스테이지
+                    </button>
+                  </>
+                ) : (
+                  <button className="btn btn-small" disabled={busy} onClick={() => apply("unstage", hi, h.id)} data-action="unstage-hunk">
+                    스테이지 취소
+                  </button>
+                )}
+              </div>
+              {h.lines.map((l, li) => (
+                <div key={li} className={`dl dl-${l.kind === "+" ? "add" : l.kind === "-" ? "del" : l.kind === "\\" ? "meta" : "ctx"}`}>
+                  <span className="ln">{l.oldNo ?? ""}</span>
+                  <span className="ln">{l.newNo ?? ""}</span>
+                  <span className="sign">{l.kind === "\\" ? "" : l.kind}</span>
+                  <span className="lc">{l.text}</span>
+                </div>
+              ))}
+            </div>
+          )),
+        )
+      )}
+    </div>
+  );
+  return (
+    <div className="diff stage-view" data-testid="stage-view">
+      {section("스테이지 안 됨", unstaged, "unstaged")}
+      {section("스테이지됨", staged, "staged")}
     </div>
   );
 }

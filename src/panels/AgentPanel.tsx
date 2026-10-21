@@ -1,14 +1,32 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
-import { api, errorText, type Agent, type LinkedSession, type Transcript, type WorktreeStatus } from "../api";
+import { api, errorText, externalRunning, type Agent, type ChatInfo, type LinkedSession, type LiveRun, type Transcript, type WorktreeStatus } from "../api";
 import { AgentBadge, Empty } from "../components/Overlays";
-import { activity, baseName, branchLabel, branchState, kindLabel, kindLetter, relativeTime, relativeTo } from "../logic";
+import { activity, baseName, branchLabel, branchState, clientLabel, externalRunOf, kindLabel, kindLetter, relativeTime, relativeTo } from "../logic";
 import { useSelectedSession, useStore } from "../store";
 import { PanelHead } from "./GitPanel";
+import { ChatView } from "./ChatView";
 import { TerminalView } from "./TerminalView";
 
-type DetailTab = "terminal" | "history" | "files";
+type DetailTab = "terminal" | "chat" | "history" | "files";
+
+/** 외부에서 실행 중이라 거부되면 사용자에게 묻고, 동의하면 force 로 다시 시도한다. */
+async function withExternalConfirm<T>(fn: (force: boolean) => Promise<T>): Promise<T | null> {
+  try {
+    return await fn(false);
+  } catch (e) {
+    const ext = externalRunning(e);
+    if (!ext) throw e;
+    const ok = await useStore.getState().ask({
+      title: "다른 곳에서 실행 중인 세션",
+      body: `이 대화는 ${clientLabel(ext.client)}(PID ${ext.pid})에서 실행 중입니다.\n같은 대화를 두 곳에서 동시에 이어가면 기록이 섞이거나, CLI 가 거부할 수 있습니다(Codex 는 다른 앱이 연 대화를 막습니다).\n\n그래도 여기서 열까요?`,
+      danger: true,
+      confirmLabel: "그래도 열기",
+    });
+    return ok ? fn(true) : null;
+  }
+}
 
 export function AgentPanel() {
   const setNewOpen = useStore((s) => s.setNewSessionOpen);
@@ -48,6 +66,8 @@ function SessionList() {
   const [agent, setAgent] = useState<"all" | Agent>("all");
   const [scope, setScope] = useState<"all" | "repo">("all");
   const [showArchived, setShowArchived] = useState(false);
+  const liveRuns = useStore((s) => s.liveRuns);
+  const chats = useStore((s) => s.chats);
   const [, setTick] = useState(0);
   useEffect(() => {
     const t = window.setInterval(() => setTick((n) => n + 1), 30_000);
@@ -92,7 +112,15 @@ function SessionList() {
       </div>
       <ul className="sessions" role="listbox" aria-label="에이전트 세션">
         {list.map((s) => (
-          <SessionItem key={s.id} s={s} selected={s.id === selected} onSelect={() => select(s.id)} now={now} />
+          <SessionItem
+            key={s.id}
+            s={s}
+            selected={s.id === selected}
+            onSelect={() => select(s.id)}
+            now={now}
+            ext={externalRunOf(s.id, liveRuns)}
+            chat={chats.find((c) => c.sessionId === s.id || `chat:${c.id}` === s.id) ?? null}
+          />
         ))}
         {!list.length && <li className="muted pad">조건에 맞는 세션이 없습니다</li>}
       </ul>
@@ -100,15 +128,23 @@ function SessionList() {
   );
 }
 
-function SessionItem({ s, selected, onSelect, now }: { s: LinkedSession; selected: boolean; onSelect: () => void; now: number }) {
+function SessionItem({ s, selected, onSelect, now, ext, chat }: { s: LinkedSession; selected: boolean; onSelect: () => void; now: number; ext: LiveRun | null; chat: ChatInfo | null }) {
   const bs = branchState(s);
-  const act = s.runningExecId ? "running" : activity(s.updatedAt, now);
+  const act = s.runningExecId || chat ? "running" : ext ? "external" : activity(s.updatedAt, now);
+  const dotTitle =
+    act === "running" ? (chat ? "앱의 채팅으로 열려 있음" : "앱의 터미널에서 실행 중") : act === "external" && ext ? `${clientLabel(ext.client)}에서 실행 중 (PID ${ext.pid}${ext.status ? ", " + ext.status : ""})` : act === "live" ? "방금 기록됨" : "";
   return (
     <li role="option" aria-selected={selected} className={`session${selected ? " on" : ""}`} onClick={onSelect} data-session={s.id}>
       <div className="s-line">
         <AgentBadge agent={s.agent} small />
         <span className="s-title">{s.title}</span>
-        <span className={`dot dot-${act}`} title={act === "running" ? "앱에서 실행 중" : act === "live" ? "방금 기록됨 (외부에서 진행 중일 수 있음)" : ""} />
+        {chat && <span className="tag" title="앱의 채팅으로 열려 있음">채팅</span>}
+        {ext && !s.runningExecId && !chat && (
+          <span className="tag tag-ext" title={dotTitle}>
+            {clientLabel(ext.client)}
+          </span>
+        )}
+        <span className={`dot dot-${act}`} title={dotTitle} />
         <span className="s-time">{relativeTime(s.updatedAt, now)}</span>
       </div>
       <div className="s-line s-sub">
@@ -152,21 +188,45 @@ function SessionDetail() {
     return mine.length ? mine[mine.length - 1] : null;
   }, [session, execs]);
 
-  // 세션을 바꾸면 실행 중이면 터미널, 아니면 기록을 먼저 보여 준다.
+  const chats = useStore((s) => s.chats);
+  const liveRuns = useStore((s) => s.liveRuns);
+  const chat = session ? chats.find((c) => c.sessionId === session.id || `chat:${c.id}` === session.id) ?? null : null;
+  const ext = session ? externalRunOf(session.id, liveRuns) : null;
+  const [chatMode, setChatMode] = useState("default");
+
+  // 세션을 바꾸면 채팅 → 실행 중 터미널 → 기록 순으로 먼저 보여 준다.
   const sid = session?.id;
   useEffect(() => {
-    setTab(exec && !exec.exited ? "terminal" : "history");
+    setTab(chat ? "chat" : exec && !exec.exited ? "terminal" : "history");
+    setChatMode(session?.agent === "codex" ? "workspace-write" : "default");
   }, [sid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const resume = async () => {
     if (!session) return;
     try {
-      await api.execStart({ agent: session.agent, mode: "resume", sessionId: session.id, cols: 100, rows: 30 });
+      const r = await withExternalConfirm((force) => api.execStart({ agent: session.agent, mode: "resume", sessionId: session.id, cols: 100, rows: 30, force }));
+      if (!r) return;
       await refreshExecs();
       setTab("terminal");
     } catch (e) {
       toast("error", `재개 실패: ${errorText(e)}`);
     }
+  };
+  const openChat = async () => {
+    if (!session) return;
+    try {
+      const r = await withExternalConfirm((force) => api.chatStart({ agent: session.agent, sessionId: session.id, mode: chatMode, force }));
+      if (!r) return;
+      await useStore.getState().refreshChats();
+      setTab("chat");
+    } catch (e) {
+      toast("error", `채팅 열기 실패: ${errorText(e)}`);
+    }
+  };
+  const closeChat = async () => {
+    if (!chat) return;
+    await api.chatClose(chat.id).catch(() => {});
+    await useStore.getState().refreshChats();
   };
   const stop = async () => {
     if (!exec) return;
@@ -178,10 +238,19 @@ function SessionDetail() {
     <div className="session-detail">
       {session ? (
         <>
-          <SessionHeader s={session} running={!!exec && !exec.exited} onResume={resume} onStop={stop} />
+          <SessionHeader s={session} running={!!exec && !exec.exited} chatOpen={!!chat} onResume={resume} onStop={stop} onCloseChat={closeChat} />
+          {ext && !(exec && !exec.exited) && !chat && (
+            <div className="banner banner-ext" data-testid="external-banner">
+              {clientLabel(ext.client)}에서 실행 중입니다 (PID {ext.pid}
+              {ext.status ? `, ${ext.status}` : ""}). 여기서 동시에 열면 기록이 섞일 수 있습니다.
+            </div>
+          )}
           <div className="tabs" role="tablist">
             <button role="tab" aria-selected={tab === "terminal"} className={tab === "terminal" ? "on" : ""} onClick={() => setTab("terminal")}>
               터미널{exec && !exec.exited ? " ●" : ""}
+            </button>
+            <button role="tab" aria-selected={tab === "chat"} className={tab === "chat" ? "on" : ""} onClick={() => setTab("chat")} data-tab="chat">
+              채팅{chat ? " ●" : ""}
             </button>
             <button role="tab" aria-selected={tab === "history"} className={tab === "history" ? "on" : ""} onClick={() => setTab("history")}>
               기록
@@ -221,6 +290,35 @@ function SessionDetail() {
             )}
           </div>
         )}
+        {session && tab === "chat" &&
+          (chat ? (
+            <ChatView chat={chat} />
+          ) : (
+            <div className="term-placeholder">
+              <p>앱 안의 채팅 화면으로 이 대화를 이어갑니다. 도구 사용 허락을 여기서 버튼으로 답할 수 있습니다.</p>
+              <label className="form-row" style={{ justifyContent: "center" }}>
+                <span className="muted">{session.agent === "claude" ? "권한 모드" : "샌드박스"}</span>
+                <select value={chatMode} onChange={(e) => setChatMode(e.target.value)} aria-label="채팅 권한">
+                  {session.agent === "claude" ? (
+                    <>
+                      <option value="default">매번 묻기</option>
+                      <option value="acceptEdits">파일 편집은 자동 허용</option>
+                      <option value="plan">계획만 (수정 안 함)</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="workspace-write">작업 폴더 쓰기 허용</option>
+                      <option value="read-only">읽기 전용</option>
+                    </>
+                  )}
+                </select>
+              </label>
+              <button className="btn btn-primary" onClick={openChat} disabled={!session.cwdExists || !!(exec && !exec.exited) || session.id.startsWith("exec:")} data-action="open-chat">
+                채팅으로 이어가기
+              </button>
+              {exec && !exec.exited && <p className="muted small">터미널에서 실행 중이라 채팅으로 열 수 없습니다. 먼저 중지하세요.</p>}
+            </div>
+          ))}
         {session && tab === "history" && <HistoryView s={session} />}
         {session && tab === "files" && <TouchedFilesView s={session} />}
       </div>
@@ -228,7 +326,21 @@ function SessionDetail() {
   );
 }
 
-function SessionHeader({ s, running, onResume, onStop }: { s: LinkedSession; running: boolean; onResume: () => void; onStop: () => void }) {
+function SessionHeader({
+  s,
+  running,
+  chatOpen,
+  onResume,
+  onStop,
+  onCloseChat,
+}: {
+  s: LinkedSession;
+  running: boolean;
+  chatOpen: boolean;
+  onResume: () => void;
+  onStop: () => void;
+  onCloseChat: () => void;
+}) {
   const bs = branchState(s);
   return (
     <div className="session-head">
@@ -238,7 +350,11 @@ function SessionHeader({ s, running, onResume, onStop }: { s: LinkedSession; run
           {s.title}
         </span>
         <span className="spacer" />
-        {running ? (
+        {chatOpen ? (
+          <button className="btn btn-small" onClick={onCloseChat} title="채팅 프로세스를 닫습니다. 대화는 남아 나중에 이어갈 수 있습니다.">
+            채팅 닫기
+          </button>
+        ) : running ? (
           <button className="btn btn-small btn-danger" onClick={onStop}>
             중지
           </button>
@@ -424,16 +540,25 @@ function NewSessionDialog({ onClose }: { onClose: () => void }) {
   const [agent, setAgent] = useState<Agent>("claude");
   const [cwd, setCwd] = useState(focus?.worktreePath ?? "");
   const [busy, setBusy] = useState(false);
+  const [how, setHow] = useState<"terminal" | "chat">("terminal");
+  const [mode, setMode] = useState("default");
+  useEffect(() => setMode(agent === "codex" ? "workspace-write" : "default"), [agent]);
   const options = repos.flatMap((r) => r.worktrees.filter((w) => w.exists && !w.bare).map((w) => ({ repo: r.name, w })));
 
   const start = async () => {
     setBusy(true);
     try {
-      const e = await api.execStart({ agent, mode: "new", cwd, cols: 100, rows: 30 });
       const st = useStore.getState();
-      await st.refreshExecs();
-      // 목록에 임시 항목으로 들어가 있으므로 고르면 그 워크트리로 포커스가 옮겨진다.
-      st.selectSession(e.sessionId ?? `exec:${e.id}`);
+      if (how === "chat") {
+        const c = await api.chatStart({ agent, cwd, mode });
+        await st.refreshChats();
+        st.selectSession(c.sessionId ?? `chat:${c.id}`);
+      } else {
+        const e = await api.execStart({ agent, mode: "new", cwd, cols: 100, rows: 30 });
+        await st.refreshExecs();
+        // 목록에 임시 항목으로 들어가 있으므로 고르면 그 워크트리로 포커스가 옮겨진다.
+        st.selectSession(e.sessionId ?? `exec:${e.id}`);
+      }
       onClose();
     } catch (err) {
       toast("error", `시작 실패: ${errorText(err)}`);
@@ -474,6 +599,33 @@ function NewSessionDialog({ onClose }: { onClose: () => void }) {
             다른 폴더…
           </button>
         </div>
+        <div className="form-row">
+          <label>
+            <input type="radio" checked={how === "terminal"} onChange={() => setHow("terminal")} /> 터미널 (원본 CLI 화면)
+          </label>
+          <label>
+            <input type="radio" checked={how === "chat"} onChange={() => setHow("chat")} /> 채팅 (앱 화면)
+          </label>
+        </div>
+        {how === "chat" && (
+          <div className="form-row col">
+            <span className="muted">{agent === "claude" ? "권한 모드" : "샌드박스"}</span>
+            <select value={mode} onChange={(e) => setMode(e.target.value)} aria-label="채팅 권한">
+              {agent === "claude" ? (
+                <>
+                  <option value="default">매번 묻기 (도구마다 허용 버튼)</option>
+                  <option value="acceptEdits">파일 편집은 자동 허용</option>
+                  <option value="plan">계획만 (수정 안 함)</option>
+                </>
+              ) : (
+                <>
+                  <option value="workspace-write">작업 폴더 쓰기 허용</option>
+                  <option value="read-only">읽기 전용</option>
+                </>
+              )}
+            </select>
+          </div>
+        )}
         <p className="muted small">기존 CLI 로그인·구독을 그대로 씁니다. 앱은 대화 내용을 외부로 보내지 않습니다.</p>
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>

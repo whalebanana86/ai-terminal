@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import type { ChangeBatch } from "./api";
 import { api } from "./api";
-import { ConfirmDialog, Toasts } from "./components/Overlays";
+import { ConfirmDialog, PromptDialog, Toasts } from "./components/Overlays";
 import { TopBar } from "./components/TopBar";
 import { AgentPanel } from "./panels/AgentPanel";
 import { FilePanel } from "./panels/FilePanel";
@@ -36,6 +36,8 @@ export default function App() {
         st().toast(e.payload.code === 0 ? "info" : "error", `에이전트 프로세스가 종료되었습니다 (코드 ${e.payload.code ?? "?"})`);
         void st().refreshSessions();
       }),
+      listen("chat-changed", () => void st().refreshChats()),
+      listen<import("./api").LiveRun[]>("live-runs", (e) => st().setLiveRuns(e.payload)),
       listen("exec-linked", async () => {
         await st().refreshExecs();
         void st().refreshSessions();
@@ -88,6 +90,7 @@ export default function App() {
       )}
       <Toasts />
       <ConfirmDialog />
+      <PromptDialog />
     </div>
   );
 }

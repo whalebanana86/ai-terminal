@@ -12,9 +12,9 @@ use std::time::{Duration, Instant};
 
 use crate::env::shell_env;
 
-const READ_TIMEOUT: Duration = Duration::from_secs(30);
-const NETWORK_TIMEOUT: Duration = Duration::from_secs(180);
-const COMMIT_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+pub(crate) const READ_TIMEOUT: Duration = Duration::from_secs(30);
+pub(crate) const NETWORK_TIMEOUT: Duration = Duration::from_secs(180);
+pub(crate) const COMMIT_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 
 #[derive(Debug)]
 pub struct GitOutput {
@@ -55,6 +55,10 @@ pub fn git_command(cwd: &Path) -> Command {
         .env("GIT_OPTIONAL_LOCKS", "0")
         // 경로는 글자 그대로: 파일명의 [1], *, ?, :(top) 이 glob/pathspec magic 으로 해석되지 않게
         .env("GIT_LITERAL_PATHSPECS", "1")
+        // merge/rebase --continue 가 편집기를 띄워 멈추지 않게 한다(메시지는 git 기본값 사용).
+        .env("GIT_EDITOR", "true")
+        .env("GIT_SEQUENCE_EDITOR", "true")
+        .env("GIT_MERGE_AUTOEDIT", "no")
         .env_remove("GIT_DIR")
         .env_remove("GIT_WORK_TREE")
         .env_remove("GIT_INDEX_FILE")
@@ -69,11 +73,11 @@ pub fn git_command(cwd: &Path) -> Command {
     cmd
 }
 
-fn run_raw(cwd: &Path, args: &[&str], input: Option<&[u8]>, timeout: Duration) -> Result<GitOutput> {
+pub(crate) fn run_raw(cwd: &Path, args: &[&str], input: Option<&[u8]>, timeout: Duration) -> Result<GitOutput> {
     run_cmd(git_command(cwd), args, input, timeout)
 }
 
-fn run_cmd(mut cmd: Command, args: &[&str], input: Option<&[u8]>, timeout: Duration) -> Result<GitOutput> {
+pub(crate) fn run_cmd(mut cmd: Command, args: &[&str], input: Option<&[u8]>, timeout: Duration) -> Result<GitOutput> {
     cmd.args(args);
     if input.is_some() {
         cmd.stdin(Stdio::piped());
@@ -123,7 +127,7 @@ fn run_cmd(mut cmd: Command, args: &[&str], input: Option<&[u8]>, timeout: Durat
     })
 }
 
-fn check(args: &[&str], out: GitOutput) -> Result<Vec<u8>> {
+pub(crate) fn check(args: &[&str], out: GitOutput) -> Result<Vec<u8>> {
     if out.code != 0 {
         return Err(GitError { args: args.join(" "), stderr: out.stderr, code: out.code }.into());
     }
@@ -406,7 +410,7 @@ pub fn parse_status_v2_z(raw: &str) -> WorktreeStatus {
     st
 }
 
-fn operation_in_progress(git_dir: &Path) -> Option<String> {
+pub(crate) fn operation_in_progress(git_dir: &Path) -> Option<String> {
     let checks = [
         ("rebase-merge", "rebase"),
         ("rebase-apply", "rebase"),
@@ -646,6 +650,18 @@ pub struct DiffLine {
 pub struct DiffHunk {
     pub header: String,
     pub lines: Vec<DiffLine>,
+    /// hunk 원문의 지문. 스테이징 요청 때 화면에서 본 hunk 와 지금 hunk 가 같은지 확인한다.
+    pub id: String,
+}
+
+/// 짧은 지문(FNV-1a 64)
+pub fn fingerprint(text: &str) -> String {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in text.as_bytes() {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    format!("{h:016x}")
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Default)]
@@ -719,7 +735,9 @@ fn strip_diff_path(p: &str) -> Option<String> {
 }
 
 pub fn parse_unified_diff(raw: &str) -> Vec<FileDiff> {
+    // 헤더(@@) 다음 줄부터 다음 헤더 전까지가 hunk 원문이다. id 는 split_patch 와 같은 규칙으로 만든다.
     let mut files: Vec<FileDiff> = Vec::new();
+    let mut hunk_raw = String::new();
     let mut old_no = 0u32;
     let mut new_no = 0u32;
     for line in raw.split('\n') {
@@ -745,11 +763,19 @@ pub fn parse_unified_diff(raw: &str) -> Vec<FileDiff> {
             let (o, n) = parse_hunk_header(line);
             old_no = o;
             new_no = n;
-            file.hunks.push(DiffHunk { header: line.to_string(), lines: Vec::new() });
+            file.hunks.push(DiffHunk { header: line.to_string(), lines: Vec::new(), id: String::new() });
+            hunk_raw.clear();
+            hunk_raw.push_str(line);
+            hunk_raw.push('\n');
             continue;
         }
         let Some(hunk) = file.hunks.last_mut() else { continue };
         let Some(first) = line.chars().next() else { continue };
+        if matches!(first, ' ' | '+' | '-' | '\\') {
+            hunk_raw.push_str(line);
+            hunk_raw.push('\n');
+            hunk.id = fingerprint(&hunk_raw);
+        }
         let text = line[first.len_utf8()..].to_string();
         match first {
             ' ' => {

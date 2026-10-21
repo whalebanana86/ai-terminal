@@ -29,7 +29,7 @@ git init -q nested-repo   # 중첩 저장소 (status 에 "nested-repo/")
 cd "$R"
 
 echo "── A. 저장소 인식"
-js "await window.__TAURI_INTERNALS__.invoke('repo_add', {path: '$R/demo'}); await window.__aitermStore.getState().refreshRepos(); window.__aitermStore.getState().setFocusWorktree('$R/demo'); await new Promise(r => setTimeout(r, 1500)); return 'ok'" >/dev/null
+js "await window.__TAURI_INTERNALS__.invoke('repo_add', {path: '$R/demo'}); await window.__aitermStore.getState().refreshRepos(); window.__aitermStore.getState().setFocusWorktree('$R/demo'); await new Promise(r => setTimeout(r, 1000)); document.querySelector('.tabs [data-tab=graph]')?.click(); await new Promise(r => setTimeout(r, 800)); return 'ok'" >/dev/null
 APP_WT=$(js "const r = window.__aitermStore.getState().repos.find(r => r.id === '$R/demo/.git'); return r.worktrees.map(w => w.path + ' ' + w.branch + ' ' + w.head).join('|')")
 CLI_WT=$(git -C "$R/demo" worktree list --porcelain | awk '/^worktree/{p=$2} /^HEAD/{h=$2} /^branch/{sub("refs/heads/","",$2); print p" "$2" "h}' | paste -sd'|' -)
 check "워크트리 목록 = git worktree list" "$APP_WT" "$CLI_WT"
@@ -70,20 +70,21 @@ deny "git_status(홈) 거부" git_status "{\"path\": \"$HOME\"}"
 deny "워크트리 밖 rel 거부" fs_read "{\"worktree\": \"$R/demo\", \"rel\": \"../demo-one/a.txt\"}"
 deny "등록 안 된 폴더 Finder 열기 거부" reveal_in_finder '{"path": "/etc"}'
 
-echo "── 커밋: 고른 파일만 / 중첩 저장소 제외"
-js "
+echo "── 커밋: 스테이지한 파일만 / 중첩 저장소 제외"
+cat > /tmp/aiterm-reg-commit.js <<'JS'
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
-[...document.querySelectorAll('.tabs button')].find(b => b.innerText.startsWith('변경 사항')).click(); await wait(600);
-const box = (p) => [...document.querySelectorAll('.changes li')].find(li => li.querySelector('.path')?.innerText === p)?.querySelector('input');
-for (const li of document.querySelectorAll('.changes li')) { const p = li.querySelector('.path').innerText; const i = li.querySelector('input'); if (p !== 'foo[1].txt' && i.checked && !i.disabled) i.click(); }
-await wait(200);
+document.querySelector('.tabs [data-tab=changes]').click(); await wait(700);
+const row = (p) => document.querySelector(`[data-testid=unstaged-list] li[data-path="${p}"]`);
+row('foo[1].txt').querySelector('button[aria-label$="스테이지"]').click(); await wait(900);
 const ta = document.querySelector('.commit-box textarea');
 Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(ta, 'foo[1] 만');
 ta.dispatchEvent(new Event('input', {bubbles: true})); await wait(200);
-document.querySelector('.commit-box .btn-primary').click(); await wait(2000);
-return 1" >/dev/null
+document.querySelector('[data-testid=commit-btn]').click(); await wait(2000);
+return 1;
+JS
+python3 "$EVAL" -f /tmp/aiterm-reg-commit.js >/dev/null
 check "커밋된 파일 = foo[1].txt 하나" "$(git -C "$R/demo" show --name-only --format= HEAD | paste -sd, -)" "foo[1].txt"
-check "중첩 저장소는 체크 불가" "$(js "const li = [...document.querySelectorAll('.changes li')].find(li => li.querySelector('.path').innerText === 'nested-repo/'); return li ? String(li.querySelector('input').disabled) : 'missing'")" "true"
+check "중첩 저장소에는 스테이지 버튼 없음" "$(js "const li = document.querySelector('[data-testid=unstaged-list] li[data-path=\"nested-repo/\"]'); return li ? String(!li.querySelector('button[aria-label\$=\"스테이지\"]')) : 'missing'")" "true"
 
 echo "── F. 외부 브랜치 변경"
 git -C "$R/demo-one" switch -qc wt-one-v2

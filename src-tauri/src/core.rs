@@ -11,6 +11,8 @@ use std::sync::Arc;
 use crate::db::{now_ms, Db, ExecutionRow, RepoRow, SessionLink};
 use crate::git::{self, RepoLocation, Worktree};
 use crate::graph::{self, GraphRow};
+use crate::chat::{ChatInfo, ChatManager, StartChat};
+use crate::procs::LiveRun;
 use crate::pty::{PtyManager, SpawnSpec};
 use crate::sessions::{self, SessionIndex, SessionMeta, Transcript};
 use crate::watch::WatchTarget;
@@ -88,11 +90,16 @@ pub struct StartRequest {
     pub cwd: Option<String>,
     pub cols: u16,
     pub rows: u16,
+    /// 외부에서 실행 중인 세션이라도 열기(사용자가 확인함)
+    pub force: bool,
 }
 
 pub struct AppCore {
     pub db: Db,
     pub pty: PtyManager,
+    pub chats: ChatManager,
+    /// 마지막으로 감지한 실행 중 에이전트(외부 포함)
+    live: Mutex<Vec<LiveRun>>,
     index: Mutex<SessionIndex>,
     locate_cache: Mutex<HashMap<String, (std::time::Instant, Option<RepoLocation>)>>,
     /// 실행 id → 실행 정보 (앱이 띄운 것)
@@ -128,6 +135,8 @@ impl AppCore {
         Arc::new(Self {
             db,
             pty: PtyManager::default(),
+            chats: ChatManager::default(),
+            live: Mutex::new(Vec::new()),
             index: Mutex::new(SessionIndex::default()),
             locate_cache: Mutex::new(HashMap::new()),
             execs: Mutex::new(HashMap::new()),
@@ -432,10 +441,7 @@ impl AppCore {
                 if !Path::new(&cwd).is_dir() {
                     bail!("세션이 작업하던 폴더가 없습니다: {cwd}\n워크트리가 삭제되었을 수 있습니다.");
                 }
-                // 이미 이 세션을 앱에서 실행 중이면 같은 대화를 두 번 띄우지 않는다.
-                if let Some(e) = self.execs.lock().values().find(|e| e.session_id.as_deref() == Some(&sid) && !e.exited) {
-                    bail!("이 세션은 이미 실행 중입니다 (실행 {})", e.id);
-                }
+                self.ensure_not_open(&sid, req.force)?;
                 let args = if agent == "claude" {
                     vec!["--resume".to_string(), meta.external_id.clone()]
                 } else {
@@ -522,6 +528,73 @@ impl AppCore {
         Ok(info)
     }
 
+    /// 같은 대화를 두 곳에서 동시에 쓰면 기록이 꼬인다. 앱 안의 터미널·채팅은 막고,
+    /// 외부에서 실행 중이면 사용자가 확인(force)한 경우에만 연다.
+    pub fn ensure_not_open(&self, session_id: &str, force: bool) -> Result<()> {
+        if let Some(e) = self.execs.lock().values().find(|e| e.session_id.as_deref() == Some(session_id) && !e.exited) {
+            bail!("이 세션은 이미 앱의 터미널에서 실행 중입니다 (실행 {})", e.id);
+        }
+        if self.chats.find_by_session(session_id).is_some() {
+            bail!("이 세션은 이미 앱의 채팅으로 열려 있습니다");
+        }
+        if !force {
+            if let Some(r) = self.live.lock().iter().find(|r| r.session_id == session_id && !r.owned_by_app) {
+                bail!("EXTERNAL_RUNNING:{}:{}", r.pid, r.client);
+            }
+        }
+        Ok(())
+    }
+
+    // ───────────── 실행 중 감지 ─────────────
+
+    /// 앱이 띄운 프로세스 pid (터미널 실행 + 채팅)
+    pub fn app_pids(&self) -> std::collections::HashSet<u32> {
+        let mut set: std::collections::HashSet<u32> = self.exec_list().into_iter().filter(|e| !e.exited).filter_map(|e| e.pid).collect();
+        set.extend(self.chats.list().into_iter().filter_map(|c| c.pid));
+        set
+    }
+
+    /// 다시 훑어서 바뀌었으면 true
+    pub fn refresh_live(&self) -> bool {
+        let runs = crate::procs::scan(&self.app_pids());
+        let mut cur = self.live.lock();
+        if *cur == runs {
+            return false;
+        }
+        *cur = runs;
+        true
+    }
+
+    pub fn live_runs(&self) -> Vec<LiveRun> {
+        self.live.lock().clone()
+    }
+
+    // ───────────── 채팅 ─────────────
+
+    /// 세션을 채팅으로 열거나(resume), 새 채팅을 시작한다.
+    pub fn chat_start(&self, agent: &str, session_id: Option<&str>, cwd: Option<&str>, mode: &str, force: bool) -> Result<ChatInfo> {
+        let events = self.events.clone();
+        let on_change: Arc<dyn Fn(&ChatInfo) + Send + Sync> = Arc::new(move |info| events("chat-changed", json!(info)));
+        let (resume_id, cwd) = match session_id {
+            Some(sid) => {
+                if let Some(c) = self.chats.find_by_session(sid) {
+                    return Ok(c.info()); // 이미 열린 채팅
+                }
+                self.ensure_not_open(sid, force)?;
+                let meta = self.find_session(sid).ok_or_else(|| anyhow!("세션을 찾을 수 없습니다: {sid}"))?;
+                if meta.agent != agent {
+                    bail!("세션 종류가 맞지 않습니다");
+                }
+                let cwd = meta.cwd.clone().ok_or_else(|| anyhow!("세션에 작업 폴더 기록이 없습니다"))?;
+                (Some(meta.external_id), cwd)
+            }
+            None => (None, cwd.ok_or_else(|| anyhow!("작업 폴더를 고르세요"))?.to_string()),
+        };
+        let info = self.chats.start(StartChat { agent: agent.to_string(), resume_id, cwd, mode: mode.to_string() }, on_change)?;
+        (self.events)("chat-changed", json!(info));
+        Ok(info)
+    }
+
     /// Codex 새 실행은 세션 id 를 미리 알 수 없다. 같은 cwd 에서 실행 이후 생긴 스레드와 연결한다.
     pub fn link_pending_codex_execs(&self) {
         /// 실행 시작 뒤 이 시간 안에 생긴 스레드만 그 실행의 것으로 본다.
@@ -603,8 +676,7 @@ mod tests {
         std::fs::write(dir.join(format!("rollout-2026-10-01T00-00-00-{id}.jsonl.zst")), zstd::encode_all(data.as_bytes(), 3).unwrap()).unwrap();
     }
 
-    // HOME 을 바꾸는 테스트는 동시에 돌면 안 된다.
-    static HOME_LOCK: Mutex<()> = parking_lot::const_mutex(());
+    use crate::env::TEST_ENV_LOCK as HOME_LOCK;
 
     #[test]
     fn sessions_link_to_their_own_worktree_and_branches_stay_separate() {
@@ -749,7 +821,7 @@ mod tests {
         let core = AppCore::new(Db::open_in_memory().unwrap(), Arc::new(|_, _| {}));
         core.list_sessions().unwrap();
         let info = core
-            .start(StartRequest { agent: "claude".into(), mode: "resume".into(), session_id: Some("claude:c9".into()), cwd: None, cols: 80, rows: 24 })
+            .start(StartRequest { agent: "claude".into(), mode: "resume".into(), session_id: Some("claude:c9".into()), cwd: None, cols: 80, rows: 24, force: false })
             .unwrap();
         assert_eq!(info.branch_at_start.as_deref(), Some("feature"));
         assert_eq!(info.worktree_path.as_deref(), Some(wt.to_str().unwrap()));
@@ -767,7 +839,7 @@ mod tests {
 
         // Codex 새 실행: 시작 후 같은 cwd 에 생긴 스레드와 연결된다
         let info = core
-            .start(StartRequest { agent: "codex".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24 })
+            .start(StartRequest { agent: "codex".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false })
             .unwrap();
         assert!(info.session_id.is_none());
         write_codex(&home, "fresh", &main, "main");
@@ -782,7 +854,7 @@ mod tests {
 
         // 같은 폴더에서 두 번째 새 실행: 이미 연결된 스레드를 다시 가져가지 않는다.
         let second = core
-            .start(StartRequest { agent: "codex".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24 })
+            .start(StartRequest { agent: "codex".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false })
             .unwrap();
         core.list_sessions().unwrap();
         let e2 = core.exec_list().into_iter().find(|e| e.id == second.id).unwrap();

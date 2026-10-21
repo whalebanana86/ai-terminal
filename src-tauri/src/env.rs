@@ -11,6 +11,10 @@ use std::time::Duration;
 
 static SHELL_ENV: OnceLock<HashMap<String, String>> = OnceLock::new();
 
+/// 프로세스 환경변수(AITERM_HOME, AITERM_*_BIN)를 바꾸는 테스트끼리 직렬화하는 잠금
+#[cfg(test)]
+pub static TEST_ENV_LOCK: parking_lot::Mutex<()> = parking_lot::const_mutex(());
+
 const START: &str = "__AITERM_ENV_START__";
 const END: &str = "__AITERM_ENV_END__";
 

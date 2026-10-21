@@ -1,6 +1,6 @@
 // 앱 전역 상태. "focus" 하나를 세 패널이 함께 구독한다.
 import { create } from "zustand";
-import { api, errorText, type AppInfo, type ExecInfo, type LinkedSession, type RepoSummary } from "./api";
+import { api, errorText, type AppInfo, type ChatInfo, type ExecInfo, type LinkedSession, type LiveRun, type RepoSummary } from "./api";
 import { mergeSessions } from "./logic";
 
 /** 세 패널이 바라보는 워크트리. 조회 전용이며 절대 체크아웃을 일으키지 않는다. */
@@ -11,7 +11,7 @@ export interface Focus {
 }
 
 export type Viewer =
-  | { kind: "file"; rel: string; mode: "preview" | "diff" }
+  | { kind: "file"; rel: string; mode: "preview" | "diff" | "stage" }
   | { kind: "commit-file"; sha: string; rel: string }
   | null;
 
@@ -19,6 +19,28 @@ export interface Toast {
   id: number;
   kind: "info" | "error" | "success";
   text: string;
+}
+
+export interface PromptField {
+  key: string;
+  label: string;
+  value: string;
+  placeholder?: string;
+  /** select 로 보여 줄 선택지 */
+  options?: { value: string; label: string }[];
+  /** 체크박스 ("true"/"false") */
+  checkbox?: boolean;
+}
+
+export interface PromptRequest {
+  title: string;
+  body?: string;
+  fields: PromptField[];
+  confirmLabel?: string;
+  danger?: boolean;
+  /** 오류 문구를 돌려주면 확인을 막는다 */
+  validate?: (values: Record<string, string>) => string | null;
+  resolve: (values: Record<string, string> | null) => void;
 }
 
 export interface ConfirmRequest {
@@ -51,6 +73,9 @@ interface State {
   worktreeActivity: Record<string, number>;
   toasts: Toast[];
   confirm: ConfirmRequest | null;
+  prompt: PromptRequest | null;
+  chats: ChatInfo[];
+  liveRuns: LiveRun[];
   newSessionOpen: boolean;
   restored: boolean;
 
@@ -64,6 +89,9 @@ interface State {
   toast: (kind: Toast["kind"], text: string) => void;
   dismissToast: (id: number) => void;
   ask: (req: Omit<ConfirmRequest, "resolve">) => Promise<boolean>;
+  promptForm: (req: Omit<PromptRequest, "resolve">) => Promise<Record<string, string> | null>;
+  refreshChats: () => Promise<void>;
+  setLiveRuns: (runs: LiveRun[]) => void;
   setNewSessionOpen: (open: boolean) => void;
   onFsChanged: (worktree: string, paths: string[], files: boolean, git: boolean) => void;
   bumpGit: () => void;
@@ -93,6 +121,9 @@ export const useStore = create<State>((set, get) => ({
   worktreeActivity: {},
   toasts: [],
   confirm: null,
+  prompt: null,
+  chats: [],
+  liveRuns: [],
   newSessionOpen: false,
   restored: false,
 
@@ -114,7 +145,8 @@ export const useStore = create<State>((set, get) => ({
     } catch {
       /* 깨진 저장값은 무시 */
     }
-    await Promise.all([get().refreshRepos(), get().refreshExecs(), get().refreshSessions()]);
+    await Promise.all([get().refreshRepos(), get().refreshExecs(), get().refreshSessions(), get().refreshChats()]);
+    api.liveRuns().then((r) => set({ liveRuns: r }), () => {});
     // 선택된 세션이 있으면 그 세션 워크트리로 포커스를 다시 맞춘다(저장 이후 워크트리가 바뀌었을 수 있음).
     const sel = get().selectedSessionId;
     const s = sel ? get().sessions.find((x) => x.id === sel) : null;
@@ -141,7 +173,7 @@ export const useStore = create<State>((set, get) => ({
 
   refreshExecs: async () => {
     const execs = await api.execList().catch(() => get().execs);
-    set({ execs, sessions: mergeSessions(get().rawSessions, execs) });
+    set({ execs, sessions: mergeSessions(get().rawSessions, execs, get().chats) });
     // 임시 항목(exec:<id>)을 보고 있었는데 실제 세션과 연결되었으면 선택을 옮긴다.
     const sel = get().selectedSessionId;
     if (sel?.startsWith("exec:")) {
@@ -192,6 +224,35 @@ export const useStore = create<State>((set, get) => ({
         },
       });
     }),
+
+  promptForm: (req) =>
+    new Promise((resolve) => {
+      set({
+        prompt: {
+          ...req,
+          resolve: (v) => {
+            set({ prompt: null });
+            resolve(v);
+          },
+        },
+      });
+    }),
+
+  refreshChats: async () => {
+    const chats = await api.chatList().catch(() => get().chats);
+    set({ chats, sessions: mergeSessions(get().rawSessions, get().execs, chats) });
+    // 새 채팅(임시 항목 chat:<id>)을 보고 있었는데 세션 id 가 정해졌으면 선택을 옮긴다.
+    const sel = get().selectedSessionId;
+    if (sel?.startsWith("chat:")) {
+      const c = chats.find((x) => `chat:${x.id}` === sel && x.sessionId);
+      if (c?.sessionId) {
+        await get().refreshSessions();
+        get().selectSession(c.sessionId);
+      }
+    }
+  },
+
+  setLiveRuns: (runs) => set({ liveRuns: runs }),
 
   setNewSessionOpen: (open) => set({ newSessionOpen: open }),
 
@@ -254,7 +315,7 @@ async function loadSessions() {
     try {
       const raw = await api.sessions();
       if (seq !== sessionSeq) return;
-      set({ rawSessions: raw, sessions: mergeSessions(raw, get().execs) });
+      set({ rawSessions: raw, sessions: mergeSessions(raw, get().execs, get().chats) });
       // 세션에서 저장소가 새로 발견되었을 수 있다.
       if (raw.some((s) => s.repoId && !get().repos.some((r) => r.id === s.repoId))) await get().refreshRepos();
     } catch (e) {

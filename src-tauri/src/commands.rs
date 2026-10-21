@@ -260,6 +260,8 @@ pub struct StartArgs {
     pub cwd: Option<String>,
     pub cols: u16,
     pub rows: u16,
+    #[serde(default)]
+    pub force: bool,
 }
 
 #[tauri::command]
@@ -273,6 +275,7 @@ pub async fn exec_start(state: State<'_, AppState>, args: StartArgs) -> Res<Exec
             cwd: args.cwd,
             cols: args.cols,
             rows: args.rows,
+            force: args.force,
         })
     })
     .await
@@ -371,4 +374,152 @@ pub fn automation_reply(id: u64, ok: bool, value: String) -> Res<()> {
         let _ = (id, ok, value);
         Err("automation disabled".into())
     }
+}
+
+// ───────────── 실행 중 감지 ─────────────
+
+#[tauri::command]
+pub fn live_runs(state: State<'_, AppState>) -> Vec<crate::procs::LiveRun> {
+    state.core.live_runs()
+}
+
+// ───────────── 채팅 ─────────────
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatStartArgs {
+    pub agent: String,
+    pub session_id: Option<String>,
+    pub cwd: Option<String>,
+    pub mode: String,
+    #[serde(default)]
+    pub force: bool,
+}
+
+#[tauri::command]
+pub async fn chat_start(state: State<'_, AppState>, args: ChatStartArgs) -> Res<crate::chat::ChatInfo> {
+    let core = state.core.clone();
+    blocking(move || {
+        if let Some(c) = &args.cwd {
+            if args.session_id.is_none() && !std::path::Path::new(c).is_dir() {
+                anyhow::bail!("폴더가 없습니다: {c}");
+            }
+        }
+        core.chat_start(&args.agent, args.session_id.as_deref(), args.cwd.as_deref(), &args.mode, args.force)
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn chat_attach(state: State<'_, AppState>, id: String, on_event: Channel<serde_json::Value>) -> Res<u64> {
+    state
+        .core
+        .chats
+        .attach(&id, Box::new(move |ev| on_event.send(serde_json::to_value(ev).unwrap_or_default()).is_ok()))
+        .map_err(err)
+}
+
+#[tauri::command]
+pub fn chat_detach(state: State<'_, AppState>, id: String, sink_id: u64) {
+    state.core.chats.detach(&id, sink_id);
+}
+
+#[tauri::command]
+pub async fn chat_send(app: tauri::AppHandle, state: State<'_, AppState>, id: String, text: String) -> Res<()> {
+    use tauri::Emitter;
+    let core = state.core.clone();
+    blocking(move || {
+        let app2 = app.clone();
+        core.chats.send(&id, &text, std::sync::Arc::new(move |info| {
+            let _ = app2.emit("chat-changed", info);
+        }))
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn chat_permission(state: State<'_, AppState>, id: String, request_id: String, allow: bool, input: Option<serde_json::Value>) -> Res<()> {
+    state.core.chats.respond_permission(&id, &request_id, allow, input).map_err(err)
+}
+
+#[tauri::command]
+pub fn chat_interrupt(state: State<'_, AppState>, id: String) -> Res<()> {
+    state.core.chats.interrupt(&id).map_err(err)
+}
+
+#[tauri::command]
+pub fn chat_close(app: tauri::AppHandle, state: State<'_, AppState>, id: String) {
+    use tauri::Emitter;
+    state.core.chats.close(&id);
+    let _ = app.emit("chat-changed", serde_json::json!({ "id": id, "closed": true }));
+}
+
+#[tauri::command]
+pub fn chat_list(state: State<'_, AppState>) -> Vec<crate::chat::ChatInfo> {
+    state.core.chats.list()
+}
+
+// ───────────── Git 쓰기 작업 (브랜치·워크트리·스테이징·병합) ─────────────
+
+macro_rules! git_cmd {
+    ($name:ident, ($($arg:ident : $ty:ty),*), $path:ident, $ret:ty, $body:expr) => {
+        #[tauri::command]
+        pub async fn $name(state: State<'_, AppState>, $($arg: $ty),*) -> Res<$ret> {
+            let core = state.core.clone();
+            blocking(move || {
+                core.ensure_known(&$path)?;
+                $body
+            })
+            .await
+        }
+    };
+}
+
+use crate::gitops;
+
+git_cmd!(git_branch_create, (path: String, name: String, start: Option<String>, checkout: bool), path, String,
+    gitops::create_branch(Path::new(&path), &name, start.as_deref(), checkout));
+git_cmd!(git_branch_delete, (path: String, name: String, force: bool), path, String,
+    gitops::delete_branch(Path::new(&path), &name, force));
+git_cmd!(git_compare, (path: String, a: String, b: String), path, gitops::Compare,
+    gitops::compare(Path::new(&path), &a, &b));
+git_cmd!(git_worktree_add, (path: String, target: String, new_branch: Option<String>, base: Option<String>), path, String,
+    gitops::worktree_add(Path::new(&path), &target, new_branch.as_deref(), base.as_deref()));
+git_cmd!(git_worktree_prune, (path: String), path, String, gitops::worktree_prune(Path::new(&path)));
+git_cmd!(git_diff_split, (path: String, rel: String), path, (Vec<FileDiff>, Vec<FileDiff>),
+    gitops::diff_split(Path::new(&path), &rel));
+git_cmd!(git_hunk, (path: String, rel: String, action: String, index: usize, hunk_id: String), path, (),
+    gitops::apply_hunk(Path::new(&path), &rel, &action, index, &hunk_id));
+git_cmd!(git_stage, (path: String, paths: Vec<String>), path, (), gitops::stage_paths(Path::new(&path), &paths));
+git_cmd!(git_unstage, (path: String, paths: Vec<String>), path, (), gitops::unstage_paths(Path::new(&path), &paths));
+git_cmd!(git_discard, (path: String, paths: Vec<String>), path, (), gitops::discard_paths(Path::new(&path), &paths));
+git_cmd!(git_commit_staged, (path: String, message: String, amend: bool), path, String,
+    gitops::commit_staged(Path::new(&path), &message, amend));
+git_cmd!(git_merge, (path: String, target: String, mode: String), path, gitops::OpResult,
+    gitops::merge(Path::new(&path), &target, &mode));
+git_cmd!(git_rebase, (path: String, onto: String), path, gitops::OpResult, gitops::rebase(Path::new(&path), &onto));
+git_cmd!(git_op_control, (path: String, action: String), path, gitops::OpResult, gitops::op_control(Path::new(&path), &action));
+git_cmd!(git_resolve, (path: String, rel: String, side: String), path, (), gitops::resolve(Path::new(&path), &rel, &side));
+git_cmd!(git_op_state, (path: String), path, gitops::OpState, gitops::op_state(Path::new(&path)));
+
+/// 워크트리 삭제: 앱에서 그 워크트리로 실행 중인 에이전트가 있으면 막는다.
+#[tauri::command]
+pub async fn git_worktree_remove(state: State<'_, AppState>, path: String, target: String, force: bool) -> Res<String> {
+    let core = state.core.clone();
+    blocking(move || {
+        core.ensure_known(&path)?;
+        core.ensure_known(&target)?;
+        let canon = std::fs::canonicalize(&target).map(|p| p.to_string_lossy().into_owned()).unwrap_or(target.clone());
+        let busy_exec = core.exec_list().into_iter().any(|e| !e.exited && e.worktree_path.as_deref() == Some(canon.as_str()));
+        let busy_chat = core.chats.list().into_iter().any(|c| std::fs::canonicalize(&c.cwd).map(|p| p.starts_with(&canon)).unwrap_or(false));
+        if busy_exec || busy_chat {
+            anyhow::bail!("이 워크트리에서 앱의 에이전트가 실행 중입니다. 먼저 중지하세요.");
+        }
+        let live = core.live_runs().into_iter().filter(|r| r.cwd.as_deref().is_some_and(|c| c.starts_with(&canon))).count();
+        if live > 0 && !force {
+            anyhow::bail!("이 워크트리에서 외부 에이전트 {live}개가 실행 중입니다.");
+        }
+        gitops::worktree_remove(Path::new(&path), &target, force)
+    })
+    .await
 }

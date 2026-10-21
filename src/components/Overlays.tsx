@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
 
 export function Toasts() {
@@ -61,6 +61,151 @@ export function Empty({ title, children }: { title: string; children?: React.Rea
     <div className="empty">
       <div className="empty-title">{title}</div>
       {children && <div className="empty-body">{children}</div>}
+    </div>
+  );
+}
+
+/** 여러 칸을 받는 입력 대화상자 (useStore.promptForm) */
+export function PromptDialog() {
+  const req = useStore((s) => s.prompt);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!req) return;
+    setValues(Object.fromEntries(req.fields.map((f) => [f.key, f.value])));
+    setError(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") req.resolve(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [req]);
+  if (!req) return null;
+  const submit = () => {
+    const err = req.validate?.(values) ?? null;
+    if (err) return setError(err);
+    req.resolve(values);
+  };
+  return (
+    <div className="modal-backdrop" onMouseDown={() => req.resolve(null)}>
+      <form
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={req.title}
+        onMouseDown={(e) => e.stopPropagation()}
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit();
+        }}
+      >
+        <h3>{req.title}</h3>
+        {req.body && <p className="modal-body">{req.body}</p>}
+        {req.fields.map((f, i) => (
+          <label key={f.key} className={f.checkbox ? "form-row" : "form-row col"}>
+            {f.checkbox ? (
+              <>
+                <input
+                  type="checkbox"
+                  checked={values[f.key] === "true"}
+                  onChange={(e) => setValues({ ...values, [f.key]: String(e.target.checked) })}
+                />
+                <span>{f.label}</span>
+              </>
+            ) : (
+              <>
+                <span className="muted">{f.label}</span>
+                {f.options ? (
+                  <select value={values[f.key] ?? ""} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}>
+                    {f.options.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    className="text-input"
+                    autoFocus={i === 0}
+                    value={values[f.key] ?? ""}
+                    placeholder={f.placeholder}
+                    onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
+                  />
+                )}
+              </>
+            )}
+          </label>
+        ))}
+        {error && <div className="banner banner-error">{error}</div>}
+        <div className="modal-actions">
+          <button type="button" className="btn" onClick={() => req.resolve(null)}>
+            취소
+          </button>
+          <button type="submit" className={req.danger ? "btn btn-danger" : "btn btn-primary"}>
+            {req.confirmLabel ?? "확인"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+export interface MenuItem {
+  label: string;
+  onClick?: () => void;
+  danger?: boolean;
+  disabled?: boolean;
+  /** 구분선 */
+  separator?: boolean;
+  hint?: string;
+}
+
+/** 우클릭 메뉴. 바깥을 누르거나 Esc 로 닫힌다. */
+export function ContextMenu({ x, y, items, onClose }: { x: number; y: number; items: MenuItem[]; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ x, y });
+  useEffect(() => {
+    const el = ref.current;
+    if (el) {
+      // 화면 밖으로 나가지 않게
+      const r = el.getBoundingClientRect();
+      setPos({ x: Math.min(x, window.innerWidth - r.width - 6), y: Math.min(y, window.innerHeight - r.height - 6) });
+    }
+    const close = (e: Event) => {
+      if (e instanceof KeyboardEvent && e.key !== "Escape") return;
+      if (e instanceof MouseEvent && ref.current?.contains(e.target as Node)) return;
+      onClose();
+    };
+    window.addEventListener("mousedown", close, true);
+    window.addEventListener("keydown", close, true);
+    window.addEventListener("blur", onClose);
+    return () => {
+      window.removeEventListener("mousedown", close, true);
+      window.removeEventListener("keydown", close, true);
+      window.removeEventListener("blur", onClose);
+    };
+  }, [x, y, onClose]);
+  return (
+    <div className="menu" ref={ref} style={{ left: pos.x, top: pos.y }} role="menu">
+      {items.map((it, i) =>
+        it.separator ? (
+          <div key={i} className="menu-sep" />
+        ) : (
+          <button
+            key={i}
+            role="menuitem"
+            className={`menu-item${it.danger ? " danger" : ""}`}
+            disabled={it.disabled}
+            title={it.hint}
+            onClick={() => {
+              onClose();
+              it.onClick?.();
+            }}
+          >
+            {it.label}
+          </button>
+        ),
+      )}
     </div>
   );
 }

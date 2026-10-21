@@ -13,10 +13,12 @@ interface Props {
   sessionStartBranch: string | null;
   selectedSha: string | null;
   onSelect: (sha: string) => void;
+  /** 우클릭: 그 커밋에서 할 수 있는 작업 메뉴 */
+  onContextMenu?: (sha: string, x: number, y: number) => void;
   scrollToHeadSignal: number;
 }
 
-export function GraphView({ data, focusWorktree, sessionStartBranch, selectedSha, onSelect, scrollToHeadSignal }: Props) {
+export function GraphView({ data, focusWorktree, sessionStartBranch, selectedSha, onSelect, onContextMenu, scrollToHeadSignal }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [height, setHeight] = useState(600);
@@ -95,6 +97,7 @@ export function GraphView({ data, focusWorktree, sessionStartBranch, selectedSha
             sessionStartBranch={sessionStartBranch}
             selected={row.sha === selectedSha}
             onSelect={onSelect}
+            onContextMenu={onContextMenu}
             now={now}
           />
         ))}
@@ -122,6 +125,7 @@ function Row(props: {
   sessionStartBranch: string | null;
   selected: boolean;
   onSelect: (sha: string) => void;
+  onContextMenu?: (sha: string, x: number, y: number) => void;
   now: number;
 }) {
   const { row, isHead } = props;
@@ -134,6 +138,10 @@ function Row(props: {
       className={`grow${props.selected ? " selected" : ""}${props.onChain ? " on-chain" : ""}${isHead ? " is-head" : ""}`}
       style={{ top: props.top, height: ROW_H }}
       onClick={() => props.onSelect(row.sha)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        props.onContextMenu?.(row.sha, e.clientX, e.clientY);
+      }}
       data-sha={row.sha}
       title={`${row.sha.slice(0, 10)} · ${row.author}`}
     >

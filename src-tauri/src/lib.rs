@@ -1,10 +1,13 @@
+pub mod chat;
 pub mod commands;
 pub mod core;
 pub mod db;
 pub mod env;
 pub mod files;
 pub mod git;
+pub mod gitops;
 pub mod graph;
+pub mod procs;
 pub mod pty;
 pub mod sessions;
 pub mod watch;
@@ -61,6 +64,21 @@ pub fn run() {
             #[cfg(feature = "automation")]
             automation::start(handle.clone());
 
+            // 실행 중 에이전트 감지: 창이 보일 때만 5초마다(숨겨져 있으면 CPU 를 쓰지 않음).
+            {
+                let core = core.clone();
+                let h = handle.clone();
+                std::thread::Builder::new().name("live-scan".into()).spawn(move || loop {
+                    let visible = h
+                        .get_webview_window("main")
+                        .map(|w| w.is_visible().unwrap_or(true) && !w.is_minimized().unwrap_or(false))
+                        .unwrap_or(false);
+                    if visible && core.refresh_live() {
+                        let _ = h.emit("live-runs", core.live_runs());
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(if visible { 5 } else { 15 }));
+                })?;
+            }
             app.manage(AppState { core, watcher });
             Ok(())
         })
@@ -98,6 +116,32 @@ pub fn run() {
             commands::kv_set,
             commands::reveal_in_finder,
             commands::automation_reply,
+            commands::live_runs,
+            commands::chat_start,
+            commands::chat_attach,
+            commands::chat_detach,
+            commands::chat_send,
+            commands::chat_permission,
+            commands::chat_interrupt,
+            commands::chat_close,
+            commands::chat_list,
+            commands::git_branch_create,
+            commands::git_branch_delete,
+            commands::git_compare,
+            commands::git_worktree_add,
+            commands::git_worktree_remove,
+            commands::git_worktree_prune,
+            commands::git_diff_split,
+            commands::git_hunk,
+            commands::git_stage,
+            commands::git_unstage,
+            commands::git_discard,
+            commands::git_commit_staged,
+            commands::git_merge,
+            commands::git_rebase,
+            commands::git_op_control,
+            commands::git_resolve,
+            commands::git_op_state,
         ])
         .build(tauri::generate_context!())
         .expect("AI Terminal 을 시작하지 못했습니다")
@@ -106,6 +150,7 @@ pub fn run() {
                 // 앱이 띄운 에이전트 프로세스를 남기지 않는다.
                 if let Some(state) = app.try_state::<AppState>() {
                     state.core.pty.kill_all();
+                    state.core.chats.close_all();
                 }
             }
         });
