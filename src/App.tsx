@@ -8,7 +8,9 @@ import { StatusBar, TopBar } from "./components/TopBar";
 import { AgentPanel } from "./panels/AgentPanel";
 import { FilePanel } from "./panels/FilePanel";
 import { GitPanel } from "./panels/GitPanel";
+import { attachFileDrop } from "./fileDrop";
 import { useStore } from "./store";
+import { termPasters } from "./termPaste";
 import { useWtColor } from "./wtColors";
 import "./styles.css";
 
@@ -70,6 +72,20 @@ export default function App() {
   }, [hasRunning]);
 
   useShortcuts();
+
+  // 파일(이미지 등)을 터미널·입력칸에 끌어다 놓으면 경로를 넣는다
+  useEffect(
+    () =>
+      attachFileDrop(
+        (execId, text) => {
+          const paste = termPasters.get(execId);
+          paste?.(text);
+          return !!paste;
+        },
+        () => useStore.getState().toast("info", "터미널이나 입력칸 위에 놓으면 파일 경로가 들어가요"),
+      ),
+    [],
+  );
 
   // 지금 보는 워크트리의 노선 색: 위쪽 선·점 등 화면 곳곳에서 같은 색으로 쓴다.
   const wtColor = useWtColor(focus?.worktreePath);

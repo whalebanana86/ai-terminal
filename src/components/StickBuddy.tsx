@@ -1,4 +1,4 @@
-import { Bug, Plus, Trash2, Wrench, type LucideIcon } from "lucide-react";
+import { Bug, MessageCircleQuestion, Plus, Trash2, Wrench, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { relativeTime } from "../logic";
 import { takeNewRequests, type RequestKind, type SeenRequest } from "../requestKind";
@@ -7,7 +7,7 @@ import { useStore } from "../store";
 /**
  * 위쪽 막대 오른쪽 끝의 스틱맨. AI 에게 새 요청이 가면(앱 채팅·앱 터미널·바깥 터미널 모두, 기록 파일로 알아챈다)
  * 요청을 추가·수정·삭제·버그로 나눠 그에 맞는 동작을 한 번 하고, 그 종류의 오늘 개수를 올린다.
- * 요청이 없을 때는 움직이지 않는다(CPU 를 쓰지 않게).
+ * 요청이 없을 때는 좌우로 서성인다(창이 가려지면 멈춤).
  */
 
 const KINDS: { kind: RequestKind; label: string; icon: LucideIcon; color: string }[] = [
@@ -15,6 +15,7 @@ const KINDS: { kind: RequestKind; label: string; icon: LucideIcon; color: string
   { kind: "modify", label: "수정", icon: Wrench, color: "#4cc2ff" },
   { kind: "delete", label: "삭제", icon: Trash2, color: "#ff8a5b" },
   { kind: "bug", label: "버그·오류", icon: Bug, color: "#c792ff" },
+  { kind: "question", label: "질문", icon: MessageCircleQuestion, color: "#e2c08d" },
 ];
 const KEY = "aiterm.stick.v1";
 const ACT_MS = 1600;
@@ -27,18 +28,20 @@ interface Saved {
 }
 
 const today = () => new Date().toLocaleDateString("sv");
-const empty = (): Saved => ({ day: today(), counts: { add: 0, modify: 0, delete: 0, bug: 0 }, recent: [] });
+const empty = (): Saved => ({ day: today(), counts: { add: 0, modify: 0, delete: 0, bug: 0, question: 0 }, recent: [] });
 
 function load(): Saved {
   try {
     const v = JSON.parse(localStorage.getItem(KEY) ?? "null") as Saved | null;
-    if (v && v.day === today() && v.counts) return v;
+    // 예전 저장값에 없는 칸(질문)은 0 으로 채운다
+    if (v && v.day === today() && v.counts) return { ...v, counts: { ...empty().counts, ...v.counts } };
   } catch {
     /* 깨진 값은 버린다 */
   }
   return empty();
 }
 
+/** none = 어느 종류도 아닌 대답("진행해" 등): 고개만 끄덕 */
 type Act = RequestKind | "none";
 
 export function StickBuddy() {
@@ -52,6 +55,7 @@ export function StickBuddy() {
   const seen = useRef(new Map<string, number>());
   const startedAt = useRef(Date.now());
   const box = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
   const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   const count = useCallback((r: SeenRequest) => {
@@ -136,25 +140,63 @@ export function StickBuddy() {
     };
   }, [push, testable]);
 
-  const total = saved.counts.add + saved.counts.modify + saved.counts.delete + saved.counts.bug;
+  // 창이 안 보일 때는 서성이기를 멈춘다(CPU)
+  const [hidden, setHidden] = useState(document.hidden);
+  useEffect(() => {
+    const on = () => setHidden(document.hidden);
+    document.addEventListener("visibilitychange", on);
+    return () => document.removeEventListener("visibilitychange", on);
+  }, []);
+
+  // 평소에는 좌우로 서성인다. CSS 애니메이션은 WebKit 이 매 프레임 스타일을 다시 계산해 CPU 를 꽤 써서(측정 +6~11%),
+  // 타이머로 초당 몇 번만 자세(속성)를 바꾼다. 요청 동작 중이거나 창이 가려지면 멈춘다.
+  useEffect(() => {
+    if (act || hidden || reduced) return;
+    const svg = svgRef.current;
+    if (!svg) return;
+    const part = (c: string) => svg.querySelector<SVGGElement>(`.${c}`);
+    const fig = part("fig");
+    const limbs = [part("leg-l"), part("arm-r"), part("leg-r"), part("arm-l")];
+    let x = -8;
+    let dir = 1;
+    let rest = 0;
+    let step = 0;
+    const tick = () => {
+      if (rest > 0) {
+        // 끝에 닿으면 잠깐 서서 쉰다
+        rest--;
+        limbs.forEach((l) => l && (l.style.transform = ""));
+      } else {
+        step++;
+        x += dir * 1.5;
+        if (x >= 9 || x <= -8) {
+          dir = -dir;
+          rest = 4;
+        }
+        const a = step % 2 ? 16 : -16;
+        // 축(엉덩이·어깨)은 CSS transform-origin 에 있다. 왼다리·오른팔 / 오른다리·왼팔이 서로 반대로 흔든다
+        limbs.forEach((l, i) => l && (l.style.transform = `rotate(${i < 2 ? a : -a}deg)`));
+      }
+      if (fig) fig.style.transform = `translateX(${x}px)`;
+    };
+    const t = window.setInterval(tick, 230);
+    return () => {
+      window.clearInterval(t);
+      if (fig) fig.style.transform = "";
+      limbs.forEach((l) => l && (l.style.transform = ""));
+    };
+  }, [act, hidden, reduced]);
+
+  const total = KINDS.reduce((n, k) => n + saved.counts[k.kind], 0);
   const now = Date.now();
   return (
-    <div className="stick-buddy" ref={box} data-testid="stick-buddy">
-      <button className="stick-counts" onClick={() => setOpen(!open)} title="오늘 AI 에게 보낸 요청 (눌러서 목록)" aria-label={`오늘 요청 ${total}개`} aria-expanded={open}>
-        {KINDS.map(({ kind, label, icon: Icon, color }) => (
-          <span key={kind} className="stick-count" data-kind={kind} title={`${label} ${saved.counts[kind]}`} style={{ color }}>
-            <Icon size={12} strokeWidth={2.4} aria-hidden />
-            <b key={bump?.kind === kind ? bump.n : 0} className={bump?.kind === kind ? "bump" : ""}>
-              {saved.counts[kind]}
-            </b>
-          </span>
-        ))}
-      </button>
+    <div className={`stick-buddy${hidden ? " paused" : ""}`} ref={box} data-testid="stick-buddy">
       <svg
-        className={`stickman${act ? ` act-${act.kind}` : ""}`}
+        ref={svgRef}
+        className={`stickman ${act ? `act-${act.kind}` : "idle"}`}
         key={act?.n ?? 0}
-        width={60}
-        height={36}
+        width={42}
+        height={25}
         viewBox="0 0 60 36"
         aria-hidden
         onClick={() => setOpen(!open)}
@@ -204,6 +246,16 @@ export function StickBuddy() {
           </g>
         </g>
       </svg>
+      <button className="stick-counts" onClick={() => setOpen(!open)} title="오늘 AI 에게 보낸 요청 (눌러서 목록)" aria-label={`오늘 요청 ${total}개`} aria-expanded={open}>
+        {KINDS.map(({ kind, label, icon: Icon, color }) => (
+          <span key={kind} className="stick-count" data-kind={kind} title={`${label} ${saved.counts[kind]}`} style={{ color }}>
+            <Icon size={11} strokeWidth={2.4} aria-hidden />
+            <b key={bump?.kind === kind ? bump.n : 0} className={bump?.kind === kind ? "bump" : ""}>
+              {saved.counts[kind]}
+            </b>
+          </span>
+        ))}
+      </button>
       {open && (
         <div className="stick-pop" role="dialog" aria-label="오늘 받은 요청">
           <div className="stick-pop-head">
@@ -219,7 +271,7 @@ export function StickBuddy() {
               return (
                 <li key={`${r.sessionId}:${r.at}:${i}`}>
                   <span className="stick-pop-kind" style={{ color: k?.color ?? "var(--fg-faint)" }}>
-                    {Icon ? <Icon size={12} aria-hidden /> : "?"}
+                    {Icon ? <Icon size={12} aria-hidden /> : "·"}
                   </span>
                   <span className="stick-pop-text" title={r.text}>
                     {r.text}
@@ -230,7 +282,7 @@ export function StickBuddy() {
             })}
             {!saved.recent.length && <li className="muted small">아직 없어요. AI 에게 요청을 보내면 여기에 쌓여요.</li>}
           </ul>
-          <div className="muted small stick-pop-foot">요청 글자로 추가·수정·삭제·버그를 나눠요(앱 안에서만, 어디에도 보내지 않음). 하루가 지나면 0 부터.</div>
+          <div className="muted small stick-pop-foot">요청 글자로 추가·수정·삭제·버그·질문을 나눠요(앱 안에서만, 어디에도 보내지 않음). "진행해"처럼 어디에도 안 맞는 말(·)은 세지 않아요. 하루가 지나면 0 부터.</div>
         </div>
       )}
     </div>

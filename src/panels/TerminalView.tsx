@@ -7,6 +7,7 @@ import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef } from "react";
 import { api } from "../api";
 import { attachHangulInput } from "../hangulInput";
+import { termPasters } from "../termPaste";
 
 /** 실행 id → 터미널. 테스트 자동화와 디버깅에서 화면 글자를 읽는 데 쓴다. */
 const registry = new Map<string, Terminal>();
@@ -87,6 +88,11 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
     termRef.current = term;
     fitRef.current = fit;
     registry.set(execId, term);
+    // 파일을 끌어다 놓으면 경로를 붙여넣기로(괄호 붙여넣기 모드면 CLI 가 붙여넣기로 알아본다)
+    termPasters.set(execId, (text) => {
+      term.paste(text);
+      term.focus();
+    });
 
     const ch = new Channel<ArrayBuffer | number[] | string>();
     ch.onmessage = (m) => {
@@ -123,6 +129,7 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
       onData.dispose();
       if (sinkId !== null) void api.execDetach(execId, sinkId);
       registry.delete(execId);
+      termPasters.delete(execId);
       term.dispose();
     };
   }, [execId]);

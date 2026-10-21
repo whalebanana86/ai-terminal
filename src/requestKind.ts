@@ -1,10 +1,13 @@
-/** AI 에게 보낸 요청을 추가·수정·삭제·버그로 나눈다(위쪽 막대의 스틱맨). 앱 안에서 글자만 보고 정하며 어디에도 보내지 않는다. */
-export type RequestKind = "add" | "modify" | "delete" | "bug";
+/** AI 에게 보낸 요청을 추가·수정·삭제·버그·질문으로 나눈다(위쪽 막대의 스틱맨). 앱 안에서 글자만 보고 정하며 어디에도 보내지 않는다. */
+export type RequestKind = "add" | "modify" | "delete" | "bug" | "question";
 
-const BUG = /버그|오류|에러|이슈|예외|크래시|깨져|깨짐|깨지|먹통|튕겨|튕김|멈춰|멈춤|죽어|죽는|안\s?(돼|되|됨|된다|나와|나옴|떠|뜸|열려|보여|먹|움직|눌려)|작동\s?(안|하지)|동작\s?(안|하지)|실패|문제가\s?(있|생|나|발생)|\b(bug|bugs|error|errors|exception|crash|crashes|crashed|broken|fails?|failing|failed|issue|issues|panic|traceback|regression)\b|not working|doesn't work|does not work/i;
+const BUG = /버그|오류|에러|이슈|오타|틀렸|틀린|틀려|잘못\s?(됐|되|된|나와|나옴|들어|적|썼|쓰)|이상해|이상하게|이상한\s?(게|데)|예외|크래시|깨져|깨짐|깨지|먹통|튕겨|튕김|멈춰|멈춤|죽어|죽는|안\s?(돼|되|됨|된다|나와|나옴|떠|뜸|열려|보여|먹|움직|눌려)|작동\s?(안|하지)|동작\s?(안|하지)|실패|문제가\s?(있|생|나|발생)|\b(bug|bugs|error|errors|exception|crash|crashes|crashed|broken|fails?|failing|failed|issue|issues|panic|traceback|regression|typo|typos|wrong)\b|not working|doesn't work|does not work/i;
 const DELETE = /삭제|지워|지우|지운|제거|없애|빼\s?(줘|주|버|자|라)|날려|\b(remove|delete|drop|get rid of|strip out|uninstall)\b/i;
 const ADD = /추가|만들어|만들자|만들기|만들고|넣어|넣자|넣고|붙여|붙이|생성|구현|도입|새로\s?(만들|넣|추가)|\b(add|create|implement|introduce|scaffold|generate)\b/i;
-const MODIFY = /수정|바꿔|바꾸|변경|고쳐|고치|개선|다듬|정리|리팩|옮겨|업데이트|올려|낮춰|키워|줄여|맞춰|\b(refactor|change|update|rename|modify|edit|improve|fix|tweak|adjust|move|rewrite|clean ?up)\b/i;
+const MODIFY = /(?<!새)(?:으로|로)\s?해|수정|바꿔|바꾸|변경|고쳐|고치|개선|다듬|정리|리팩|옮겨|업데이트|올려|낮춰|키워|줄여|맞춰|\b(refactor|change|update|rename|modify|edit|improve|fix|tweak|adjust|move|rewrite|clean ?up)\b/i;
+
+/** 동작은 아니지만 묻는 말(질문 칸) */
+const QUESTION = /[?？]\s*$|뭐|무엇|어디|언제|왜|어떻게|어떤|몇\s?(개|번|시|명)|누가|누구|알려\s?줘|설명해|궁금|^(what|why|how|where|when|which|who|is|are|can|could|does|do|should|will|would)\b/i;
 
 /** 패턴이 마지막으로(또는 처음으로) 나온 자리. 없으면 -1 */
 function where(re: RegExp, text: string, last: boolean): number {
@@ -20,10 +23,11 @@ function where(re: RegExp, text: string, last: boolean): number {
 /**
  * 한국어는 동사가 끝에 오므로 "마지막에 나온 동작"을, 영어는 "처음 나온 동작"을 본다.
  * 오류·버그 낱말이 있으면 버그로 보되, 동작이 추가·삭제("에러 메시지 추가해 줘", "에러 로그 지워 줘")면 그 동작을 따른다.
- * 어느 것도 아니면(질문·설명 요청 등) null.
+ * 동작이 없고 묻는 말이면 질문, 그것도 아니면("진행해", "고마워" 같은 대답) null.
  */
 export function classifyRequest(raw: string): RequestKind | null {
-  const text = raw.slice(0, 2000);
+  // "A를 B로 만들어 줘"는 새로 만드는 게 아니라 바꾸는 것("새로 만들어 줘"는 그대로 추가)
+  const text = raw.slice(0, 2000).replace(/(?<!새)(으로|로)(\s?)만들/g, "$1$2바꾸");
   if (!text.trim()) return null;
   const korean = /[가-힣]/.test(text);
   const bug = where(BUG, text, korean);
@@ -43,7 +47,8 @@ export function classifyRequest(raw: string): RequestKind | null {
     if (korean && bug > act[1]) return "bug";
     return act[0];
   }
-  return act ? act[0] : null;
+  if (act) return act[0];
+  return QUESTION.test(text.trim()) ? "question" : null;
 }
 
 export interface SeenRequest {

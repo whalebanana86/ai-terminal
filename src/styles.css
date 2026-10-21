@@ -2018,8 +2018,8 @@ li:hover .hover-only,
 .stick-counts {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 3px 8px;
+  gap: 7px;
+  padding: 2px 7px;
   border: 1px solid var(--line-2);
   border-radius: 999px;
   background: var(--bg-2);
@@ -2031,8 +2031,8 @@ li:hover .hover-only,
 .stick-count {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  font-size: 11px;
+  gap: 2px;
+  font-size: 10.5px;
   font-variant-numeric: tabular-nums;
 }
 .stick-count b {
@@ -2098,7 +2098,8 @@ li:hover .hover-only,
   0%, 25% { opacity: 0; transform: translateY(-2px) scale(0.4); }
   38% { opacity: 1; transform: translateY(-9px) scale(1.15); }
   60% { opacity: 1; transform: translateY(-9px) scale(1); }
-  100% { opacity: 0; transform: translate(-46px, -2px) scale(0.5); }
+  /* 개수는 스틱맨 오른쪽에 있다 */
+  100% { opacity: 0; transform: translate(46px, -2px) scale(0.5); }
 }
 
 /* 수정: 망치를 세 번 내리친다 */
@@ -2169,9 +2170,22 @@ li:hover .hover-only,
   66%, 74% { opacity: 1; }
 }
 
-/* 그 밖(질문·설명 요청 등): 고개를 갸웃 */
-.act-none .fig { animation: st-tilt 1.6s ease-in-out; }
-.act-none .p-what { animation: st-what 1.6s ease-in-out; }
+/* 평소 서성이기는 StickBuddy 의 타이머가 SVG 속성으로 움직인다(CSS 애니메이션은 CPU 를 더 씀). */
+.stick-buddy.paused .stickman,
+.stick-buddy.paused .stickman * {
+  animation-play-state: paused !important;
+}
+
+/* 질문: 고개를 갸웃하며 ? */
+.act-question .fig { animation: st-tilt 1.6s ease-in-out; }
+.act-question .p-what { animation: st-what 1.6s ease-in-out; }
+/* 어디에도 안 맞는 대답("진행해" 등): 고개만 끄덕 */
+.act-none .head { animation: st-nod 1.6s ease-in-out; }
+@keyframes st-nod {
+  0%, 100% { transform: none; }
+  20%, 50% { transform: translateY(2px); }
+  35% { transform: none; }
+}
 @keyframes st-tilt {
   0%, 100% { transform: none; }
   25%, 70% { transform: rotate(9deg); }
@@ -2190,7 +2204,7 @@ li:hover .hover-only,
 .stick-pop {
   position: absolute;
   right: 0;
-  top: 38px;
+  top: 34px;
   width: 380px;
   z-index: 60;
   background: var(--bg-2);
@@ -2236,4 +2250,10 @@ li:hover .hover-only,
 .stick-pop-foot {
   padding: 6px 12px 2px;
   border-top: 1px solid var(--line);
+}
+
+/* 파일을 끌고 있을 때 놓을 곳 */
+.drop-target {
+  outline: 2px dashed var(--accent) !important;
+  outline-offset: -3px;
 }
