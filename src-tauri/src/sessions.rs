@@ -38,6 +38,11 @@ pub struct SessionMeta {
     /// 기록 끝부분에서 본 작업 폴더와 그 기록 수(최근 것부터). 마지막 cwd 가 저장소 밖일 때 어디서 일했는지 찾는 데 쓴다.
     #[serde(default, skip_serializing)]
     pub recent_cwds: Vec<(String, u32)>,
+    /// 가장 최근 사용자 요청(한 줄)과 그 시각(밀리초). 새 요청을 알아채는 데 쓴다(위쪽 막대의 스틱맨).
+    #[serde(default)]
+    pub last_prompt: Option<String>,
+    #[serde(default)]
+    pub last_prompt_at: i64,
 }
 
 // ───────────────────────────── 공통 도구 ─────────────────────────────
@@ -296,6 +301,12 @@ pub fn parse_claude_session(path: &Path) -> Option<SessionMeta> {
             if meta.last_cwd.is_none() {
                 meta.last_cwd = v.get("cwd").and_then(Value::as_str).map(str::to_string);
             }
+            if meta.last_prompt.is_none()
+                && let Some(t) = claude_user_text(&v)
+            {
+                meta.last_prompt = Some(one_line(&t, 300));
+                meta.last_prompt_at = v.get("timestamp").and_then(Value::as_str).and_then(parse_iso_ms).unwrap_or(0);
+            }
             if !found_branch
                 && let Some(b) = v.get("gitBranch").and_then(Value::as_str).filter(|s| !s.is_empty()) {
                     meta.last_branch = Some(b.to_string());
@@ -305,7 +316,8 @@ pub fn parse_claude_session(path: &Path) -> Option<SessionMeta> {
                     }
                 }
         }
-        if found_branch {
+        // 최근 요청은 1MB 안에서만 찾는다(도구 출력이 아주 긴 세션에서 매번 8MB 를 읽지 않게).
+        if found_branch && (meta.last_prompt.is_some() || window >= 1024 * 1024) {
             break;
         }
     }
@@ -523,6 +535,7 @@ pub fn codex_rollout_files() -> Vec<PathBuf> {
 pub struct SessionIndex {
     claude: HashMap<PathBuf, ((u64, i64), Option<SessionMeta>)>,
     rollout: HashMap<PathBuf, ((u64, i64), Option<RolloutHeader>)>,
+    codex_tail: HashMap<PathBuf, ((u64, i64), Option<(String, i64)>)>,
 }
 
 impl SessionIndex {
@@ -593,6 +606,8 @@ impl SessionIndex {
                                 archived: t.archived,
                                 origin: t.source.clone(),
                                 recent_cwds: Vec::new(),
+                                last_prompt: None,
+                                last_prompt_at: 0,
                             },
                         );
                     }
@@ -626,10 +641,43 @@ impl SessionIndex {
                     archived: false,
                     origin: h.origin.clone(),
                     recent_cwds: Vec::new(),
+                    last_prompt: None,
+                    last_prompt_at: 0,
                 },
             );
         }
-        by_id.into_values().filter(|m| m.cwd.is_some()).collect()
+        let mut out: Vec<SessionMeta> = by_id.into_values().filter(|m| m.cwd.is_some()).collect();
+        for m in &mut out {
+            if let Some((t, at)) = self.codex_last_prompt(Path::new(&m.source_path)) {
+                m.last_prompt = Some(t);
+                m.last_prompt_at = at;
+            }
+        }
+        out
+    }
+
+    /// Codex rollout 끝부분의 가장 최근 사용자 요청. 압축(.zst)된 옛 기록은 건너뛴다(새 요청이 생길 일이 없다).
+    fn codex_last_prompt(&mut self, path: &Path) -> Option<(String, i64)> {
+        if path.extension().is_none_or(|e| e != "jsonl") {
+            return None;
+        }
+        let stamp = file_stamp(path)?;
+        if let Some((s, v)) = self.codex_tail.get(path)
+            && *s == stamp
+        {
+            return v.clone();
+        }
+        let mut found = None;
+        for line in tail_lines(path, 512 * 1024) {
+            let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
+            if let Some(t) = codex_user_text(&v) {
+                let at = v.get("timestamp").and_then(Value::as_str).and_then(parse_iso_ms).unwrap_or(stamp.1);
+                found = Some((one_line(&t, 300), at));
+                break;
+            }
+        }
+        self.codex_tail.insert(path.to_path_buf(), (stamp, found.clone()));
+        found
     }
 }
 
@@ -913,6 +961,9 @@ mod tests {
         assert_eq!(m.first_prompt.as_deref(), Some("버튼 색을 바꿔 줘"));
         assert_eq!(m.title, "버튼 색 변경");
         assert_eq!(m.origin.as_deref(), Some("cli"));
+        // 가장 최근 사용자 요청(사이드체인·메타 제외)과 시각
+        assert_eq!(m.last_prompt.as_deref(), Some("고마워"));
+        assert_eq!(m.last_prompt_at, parse_iso_ms("2026-10-01T00:05:00Z").unwrap());
 
         let t = claude_transcript(&p).unwrap();
         let kinds: Vec<_> = t.items.iter().map(|i| i.kind.as_str()).collect();
@@ -945,6 +996,10 @@ mod tests {
             assert_eq!(kinds, vec!["user", "tool", "assistant"]);
             assert_eq!(t.touched_files[0].path, "/w/README.md");
         }
+        // 최근 요청: 평문 rollout 끝에서 찾고(환경 정보는 빼고), 압축본은 건너뛴다
+        let mut idx = SessionIndex::default();
+        assert_eq!(idx.codex_last_prompt(&plain).map(|x| x.0).as_deref(), Some("README 정리해 줘"));
+        assert_eq!(idx.codex_last_prompt(&zst), None);
         // rollout_path 가 .jsonl 로 적혀 있어도 .zst 를 찾는다
         std::fs::remove_file(&plain).unwrap();
         assert_eq!(resolve_rollout(plain.to_str().unwrap()), Some(zst));

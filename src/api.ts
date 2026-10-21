@@ -53,6 +53,9 @@ export interface SessionMeta {
   sourcePath: string;
   archived: boolean;
   origin: string | null;
+  /** 가장 최근 사용자 요청(한 줄)과 그 시각 */
+  lastPrompt?: string | null;
+  lastPromptAt?: number;
 }
 
 export interface LinkedSession extends SessionMeta {

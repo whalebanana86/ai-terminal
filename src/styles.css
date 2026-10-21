@@ -2006,3 +2006,254 @@ li:hover .hover-only,
   max-width: none;
   max-height: none;
 }
+
+/* ── 위쪽 막대 스틱맨: 요청이 오면 그 종류의 동작을 한 번 하고 개수를 올린다 ── */
+.stick-buddy {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  -webkit-app-region: no-drag;
+}
+.stick-counts {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 7px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--bg-2);
+  cursor: pointer;
+}
+.stick-counts:hover {
+  border-color: var(--accent-2);
+}
+.stick-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+.stick-count b {
+  display: inline-block;
+  min-width: 8px;
+  color: var(--fg);
+  font-weight: 600;
+}
+.stick-count b.bump {
+  animation: stick-bump 0.6s ease-out;
+}
+@keyframes stick-bump {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.7); color: #fff; }
+  100% { transform: scale(1); }
+}
+.stickman {
+  color: var(--fg);
+  overflow: visible;
+  cursor: pointer;
+  flex: none;
+}
+.stickman g,
+.stickman text {
+  transform-box: view-box;
+}
+/* 소품은 평소엔 숨김 */
+.stickman .p-add,
+.stickman .p-box,
+.stickman .p-trash,
+.stickman .p-bug,
+.stickman .p-spark,
+.stickman .p-what,
+.stickman .p-hammer {
+  opacity: 0;
+}
+.stickman .fig { transform-origin: 24px 33px; }
+.stickman .arm-l,
+.stickman .arm-r { transform-origin: 24px 14px; }
+.stickman .leg-l,
+.stickman .leg-r { transform-origin: 24px 22px; }
+
+/* 추가: 웅크렸다 뛰며 두 팔을 들고, 초록 + 를 개수 쪽으로 던진다 */
+.act-add .fig { animation: st-jump 1.6s ease-in-out; }
+.act-add .arm-l { animation: st-arm-up-l 1.6s ease-in-out; }
+.act-add .arm-r { animation: st-arm-up-r 1.6s ease-in-out; }
+.act-add .p-add { transform-origin: 24px 3px; animation: st-plus 1.6s ease-in-out; }
+@keyframes st-jump {
+  0%, 100% { transform: none; }
+  18% { transform: translateY(2px); }
+  38% { transform: translateY(-5px); }
+  55% { transform: none; }
+}
+@keyframes st-arm-up-l {
+  0%, 100% { transform: none; }
+  30%, 70% { transform: rotate(95deg); }
+}
+@keyframes st-arm-up-r {
+  0%, 100% { transform: none; }
+  30%, 70% { transform: rotate(-95deg); }
+}
+@keyframes st-plus {
+  0%, 25% { opacity: 0; transform: translateY(-2px) scale(0.4); }
+  38% { opacity: 1; transform: translateY(-9px) scale(1.15); }
+  60% { opacity: 1; transform: translateY(-9px) scale(1); }
+  /* 개수는 스틱맨 오른쪽에 있다 */
+  100% { opacity: 0; transform: translate(46px, -2px) scale(0.5); }
+}
+
+/* 수정: 망치를 세 번 내리친다 */
+.act-modify .p-hammer { animation: st-show 1.6s linear; }
+.act-modify .arm-r { animation: st-hammer 1.6s ease-in-out; }
+.act-modify .p-spark { animation: st-spark3 1.6s linear; }
+@keyframes st-show {
+  0% { opacity: 0; }
+  8%, 92% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes st-hammer {
+  0%, 100% { transform: none; }
+  12% { transform: rotate(-85deg); }
+  26% { transform: rotate(12deg); }
+  40% { transform: rotate(-85deg); }
+  54% { transform: rotate(12deg); }
+  68% { transform: rotate(-85deg); }
+  82% { transform: rotate(12deg); }
+}
+@keyframes st-spark3 {
+  0%, 24%, 32%, 52%, 60%, 80%, 88%, 100% { opacity: 0; }
+  27%, 55%, 83% { opacity: 1; }
+}
+
+/* 삭제: 상자를 걷어차 휴지통에 넣는다 */
+.act-delete .p-trash { animation: st-show 1.6s linear; }
+.act-delete .leg-r { animation: st-kick 1.6s ease-in-out; }
+.act-delete .p-box { transform-origin: 33px 31px; animation: st-box 1.6s ease-in-out; }
+@keyframes st-kick {
+  0%, 100% { transform: none; }
+  25% { transform: rotate(18deg); }
+  38% { transform: rotate(-60deg); }
+  55% { transform: none; }
+}
+@keyframes st-box {
+  0% { opacity: 0; transform: none; }
+  10%, 36% { opacity: 1; transform: none; }
+  62% { opacity: 1; transform: translate(10px, -14px) rotate(160deg); }
+  80% { opacity: 1; transform: translate(19px, -2px) rotate(300deg) scale(0.85); }
+  92%, 100% { opacity: 0; transform: translate(19px, 1px) rotate(320deg) scale(0.6); }
+}
+
+/* 버그·오류: 기어 오는 벌레를 보고 놀랐다가 밟는다 */
+.act-bug .p-bug { transform-origin: 58px 34px; animation: st-bug 1.6s ease-in-out; }
+.act-bug .fig { animation: st-startle 1.6s ease-in-out; }
+.act-bug .leg-r { animation: st-stomp 1.6s ease-in-out; }
+.act-bug .p-spark { animation: st-spark1 1.6s linear; }
+@keyframes st-bug {
+  0% { opacity: 0; transform: translateX(4px); }
+  8% { opacity: 1; transform: translateX(0); }
+  45%, 58% { opacity: 1; transform: translateX(-23px); }
+  64% { opacity: 1; transform: translateX(-23px) scale(1.4, 0.3); }
+  86%, 100% { opacity: 0; transform: translateX(-23px) scale(1.4, 0.3); }
+}
+@keyframes st-startle {
+  0%, 30%, 100% { transform: none; }
+  40% { transform: translate(-2px, -3px) rotate(-6deg); }
+  50% { transform: none; }
+}
+@keyframes st-stomp {
+  0%, 48%, 100% { transform: none; }
+  56% { transform: rotate(-45deg); }
+  63% { transform: rotate(-8deg); }
+}
+@keyframes st-spark1 {
+  0%, 62%, 80%, 100% { opacity: 0; }
+  66%, 74% { opacity: 1; }
+}
+
+/* 평소 서성이기는 StickBuddy 의 타이머가 SVG 속성으로 움직인다(CSS 애니메이션은 CPU 를 더 씀). */
+.stick-buddy.paused .stickman,
+.stick-buddy.paused .stickman * {
+  animation-play-state: paused !important;
+}
+
+/* 질문: 고개를 갸웃하며 ? */
+.act-question .fig { animation: st-tilt 1.6s ease-in-out; }
+.act-question .p-what { animation: st-what 1.6s ease-in-out; }
+/* 어디에도 안 맞는 대답("진행해" 등): 고개만 끄덕 */
+.act-none .head { animation: st-nod 1.6s ease-in-out; }
+@keyframes st-nod {
+  0%, 100% { transform: none; }
+  20%, 50% { transform: translateY(2px); }
+  35% { transform: none; }
+}
+@keyframes st-tilt {
+  0%, 100% { transform: none; }
+  25%, 70% { transform: rotate(9deg); }
+}
+@keyframes st-what {
+  0%, 15%, 90%, 100% { opacity: 0; transform: none; }
+  30%, 75% { opacity: 1; transform: translateY(-3px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stickman *,
+  .stick-count b.bump {
+    animation: none !important;
+  }
+}
+
+.stick-pop {
+  position: absolute;
+  right: 0;
+  top: 34px;
+  width: 380px;
+  z-index: 60;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  padding: 10px 0 6px;
+}
+.stick-pop-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 12px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.stick-pop ul {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  max-height: 320px;
+  overflow: auto;
+}
+.stick-pop li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+.stick-pop-kind {
+  width: 14px;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+}
+.stick-pop-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stick-pop-foot {
+  padding: 6px 12px 2px;
+  border-top: 1px solid var(--line);
+}
+
+/* 파일을 끌고 있을 때 놓을 곳 */
+.drop-target {
+  outline: 2px dashed var(--accent) !important;
+  outline-offset: -3px;
+}

@@ -8,7 +8,9 @@ import { StatusBar, TopBar } from "./components/TopBar";
 import { AgentPanel } from "./panels/AgentPanel";
 import { FilePanel } from "./panels/FilePanel";
 import { GitPanel } from "./panels/GitPanel";
+import { attachFileDrop } from "./fileDrop";
 import { useStore } from "./store";
+import { termPasters } from "./termPaste";
 import { useWtColor } from "./wtColors";
 import "./styles.css";
 
@@ -29,9 +31,12 @@ export default function App() {
     const unsubs = [
       listen<ChangeBatch>("fs-changed", (e) => st().onFsChanged(e.payload.worktree, e.payload.paths, e.payload.files, e.payload.git)),
       listen<string[]>("sessions-changed", () => {
-        window.clearTimeout(sessionTimer);
-        // 에이전트가 일하는 동안 기록이 계속 바뀌므로 1초 단위로 묶는다.
-        sessionTimer = window.setTimeout(() => void st().refreshSessions(), 1000);
+        // 에이전트가 일하는 동안 기록이 계속 바뀌므로 1초에 한 번만 읽는다(계속 미루면 일이 끝날 때까지 새 요청이 안 보인다).
+        if (sessionTimer !== undefined) return;
+        sessionTimer = window.setTimeout(() => {
+          sessionTimer = undefined;
+          void st().refreshSessions();
+        }, 1000);
       }),
       listen<{ id: string; code: number | null }>("exec-exit", async (e) => {
         await st().refreshExecs();
@@ -67,6 +72,20 @@ export default function App() {
   }, [hasRunning]);
 
   useShortcuts();
+
+  // 파일(이미지 등)을 터미널·입력칸에 끌어다 놓으면 경로를 넣는다
+  useEffect(
+    () =>
+      attachFileDrop(
+        (execId, text) => {
+          const paste = termPasters.get(execId);
+          paste?.(text);
+          return !!paste;
+        },
+        () => useStore.getState().toast("info", "터미널이나 입력칸 위에 놓으면 파일 경로가 들어가요"),
+      ),
+    [],
+  );
 
   // 지금 보는 워크트리의 노선 색: 위쪽 선·점 등 화면 곳곳에서 같은 색으로 쓴다.
   const wtColor = useWtColor(focus?.worktreePath);

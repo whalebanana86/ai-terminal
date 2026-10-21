@@ -235,8 +235,9 @@ pub struct SessionWatcher {
 
 impl SessionWatcher {
     pub fn new(claude_projects: PathBuf, codex_root: PathBuf, emit: Arc<dyn Fn(Vec<String>) + Send + Sync>) -> Result<Self> {
-        let cp = claude_projects.clone();
-        let cr = codex_root.clone();
+        // 파일 알림은 실제 경로(/tmp → /private/tmp 같은 링크를 푼 경로)로 오므로 비교도 실제 경로로 한다.
+        let cp = std::fs::canonicalize(&claude_projects).unwrap_or_else(|_| claude_projects.clone());
+        let cr = std::fs::canonicalize(&codex_root).unwrap_or_else(|_| codex_root.clone());
         let mut deb = debouncer(Duration::from_millis(800), move |res: DebounceEventResult| {
             let Ok(events) = res else { return };
             let mut hits = BTreeSet::new();
@@ -280,6 +281,25 @@ mod tests {
 
     fn t(wt: &str, gd: &str, cd: &str) -> WatchTarget {
         WatchTarget { worktree: wt.into(), git_dir: gd.into(), common_dir: cd.into() }
+    }
+
+    #[test]
+    fn session_watcher_sees_writes_under_symlinked_home() {
+        // macOS 의 /tmp 는 /private/tmp 링크. 알림은 실제 경로로 온다.
+        let d = tempfile::Builder::new().prefix("aiterm-sw").tempdir_in("/tmp").unwrap();
+        let raw = std::path::PathBuf::from(format!("/tmp/{}", d.path().file_name().unwrap().to_string_lossy()));
+        let projects = raw.join(".claude/projects");
+        std::fs::create_dir_all(projects.join("p")).unwrap();
+        let got = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let g = got.clone();
+        let _w = SessionWatcher::new(projects.clone(), raw.join(".codex"), Arc::new(move |p| g.lock().unwrap().extend(p))).unwrap();
+        std::thread::sleep(Duration::from_millis(500));
+        std::fs::write(projects.join("p/s1.jsonl"), "{}\n").unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(8);
+        while got.lock().unwrap().is_empty() && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert!(got.lock().unwrap().iter().any(|p| p.ends_with("p/s1.jsonl")), "세션 기록 변경을 알려야 한다");
     }
 
     #[test]
