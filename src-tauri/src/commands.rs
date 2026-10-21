@@ -235,6 +235,12 @@ pub async fn fs_read(state: State<'_, AppState>, worktree: String, rel: String) 
     .await
 }
 
+/// 화면 언어("ko"/"en"). 백엔드가 만드는 메시지(오류 등)도 이 언어로 쓴다.
+#[tauri::command]
+pub fn set_lang(lang: String) {
+    crate::i18n::set_english(lang == "en");
+}
+
 /// 그림 파일 바이트를 그대로(JSON 변환 없이) 돌려준다. rev = "HEAD" 면 마지막 커밋의 그림.
 #[tauri::command]
 pub async fn fs_read_image(state: State<'_, AppState>, worktree: String, rel: String, rev: Option<String>) -> Res<tauri::ipc::Response> {

@@ -1,5 +1,6 @@
 // 앱 전역 상태. "focus" 하나를 세 패널이 함께 구독한다.
 import { create } from "zustand";
+import { lang } from "./i18n";
 import { api, errorText, type AppInfo, type ChatInfo, type ExecInfo, type LinkedSession, type LiveRun, type RepoSummary } from "./api";
 import { mergeSessions } from "./logic";
 
@@ -134,6 +135,7 @@ export const useStore = create<State>((set, get) => ({
       api.kvGet("selectedSession").catch(() => null),
     ]);
     set({ info });
+    void api.setLang(lang).catch(() => {});
     if (info?.automation || import.meta.env.DEV) {
       exposeForAutomation();
       const { exposeTerminals } = await import("./panels/TerminalView");

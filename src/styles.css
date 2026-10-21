@@ -2257,3 +2257,47 @@ li:hover .hover-only,
   outline: 2px dashed var(--accent) !important;
   outline-offset: -3px;
 }
+
+/* 설정(언어·화면 모드) */
+.settings {
+  position: relative;
+}
+.settings-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border: none;
+  background: none;
+  color: var(--fg-dim);
+  font-size: 11px;
+  cursor: pointer;
+}
+.settings-btn:hover {
+  color: var(--fg);
+}
+.settings-pop {
+  position: absolute;
+  right: 0;
+  bottom: 24px;
+  z-index: 60;
+  width: 260px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.settings-label {
+  color: var(--fg-dim);
+  font-size: 12px;
+}

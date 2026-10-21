@@ -3,6 +3,7 @@ import { api, errorText } from "../api";
 import { Check, ChevronDown, FolderGit2, Plus, X } from "lucide-react";
 import { baseName } from "../logic";
 import { useStore } from "../store";
+import { SettingsButton } from "./Settings";
 import { StickBuddy } from "./StickBuddy";
 
 export function TopBar() {
@@ -75,6 +76,7 @@ export function StatusBar() {
       {item("git", info?.git, info?.gitVersion)}
       <span className="spacer" />
       <span className="muted" title="이 앱은 대화·코드를 외부로 보내지 않습니다">로컬 전용</span>
+      <SettingsButton />
     </footer>
   );
 }
