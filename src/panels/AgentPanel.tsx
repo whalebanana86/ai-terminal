@@ -62,10 +62,8 @@ function SessionList() {
   const loading = useStore((s) => s.sessionsLoading);
   const refresh = useStore((s) => s.refreshSessions);
   const focus = useStore((s) => s.focus);
-  const repos = useStore((s) => s.repos);
   const [q, setQ] = useState("");
   const [agent, setAgent] = useState<"all" | Agent>("all");
-  const [scope, setScope] = useState<"all" | "repo">("all");
   const [showArchived, setShowArchived] = useState(false);
   const liveRuns = useStore((s) => s.liveRuns);
   const chats = useStore((s) => s.chats);
@@ -75,34 +73,31 @@ function SessionList() {
     return () => window.clearInterval(t);
   }, []);
 
-  const focusRepoId = repos.find((r) => r.worktrees.some((w) => w.path === focus?.worktreePath))?.id;
+  const folder = focus?.worktreePath ?? null;
+  // 지금 보는 폴더(워크트리)에서 작업한 세션만 보여 준다.
+  const inFolder = useMemo(() => sessions.filter((s) => folder !== null && s.worktreePath === folder), [sessions, folder]);
   const list = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return sessions.filter((s) => {
+    return inFolder.filter((s) => {
       if (agent !== "all" && s.agent !== agent) return false;
       if (!showArchived && s.archived) return false;
-      if (scope === "repo" && focusRepoId && s.repoId !== focusRepoId) return false;
       if (!needle) return true;
       return [s.title, s.firstPrompt, s.cwd, s.repoName, s.startBranch, s.currentBranch, s.externalId]
         .filter(Boolean)
         .some((x) => x!.toLowerCase().includes(needle));
     });
-  }, [sessions, q, agent, scope, showArchived, focusRepoId]);
+  }, [inFolder, q, agent, showArchived]);
   // 상대 시각("3분 전")은 30초마다만 다시 계산한다.
   const now = Math.floor(Date.now() / 30_000) * 30_000;
 
   return (
     <div className="session-list">
       <div className="filters">
-        <input className="search" placeholder="세션 검색 (제목·폴더·브랜치)" value={q} onChange={(e) => setQ(e.target.value)} aria-label="세션 검색" />
+        <input className="search" placeholder={folder ? `${baseName(folder)} 의 세션 검색` : "세션 검색"} value={q} onChange={(e) => setQ(e.target.value)} aria-label="세션 검색" />
         <select value={agent} onChange={(e) => setAgent(e.target.value as typeof agent)} aria-label="에이전트 종류">
           <option value="all">전체</option>
           <option value="claude">Claude</option>
           <option value="codex">Codex</option>
-        </select>
-        <select value={scope} onChange={(e) => setScope(e.target.value as typeof scope)} aria-label="범위">
-          <option value="all">모든 저장소</option>
-          <option value="repo">보는 저장소만</option>
         </select>
         <label className="chk" title="Codex 에서 보관 처리한 세션">
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
@@ -124,7 +119,15 @@ function SessionList() {
             chat={chats.find((c) => c.sessionId === s.id || `chat:${c.id}` === s.id) ?? null}
           />
         ))}
-        {!list.length && <li className="muted pad">조건에 맞는 세션이 없습니다</li>}
+        {!list.length && (
+          <li className="muted pad">
+            {!folder
+              ? "위에서 폴더(저장소·워크트리)를 고르세요."
+              : inFolder.length
+                ? "검색 조건에 맞는 세션이 없습니다."
+                : `${baseName(folder)} 에서 작업한 세션이 아직 없습니다. '+ 새 세션' 으로 시작하세요.`}
+          </li>
+        )}
       </ul>
     </div>
   );

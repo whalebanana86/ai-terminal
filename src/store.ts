@@ -199,6 +199,13 @@ export const useStore = create<State>((set, get) => ({
     const focus: Focus = { worktreePath: path, source: "manual" };
     // 같은 워크트리를 다시 고르면 새로 읽는다(폴더를 지웠다 다시 만든 경우 등).
     const same = get().focus?.worktreePath === path;
+    // 다른 폴더로 옮기면 이전 폴더의 세션 선택을 비운다(목록은 지금 폴더 것만 보이므로).
+    const sel = get().selectedSessionId;
+    const selWt = sel ? get().sessions.find((x) => x.id === sel)?.worktreePath : null;
+    if (sel && selWt !== path) {
+      set({ selectedSessionId: null });
+      persist("selectedSession", null);
+    }
     set({ focus, viewer: null, ...(same ? { gitTick: get().gitTick + 1, statusTick: get().statusTick + 1, fsTick: get().fsTick + 1, watchNonce: get().watchNonce + 1 } : {}) });
     persist("focus", focus);
   },
