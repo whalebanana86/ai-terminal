@@ -73,7 +73,15 @@ export function attachHangulInput(term: Terminal, host: HTMLElement): () => void
   const preview = document.createElement("div");
   preview.className = "hangul-preview";
   screen.appendChild(preview);
+  // 조합 중 글자를 커서 자리에 그린다. CLI(Claude Code 등)는 앞 글자를 받은 뒤 조금 늦게 화면·커서를 옮기므로
+  // 커서가 움직이거나 화면이 다시 그려질 때마다 자리를 다시 잡는다(안 그러면 앞 글자 위를 덮어 "푸시해"가 "푸해"로 보인다).
+  let shown = "";
   const show = (text: string) => {
+    shown = text;
+    place();
+  };
+  const place = () => {
+    const text = shown;
     preview.textContent = text;
     preview.style.display = text ? "block" : "none";
     if (!text) return;
@@ -89,6 +97,7 @@ export function attachHangulInput(term: Terminal, host: HTMLElement): () => void
     preview.style.fontFamily = term.options.fontFamily ?? "monospace";
   };
   const buffer = new HangulBuffer((text) => term.input(text, true), show);
+  const moved = [term.onCursorMove(() => shown && place()), term.onRender(() => shown && place())];
   let composing = false; // 조합 이벤트를 쓰는 입력기(일본어 등)는 xterm 이 원래대로 처리
   // 캡처 단계로 텍스트 영역보다 먼저 받아, 처리한 이벤트는 xterm 까지 가지 않게 막는다.
   const onInput = (e: Event) => {
@@ -115,6 +124,7 @@ export function attachHangulInput(term: Terminal, host: HTMLElement): () => void
   host.addEventListener("paste", onFlush, true);
   textarea.addEventListener("blur", onFlush);
   return () => {
+    moved.forEach((d) => d.dispose());
     buffer.flush();
     host.removeEventListener("input", onInput, true);
     host.removeEventListener("keydown", onKey, true);

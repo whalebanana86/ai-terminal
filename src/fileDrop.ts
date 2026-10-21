@@ -57,7 +57,10 @@ export function attachFileDrop(paste: (execId: string, text: string) => boolean,
     marked = el;
     marked?.classList.add("drop-target");
   };
-  const at = (p: { x: number; y: number }) => dropTargetAt(p.x / window.devicePixelRatio, p.y / window.devicePixelRatio);
+  // 맥에서는 wry 가 창 안 위치를 이미 포인트(= CSS px) 로 준다. Tauri 는 이름만 PhysicalPosition 으로 감싸고 바꾸지 않으므로
+  // 여기서 화면 배율로 나누면 절반 자리를 찾게 된다(그래서 터미널에 놓아도 경로가 안 들어갔다). 다른 OS 는 실제 물리 픽셀.
+  const scale = /Mac/i.test(navigator.userAgent) ? 1 : window.devicePixelRatio;
+  const at = (p: { x: number; y: number }) => dropTargetAt(p.x / scale, p.y / scale);
   let off: (() => void) | null = null;
   let disposed = false;
   void getCurrentWebview()

@@ -31,6 +31,26 @@ pub fn run() {
                 crate::env::shell_env();
             });
 
+            // 맥 메뉴 막대: 기본 메뉴의 "AI Terminal" 아래 "설정… ⌘," (언어·화면 모드). 누르면 화면에 설정 창을 띄운다.
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::menu::{Menu, MenuItem, MenuItemKind, PredefinedMenuItem};
+                let menu = Menu::default(app.handle())?;
+                let settings = MenuItem::with_id(app, "settings", "설정…", true, Some("CmdOrCtrl+,"))?;
+                if let Some(MenuItemKind::Submenu(app_menu)) = menu.items()?.into_iter().next() {
+                    // 0: 정보, 1: 구분선 다음
+                    app_menu.insert(&settings, 2)?;
+                    app_menu.insert(&PredefinedMenuItem::separator(app)?, 3)?;
+                }
+                app.set_menu(menu)?;
+                app.manage(commands::SettingsMenu(settings));
+                app.on_menu_event(|app, e| {
+                    if e.id() == "settings" {
+                        let _ = app.emit("open-settings", ());
+                    }
+                });
+            }
+
             let handle = app.handle().clone();
             let data_dir = app.path().app_data_dir()?;
             let db = db::Db::open(&data_dir.join("ai-terminal.sqlite3"))?;

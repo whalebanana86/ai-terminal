@@ -4,6 +4,7 @@ import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panel
 import type { ChangeBatch } from "./api";
 import { api } from "./api";
 import { ConfirmDialog, PromptDialog, Toasts } from "./components/Overlays";
+import { SettingsDialog } from "./components/Settings";
 import { StatusBar, TopBar } from "./components/TopBar";
 import { AgentPanel } from "./panels/AgentPanel";
 import { FilePanel } from "./panels/FilePanel";
@@ -114,6 +115,7 @@ export default function App() {
       )}
       <StatusBar />
       <Toasts />
+      <SettingsDialog />
       <ConfirmDialog />
       <PromptDialog />
     </div>

@@ -4,7 +4,6 @@ import { Check, ChevronDown, FolderGit2, Plus, X } from "lucide-react";
 import { t } from "../i18n";
 import { baseName } from "../logic";
 import { useStore } from "../store";
-import { SettingsButton } from "./Settings";
 import { StickBuddy } from "./StickBuddy";
 
 export function TopBar() {
@@ -79,7 +78,6 @@ export function StatusBar() {
       <span className="muted" title={t("이 앱은 대화·코드를 외부로 보내지 않습니다")}>
         {t("로컬 전용")}
       </span>
-      <SettingsButton />
     </footer>
   );
 }

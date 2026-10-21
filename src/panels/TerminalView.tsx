@@ -19,6 +19,7 @@ declare global {
     __aiterm?: {
       terminalText: (execId: string) => string | null;
       terminalIds: () => string[];
+      terminalCursor: (execId: string) => { x: number; y: number; rows: number; cols: number } | null;
     };
   }
 }
@@ -35,6 +36,10 @@ export function exposeTerminals() {
     return lines.join("\n");
   },
     terminalIds: () => [...registry.keys()],
+    terminalCursor: (execId) => {
+      const t = registry.get(execId);
+      return t ? { x: t.buffer.active.cursorX, y: t.buffer.active.cursorY, rows: t.rows, cols: t.cols } : null;
+    },
   };
 }
 

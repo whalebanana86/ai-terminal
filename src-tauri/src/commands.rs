@@ -237,9 +237,17 @@ pub async fn fs_read(state: State<'_, AppState>, worktree: String, rel: String) 
 
 /// 화면 언어("ko"/"en"). 백엔드가 만드는 메시지(오류 등)도 이 언어로 쓴다.
 #[tauri::command]
-pub fn set_lang(lang: String) {
+pub fn set_lang(app: tauri::AppHandle, lang: String) {
     crate::i18n::set_english(lang == "en");
+    // 메뉴 막대의 "설정…" 글자도 같은 언어로
+    use tauri::Manager;
+    if let Some(m) = app.try_state::<SettingsMenu>() {
+        let _ = m.0.set_text(tr!("설정…", "Settings…"));
+    }
 }
+
+/// 맥 메뉴 막대의 "설정…" 항목(언어를 바꾸면 글자를 바꾼다)
+pub struct SettingsMenu(pub tauri::menu::MenuItem<tauri::Wry>);
 
 /// 그림 파일 바이트를 그대로(JSON 변환 없이) 돌려준다. rev = "HEAD" 면 마지막 커밋의 그림.
 #[tauri::command]

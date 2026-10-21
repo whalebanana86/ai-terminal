@@ -126,6 +126,7 @@ The coloured line under the title bar is the colour of the worktree you are look
 | `⌘[` / `⌘]` | Previous / next session |
 | `⌘1` `⌘2` `⌘3` | Focus Git / Agents / Files |
 | `⌘⏎` | Commit (in the message box), Start (in the new-session dialog) |
+| `⌘,` | Settings (language, appearance) |
 
 ## Privacy
 
@@ -155,7 +156,7 @@ scripts/make_screenshots.sh   # README images + demo video from sample data (nee
 scripts/package_release.sh 0.1.0   # universal app → build/release/ DMG, zip, SHA256SUMS (a v* tag does this on GitHub Actions and publishes a Release)
 ```
 
-**Settings** (⚙ at the bottom right): language (한국어 / English, follows macOS at first) and appearance (system / light / dark; the terminal and code colours follow).
+**Settings** (menu bar **AI Terminal → Settings…**, `⌘,`): language (한국어 / English, follows macOS at first) and appearance (system / light / dark; the terminal and code colours follow).
 
 Not yet: notarized builds, Intel check, line-level staging, 3-way merge editor, interactive rebase, stash.
 

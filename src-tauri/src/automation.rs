@@ -61,9 +61,13 @@ pub fn start(app: AppHandle) {
                 if let Some(keys) = req.get("keys").and_then(|v| v.as_array()) {
                     // [[keyCode, "글자"], ...] 를 진짜 키 입력처럼 창에 보낸다(입력기를 거침).
                     let delay = req.get("delayMs").and_then(|v| v.as_u64()).unwrap_or(60);
+                    // [keyCode, "글자", "cmd"?] — 세 번째 값이 "cmd" 면 ⌘ 를 누른 채로(메뉴 단축키 시험용)
                     let keys: Vec<(u16, String)> = keys
                         .iter()
-                        .filter_map(|k| Some((k.get(0)?.as_u64()? as u16, k.get(1)?.as_str()?.to_string())))
+                        .filter_map(|k| {
+                            let cmd = k.get(2).and_then(|v| v.as_str()) == Some("cmd");
+                            Some((k.get(0)?.as_u64()? as u16 | if cmd { 0x8000 } else { 0 }, k.get(1)?.as_str()?.to_string()))
+                        })
                         .collect();
                     let source = req.get("inputSource").and_then(|v| v.as_str()).map(str::to_string);
                     let ok = send_keys(&app, keys, delay, source);
@@ -145,7 +149,10 @@ fn send_keys(app: &AppHandle, keys: Vec<(u16, String)>, delay_ms: u64, source: O
                 // 실제 키보드와 같은 CGEvent 로 만든 뒤 NSEvent 로 감싸야 입력기(IMK)가 처리한다.
                 let ev: Option<objc2::rc::Retained<NSEvent>> = unsafe {
                     let src = CGEventSourceCreate(1);
-                    let cg = CGEventCreateKeyboardEvent(src, code, down);
+                    let cg = CGEventCreateKeyboardEvent(src, code & 0x7fff, down);
+                    if code & 0x8000 != 0 {
+                        CGEventSetFlags(cg, 1 << 20); // kCGEventFlagMaskCommand
+                    }
                     let ev: Option<objc2::rc::Retained<NSEvent>> = objc2::msg_send![objc2::class!(NSEvent), eventWithCGEvent: cg];
                     CFRelease(cg);
                     if !src.is_null() {
@@ -170,6 +177,7 @@ fn send_keys(app: &AppHandle, keys: Vec<(u16, String)>, delay_ms: u64, source: O
 unsafe extern "C" {
     fn CGEventSourceCreate(state: i32) -> *mut std::ffi::c_void;
     fn CGEventCreateKeyboardEvent(source: *mut std::ffi::c_void, keycode: u16, keydown: bool) -> *mut std::ffi::c_void;
+    fn CGEventSetFlags(event: *mut std::ffi::c_void, flags: u64);
 }
 #[link(name = "CoreFoundation", kind = "framework")]
 unsafe extern "C" {

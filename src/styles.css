@@ -2258,38 +2258,20 @@ li:hover .hover-only,
   outline-offset: -3px;
 }
 
-/* 설정(언어·화면 모드) */
-.settings {
-  position: relative;
-}
-.settings-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 6px;
-  border: none;
-  background: none;
-  color: var(--fg-dim);
-  font-size: 11px;
-  cursor: pointer;
-}
-.settings-btn:hover {
-  color: var(--fg);
-}
-.settings-pop {
-  position: absolute;
-  right: 0;
-  bottom: 24px;
-  z-index: 60;
-  width: 260px;
-  padding: 10px 12px;
+/* 설정 창(언어·화면 모드) — 맥 메뉴 막대 AI Terminal → 설정… (⌘,) */
+.settings-modal {
+  width: min(380px, 92vw);
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  background: var(--bg-2);
-  border: 1px solid var(--line-2);
-  border-radius: 10px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  gap: 12px;
+}
+.settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.settings-head h3 {
+  margin: 0;
 }
 .settings-row {
   display: flex;
@@ -2400,8 +2382,7 @@ li:hover .hover-only,
 [data-theme="light"] .icon-btn.danger:hover:not(:disabled) { background: #cf222e; }
 [data-theme="light"] .icon-btn.danger { border-color: #f5c2c7; background: #ffeef0; }
 [data-theme="light"] .img-stage { background-color: #eceef1; background-image: conic-gradient(#dfe2e7 25%, transparent 0 50%, #dfe2e7 0 75%, transparent 0); }
-[data-theme="light"] .stick-pop,
-[data-theme="light"] .settings-pop { box-shadow: 0 12px 32px #0002; }
+[data-theme="light"] .stick-pop { box-shadow: 0 12px 32px #0002; }
 [data-theme="light"] .stick-count b.bump { color: var(--accent); }
 
 /* 오늘 요청 목록: 줄을 누르면 그 동작을 다시 본다 */
