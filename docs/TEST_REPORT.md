@@ -235,3 +235,11 @@
 **원인**: `/Users/jw/Workspaces/apps`(저장소 아님)에서 claude 를 열고 `cd ai_worklog` 로 일한 세션. 기록의 마지막 cwd 가 다시 상위 폴더(셸 cwd 초기화)라 "Git 아님"으로 분류됐다.
 **수정**: 기록 끝 2MB 에서 `"cwd"` 값을 바이트로 찾아(전체 JSON 파싱 없이) 최근 작업 폴더와 기록 수를 모은다. 마지막 cwd 가 저장소 밖이면 최근 폴더 중 저장소 안인 곳에 연결하고, 그때 상위 폴더의 `HEAD` 자리표시 브랜치는 지운다. 최근 기록의 10% 이상(5줄 이상)을 남긴 다른 워크트리 목록에도 "최근엔 ○○" 표시와 함께 보이며, 그 세션을 눌러도 보던 워크트리를 유지한다. 재개는 그대로 시작한 폴더에서(`claude --resume` 은 시작 폴더 기준으로 기록을 찾는다).
 **검증**: Rust 테스트 추가(상위 → 링크 워크트리 5줄 → 잠깐 들른 폴더 → 메인 → 상위: 메인에 연결, 링크 워크트리는 다른 목록, 자리표시 브랜치 제거, 재개 cwd = 상위). 실제 기록으로 ai_worklog 목록에 세션 표시, 가짜 claude 로 이어가기 인자 확인(`CWD=/Users/jw/Workspaces/apps`, `--resume f66f92d4…`). Rust 61, vitest 22, 회귀 20, 기능 24 통과.
+
+## README·파일 아이콘·그림 보기 (2026-10-21)
+
+- **파일 아이콘**: `src/fileIcons.tsx` — 아이콘 묶음을 넣지 않고 이미 쓰는 lucide 모양에 언어 색. 이름 전체(package.json, Cargo.toml, Dockerfile, .gitignore, CLAUDE.md…) → 접두어(README, LICENSE, .env, tsconfig) → 확장자 순. 단위 테스트 4.
+- **그림 보기**: `fs_read_image` 가 그림 바이트를 JSON 변환 없이(`tauri::ipc::Response`) 돌려주고 화면은 `blob:` URL 로 그린다(CSP `img-src` 에 `blob:` 추가). 워크트리 안·그림 확장자·40MB 이하만. `rev` 는 `HEAD` 또는 커밋 해시만 받는다(옵션 주입 방지). 바뀐 그림은 마지막 커밋과 나란히. Rust 테스트(지금/HEAD 내용, 그림 아닌 파일·워크트리 밖·이상한 rev 거부).
+- **README**: ai_worklog README 구성(시연 GIF → 이 앱은 뭐예요 → 왜 → 설치 → 쓰는 방법 → 안전 → 개발자용)을 따라 한국어·영어 두 벌. 그림 8장과 30초 시연(GIF 3.6MB·MP4 0.6MB)은 `scripts/make_screenshots.sh` 가 지어낸 예시 데이터(`scripts/demo/make_demo.py`: 할 일 앱 저장소·워크트리 3개·Claude 4개·Codex 2개 세션, 가짜 claude 채팅)로 만든다. 앱 ID 를 바꾼 개발 빌드(`dev.aiterminal.demo`)와 가짜 HOME 이라 실제 기록·설치된 앱 설정은 건드리지 않는다.
+  - 캡처 함정: 창이 잠깐 화면 밖이면 `screencapture -l` 이 작은 미리보기(930×580)로 찍힌다 → 크기를 보고 다시 찍는다. GIF 는 프레임 전체를 저장하면 30MB 가 넘어서 `mpdecimate` 로 같은 화면을 빼고 바뀐 영역만 저장(`-gifflags +offsetting+transdiff`).
+  - 가짜 claude 함정: 앱이 보내는 JSON 은 키가 알파벳순이라 `"allow"` 가 `control_response` 보다 앞에 온다.

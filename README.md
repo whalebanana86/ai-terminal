@@ -1,93 +1,257 @@
 # AI Terminal
 
-> macOS 용 오픈소스 AI 코딩 워크스페이스. Claude Code·Codex 세션이 **어느 저장소·워크트리·브랜치에서** 일하는지 실시간으로 보면서 대화하고 파일을 확인한다.
->
-> An open-source macOS workspace for AI coding agents (Claude Code, Codex): see which repository, worktree and branch each session is working on, resume it in a real terminal, and watch the files it touches.
+**한국어** · [English](README.en.md)
 
-![AI Terminal](docs/screenshot.png)
+<p align="center">
+  <img src="docs/demo.gif" width="900" alt="30초 시연: 세션 고르기 → 세 칸이 그 워크트리로 → 파일 변경·그림 비교 → 채팅으로 이어가기와 도구 허락 → 일부만 담기 → 그래프 메뉴 → 워크트리">
+  <br><sub>30초 시연 (<a href="docs/demo.mp4">MP4 로 보기</a>) · 지어낸 예시 기록으로 찍었어요</sub>
+</p>
 
-## 무엇을 하나
+내 맥에서 **Claude Code·Codex 를 여러 개 돌릴 때**, AI 가 저마다 **어느 저장소·워크트리·브랜치에서** 일하고 있는지 보면서 대화를 이어 가고, Git 과 파일까지 한 화면에서 확인하는 맥 앱이에요.
 
-| 왼쪽 — Git | 가운데 — 에이전트 | 오른쪽 — 파일 |
+## 이 앱은 뭐예요?
+
+요즘은 AI 에게 "로그인 화면 만들어 줘", "이 버그 고쳐 줘" 하고 말로 일을 시킬 수 있어요. 그런데 AI 를 두세 개 같이 돌리기 시작하면 금방 헷갈려요.
+
+이 앱은 화면을 세 칸으로 나눠서
+
+- **가운데**에 AI 와 나눈 대화(세션)를 모아 두고,
+- 대화 하나를 고르면 **왼쪽 Git** 과 **오른쪽 파일**이 그 AI 가 일하던 곳으로 같이 바뀌어요.
+- 마음에 들면 버튼 하나로 **그 대화를 이어서** 할 수 있어요.
+
+마치 여러 친구가 각자 다른 책상에서 숙제를 할 때, 누가 어느 책상에서 무엇을 하고 있는지 한눈에 보이는 교실 지도 같은 거예요.
+
+![세 칸 화면: 왼쪽 Git 그래프, 가운데 세션과 대화, 오른쪽 파일](docs/screenshots/overview.png)
+
+> 이 README 의 그림은 모두 지어낸 예시 기록(할 일 앱 저장소, 지어낸 사람 이름)으로 찍었어요. `scripts/make_screenshots.sh` 로 똑같이 다시 만들 수 있어요.
+
+## 왜 만들었어요?
+
+AI 에게 코드를 맡기다 보면 이런 일이 생겨요.
+
+1. **"그 AI 지금 어느 브랜치에서 일하고 있지?"** — AI 마다 다른 폴더(워크트리)와 브랜치에서 일하는데, 터미널 창만 봐서는 잘 모르겠어요. 모르고 브랜치를 바꾸면 AI 가 갑자기 다른 파일을 보게 돼요.
+2. **대화가 여기저기 흩어져 있어요** — 터미널 탭 여러 개, 다른 앱에서 연 것, 어제 닫은 것… 이어서 하려면 세션 id 를 찾아 명령을 직접 쳐야 해요.
+3. **AI 가 바꾼 걸 보려면 앱을 또 열어야 해요** — 무엇이 바뀌었는지, 커밋할지 말지 보려면 Git 앱과 편집기를 따로 열어요.
+
+그래서 이 앱은
+
+- 내 맥의 Claude Code·Codex 대화를 **저장소·워크트리마다 모아 보여 주고**,
+- 대화를 고르면 Git 과 파일을 **그 워크트리로 옮겨 보여 주되 체크아웃은 절대 하지 않고**(화면만 바뀌어요),
+- **이어가기** 버튼 하나로 원래 CLI 그대로, 또는 앱 채팅 화면으로 대화를 이어 가요.
+
+## 설치하는 방법
+
+아직 미리 만들어 둔 내려받기 파일(Releases)은 없어요. 코드로 직접 만들어 설치해요. 10분쯤 걸려요(처음 한 번 Rust 가 많이 컴파일해요).
+
+### 준비물
+
+- 맥 컴퓨터 (macOS 12 이상, Apple 실리콘 M1~). 인텔 맥은 아직 확인하지 않았어요
+- `git` — 없으면 터미널에서 `xcode-select --install` 을 한 번 실행해요
+- [Rust](https://rustup.rs) — `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+- [Node.js](https://nodejs.org) 20 이상과 [pnpm](https://pnpm.io) — `npm install -g pnpm`
+- 쓰려는 AI 가 **이미 로그인된 상태**: [Claude Code](https://code.claude.com) (`claude`), [Codex CLI](https://github.com/openai/codex) (`codex`) 중 하나 이상
+
+### 따라 하기
+
+1. **터미널을 열어요.** `⌘ + 스페이스`를 누르고 "터미널"이라고 쓴 뒤 엔터를 쳐요.
+2. **코드를 내려받아요.**
+   ```bash
+   git clone https://github.com/whalebanana86/ai-terminal.git
+   cd ai-terminal
+   pnpm install
+   ```
+3. **앱을 만들어요.**
+   ```bash
+   pnpm tauri build
+   ```
+   끝나면 `src-tauri/target/release/bundle/macos/AI Terminal.app` 과 설치용 `dmg` 가 생겨요.
+4. **응용 프로그램 폴더에 넣고 열어요.**
+   ```bash
+   ditto "src-tauri/target/release/bundle/macos/AI Terminal.app" "/Applications/AI Terminal.app"
+   open "/Applications/AI Terminal.app"
+   ```
+5. 위쪽 **＋ 저장소 추가**로 내 Git 저장소 폴더를 골라요. AI 와 일한 적 있는 저장소는 알아서 찾아 줘요.
+
+> 다른 사람이 만든 `dmg` 를 받아서 열면 "확인할 수 없는 개발자" 창이 뜰 수 있어요(Apple 공증 전). **시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기**를 누르거나, 터미널에서 `xattr -dr com.apple.quarantine "/Applications/AI Terminal.app"` 를 한 번 실행해요. 직접 만든 앱은 괜찮아요.
+
+### 새 버전으로 바꾸기 · 지우기
+
+- 새 버전: `ai-terminal` 폴더에서 `git pull && pnpm install && pnpm tauri build` 한 다음 4번을 다시 해요. 추가한 저장소 목록은 그대로 남아요.
+- 지우기: `AI Terminal.app` 을 휴지통에 넣어요. 앱이 기억하던 저장소 목록까지 지우려면 `~/Library/Application Support/dev.aiterminal.app` 폴더도 지워요. AI 대화 기록(원본)은 이 앱이 만든 게 아니라서 그대로 있어요.
+
+## 쓰는 방법
+
+### 세 칸
+
+| 칸 | 무엇을 보여 줘요? |
+|---|---|
+| 왼쪽 **Git** | 커밋 그래프(지하철 노선도처럼 워크트리마다 색), 워크트리, 바뀐 파일과 커밋, 브랜치 |
+| 가운데 **에이전트** | 지금 보는 워크트리에서 일한 AI 대화들(오늘·어제·이번 주…), 고른 대화의 내용, 이어가기 |
+| 오른쪽 **파일** | 워크트리의 실제 파일. 바뀐 파일은 M·U·D 표시, 누르면 내용·바뀐 부분·그림 |
+
+위쪽 줄 아래의 **색 선**은 지금 보고 있는 워크트리의 색이에요. 그래프의 노선, 워크트리 목록, 파일 칸 머리의 점이 모두 같은 색이라 "지금 어디를 보고 있는지" 헷갈리지 않아요.
+
+### 대화를 고르면 세 칸이 같이 움직여요
+
+![로그인 화면 세션을 고르자 왼쪽 Git 과 오른쪽 파일이 todo-app-login 워크트리로 바뀐 화면](docs/screenshots/worktree-switch.png)
+
+1. 가운데에서 대화를 하나 눌러요.
+2. 왼쪽 그래프와 오른쪽 파일이 **그 대화가 일하던 워크트리**로 바뀌어요. 브랜치를 바꾸는(체크아웃) 일은 하지 않아요. 보기만 바뀌어요.
+3. 대화가 시작될 때의 브랜치와 지금 브랜치가 다르면 `feature/tags → main` 처럼 알려 줘요.
+4. 앱 밖(다른 터미널, Codex 앱 등)에서 지금 열려 있는 대화는 "터미널에서 실행 중"처럼 표시되고, 여기서 같이 열려고 하면 한 번 더 물어봐요.
+
+### 이어서 대화하기
+
+![채팅 화면: AI 가 테스트를 돌려도 되는지 묻는 허락 카드](docs/screenshots/chat.png)
+
+- **이어가기** 버튼을 누르면 고른 대화를 이어서 해요. 옆의 ▾ 에서 방법을 골라요.
+  - **앱 채팅 화면** — 말풍선처럼 대화해요. AI 가 명령을 실행하거나 파일을 고치기 전에 **실제 명령·내용을 카드로 보여 주고 허락/거부**를 물어봐요. 허락 범위(도구마다 묻기, 파일 편집은 자동 허락, 계획만 세우기)도 골라요.
+  - **원본 CLI 터미널** — 원래 쓰던 `claude`·`codex` 화면 그대로 앱 안 터미널에서 열어요. 슬래시 명령, 내 로그인·구독이 그대로예요.
+- **＋ 새 세션** (`⌘N`)으로 새 AI 대화를 시작해요. 어느 워크트리에서 일할지, 첫 지시를 바로 적을 수 있어요. "새 워크트리 만들어서 시작"을 고르면 다른 AI 와 부딪히지 않는 새 작업 폴더를 만들어 줘요.
+- 여러 대화를 동시에 돌려도 돼요. 다른 대화를 골라도 돌던 AI 는 멈추지 않아요.
+
+<img src="docs/screenshots/new-session.png" width="49%" alt="새 세션 창: Claude Code/Codex, 워크트리, 채팅/터미널, 첫 지시"> <img src="docs/screenshots/worktrees.png" width="49%" alt="워크트리 탭: 워크트리마다 색, 브랜치, 세션 수">
+
+### Git: 바뀐 것 보고 일부만 커밋하기
+
+![변경 사항 탭: 파일을 누르면 아래에서 바뀐 부분을 골라 담기](docs/screenshots/stage.png)
+
+- **변경 사항** 탭에서 파일 옆 **＋** 를 누르면 커밋에 담아요. 파일 이름을 누르면 바로 아래에 바뀐 부분이 조각(hunk)으로 나와서 **필요한 조각만 담기·빼기·버리기**를 할 수 있어요.
+- 커밋은 **담은 것만** 해요. 커밋 버튼 위에 무엇이 커밋될지 미리 보여 줘요.
+- 그래프에서 커밋을 오른쪽 클릭하면 그 자리에서 새 브랜치·새 워크트리, 브랜치마다 전환·병합·리베이스 메뉴가 나와요. 충돌이 나면 위에 띠가 떠서 파일마다 "현재 브랜치 쪽 / 가져오는 쪽"을 고르거나, 직접 고친 뒤 "해결 표시"를 눌러 풀어요.
+- 위의 브랜치 이름을 누르면 **브랜치 전환** 목록이 열려요. 다른 워크트리가 쓰는 브랜치는 바꾸지 않고 그 워크트리를 보여 줘요.
+- **원격 확인 · 받기 · 올리기**는 누르고 한 번 더 확인해야 실행돼요. 받기는 내 커밋과 섞어야 하면 아무것도 바꾸지 않고 멈춰요.
+
+![그래프 오른쪽 클릭: 브랜치 하위 메뉴](docs/screenshots/graph-menu.png)
+
+### 파일: 내용·바뀐 부분·그림
+
+![그림 파일: 마지막 커밋과 지금을 나란히](docs/screenshots/image.png)
+
+- 파일마다 종류에 맞는 아이콘(TypeScript, Rust, 그림, 설정, README…)이 붙어요.
+- 파일을 누르면 **내용**(색칠된 코드), **변경**(마지막 커밋과 비교), **일부 담기**를 골라 봐요.
+- 그림 파일(png·jpg·gif·webp·svg 등)은 그림으로 보여 줘요. 바뀐 그림은 **마지막 커밋과 지금을 나란히** 놓아요. 그림을 누르면 실제 크기 ↔ 맞춤.
+- AI 나 편집기가 파일을 바꾸면 알아서 새로 고쳐져요.
+
+### 단축키
+
+| 키 | 하는 일 |
+|---|---|
+| `⌘N` | 새 세션 |
+| `⌘R` | 세션·저장소·Git 다시 읽기 |
+| `⌘[` / `⌘]` | 이전 / 다음 세션 |
+| `⌘1` `⌘2` `⌘3` | Git / 에이전트 / 파일 칸으로 |
+| `⌘⏎` | 커밋 (커밋 메시지 칸에서), 시작 (새 세션 창에서) |
+
+## 내 기록은 안전해요?
+
+- 이 앱에는 **가입이 없어요.** 앱 자체는 인터넷으로 아무것도 보내지 않아요(화면이 외부 주소에 접속하지 못하게 막아 두었어요).
+- AI 대화 기록은 Claude Code·Codex 가 남긴 원본 파일을 **읽기만** 해요. 고치거나 지우지 않아요.
+- 밖으로 나가는 건 **내가 누른 것**뿐이에요: Git 원격 작업(원격 확인·받기·올리기), 그리고 내가 시작한 Claude Code·Codex 가 원래 하던 통신.
+- 브랜치 바꾸기·받기·올리기·버리기처럼 되돌리기 어려운 일은 늘 확인 창을 거쳐요. 커밋 안 한 변경이나 그 워크트리에서 돌고 있는 AI 가 있으면 경고해요.
+
+---
+
+## 더 자세한 설명 (어른·개발자용)
+
+### 구성
+
+| | |
+|---|---|
+| 앱 | Tauri 2 (Rust) + React + TypeScript, xterm.js(WebGL), Shiki(필요한 언어만) |
+| Git | `git` CLI 를 그대로 부른다(로그인·자격 증명·hooks 그대로). 그래프 레인 계산은 Rust 로 직접 구현 |
+| 터미널 | portable-pty. 출력은 실행마다 2MB 고리 버퍼에 두고 다시 붙을 때 재생 |
+| 파일 감시 | notify + debouncer. 무시된 폴더(`node_modules` 등)는 20초마다만 |
+| 저장 | SQLite(`~/Library/Application Support/dev.aiterminal.app/ai-terminal.sqlite3`): 저장소 목록, 세션↔워크트리 연결, 실행 이력. 대화 내용은 저장하지 않는다 |
+
+도메인 모델: **Repository → Worktree → Branch/HEAD**, 그리고 그와 연결되는 **AgentSession**(CLI 가 남긴 대화)과 **AgentExecution**(앱이 띄운 실행 한 번)을 따로 둔다. 자세한 결정과 근거는 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+### 읽는 기록
+
+| 도구 | 위치 | 하는 일 |
 |---|---|---|
-| 커밋 그래프(레인), 브랜치·원격·태그·워크트리 HEAD 배지, 브랜치 전환 메뉴·우클릭 메뉴로 체크아웃, 브랜치·워크트리 만들기/지우기, 파일·hunk 단위 스테이징과 커밋, Merge/Rebase 와 충돌 해결, Fetch / Pull(ff-only) / Push | Claude Code·Codex 세션 목록(외부 터미널에서 시작한 것 포함, 지금 외부에서 실행 중인지 표시), 기록 보기, 원본 CLI 터미널(PTY)로 재개 또는 **앱 채팅 화면**으로 이어가기(도구 승인 버튼), 새 세션, 여러 세션 동시 실행 | 세션 워크트리의 실제 파일 트리, 수정·추가·삭제 표시, 코드 미리보기, diff, hunk 스테이징 보기, 외부 변경 자동 갱신 |
+| Claude Code | `~/.claude/projects/*/<id>.jsonl` (`CLAUDE_CONFIG_DIR` 지원) | 읽기만. 머리에서 첫 cwd·브랜치·첫 요청, 끝에서 마지막 cwd·브랜치·제목 |
+| Claude Code | `~/.claude/sessions/<pid>.json` | 지금 실행 중인지 판단 |
+| Codex | `~/.codex/state_*.sqlite`(읽기 전용), `~/.codex/sessions/**/rollout-*.jsonl[.zst]` (`CODEX_HOME` 지원) | 스레드 목록·대화 |
+| Codex | `~/.codex/thread-writer-locks/*.lock` | 지금 실행 중인지 판단 |
 
-**핵심 규칙**
+세션을 워크트리에 붙이는 규칙:
 
-- 가운데에서 세션을 고르면 왼쪽과 오른쪽이 **그 세션의 워크트리**로 바뀐다. 이때 체크아웃은 절대 하지 않는다. 화면만 바꾼다.
-- 브랜치는 세 가지를 따로 보여 준다. 세션 **시작** 때 기록된 브랜치, **마지막 기록**의 브랜치, 워크트리의 **지금** 브랜치(Git 실시간)다. 서로 다르면 경고를 띄운다.
-- 체크아웃·풀·푸시 같은 쓰기 작업은 버튼을 누르고 확인창을 거쳐야만 실행된다. 커밋하지 않은 변경이나 실행 중인 에이전트가 있으면 경고한다.
-- 원본 CLI 를 그대로 실행하므로 기존 로그인과 구독, 권한 승인 화면, 슬래시 명령이 모두 그대로 동작한다.
-- 계정 가입이 없다. 앱 자체는 네트워크 요청을 보내지 않는다(CSP 로 차단). 대화 기록은 Claude·Codex 원본 파일을 읽기만 한다.
+- 대화 도중 `cd` 로 옮겨 갔으면 **마지막 기록의 cwd** 가 지금 일하는 곳이다(재개는 언제나 **첫 cwd** 에서 — `claude --resume` 이 시작 폴더 기준으로 기록을 찾기 때문).
+- 상위 폴더(저장소 아님)에서 claude 를 열고 하위 프로젝트에서 일한 세션은, 기록 끝 2MB 의 cwd 들 중 저장소 안인 곳에 붙인다. 최근 기록의 10% 이상을 남긴 다른 워크트리 목록에도 "최근엔 ○○" 로 보인다.
+- 실행 중 감지는 `ps`·`lsof` 를 띄우지 않고 libproc 으로 프로세스의 cwd·열린 파일을 읽는다.
 
-## 설치
+### 앱이 실행하는 명령
 
-### 빌드된 앱
+| 동작 | 명령 |
+|---|---|
+| 터미널로 이어가기 | `claude --resume <id>` (기록된 cwd 에서), `codex resume <id> -C <cwd>` |
+| 새 세션(터미널) | `claude --session-id <새 uuid> [-- 첫 지시]`, `codex -C <cwd> [-- 첫 지시]` |
+| 채팅(Claude) | `claude -p --input-format stream-json --output-format stream-json --verbose --permission-prompts host --permission-prompt-tool stdio --permission-mode <범위>` — 도구 쓰기 전 `can_use_tool` 요청을 받아 허락 카드로 보여 준다. 허락하면 **CLI 가 보낸 입력 그대로** 돌려준다 |
+| 채팅(Codex) | 턴마다 `codex exec --json -s <샌드박스> -C <cwd> -` / `codex exec resume --json -c sandbox_mode=… <id> -` (지시는 stdin 으로) |
+| Git | `GIT_OPTIONAL_LOCKS=0`, `GIT_TERMINAL_PROMPT=0`, `core.fsmonitor=false` 등으로 사용자 설정이 화면 해석을 바꾸지 않게 하고, 쓰기는 확인 창을 거친 뒤에만 |
 
-`AI Terminal_<버전>_aarch64.dmg` 를 열어 `AI Terminal.app` 을 응용 프로그램 폴더로 옮긴다.
+앱이 띄우는 CLI 에는 로그인 셸(`$SHELL -l -i`)의 환경변수를 넘긴다(volta·homebrew·`~/.local/bin` 의 CLI 도 찾게). 이 앱을 다른 AI 세션 안에서 띄워도 `CLAUDECODE` 같은 부모 세션 변수는 넘기지 않는다.
 
-> 아직 Apple 공증(notarization)을 받지 않은 ad-hoc 서명 빌드다. 인터넷에서 받은 경우 처음 열 때 막힌다.
-> - macOS 14 이하: Finder 에서 앱을 **우클릭 → 열기**
-> - macOS 15 이상: 한 번 열어 본 뒤 **시스템 설정 → 개인정보 보호 및 보안 → "그래도 열기"**
-> - 또는 터미널에서 `xattr -dr com.apple.quarantine "/Applications/AI Terminal.app"`
->
-> 직접 빌드한 앱에는 이 과정이 필요 없다.
+### 보안
 
-### 필요한 것
+- 모든 Git·파일 명령은 **등록된 워크트리 안의 경로**만 받는다. `..`·절대 경로·워크트리 밖을 가리키는 심볼릭 링크는 거부.
+- CSP 로 화면의 외부 접속을 막는다(`connect-src` 는 IPC 만). 그림은 `blob:` 으로만 그린다.
+- 테스트용 원격 조작 소켓은 `--features automation` 빌드에만 들어가고, 배포 빌드에는 없다.
 
-- macOS 12 이상, Apple Silicon(arm64). Intel 맥은 소스에서 빌드해야 하며 아직 검증하지 않았다.
-- `git`
-- 쓰려는 에이전트 CLI 가 이미 로그인된 상태: [Claude Code](https://code.claude.com) (`claude`), [Codex CLI](https://github.com/openai/codex) (`codex`)
+### 가볍게 만든 방법
 
-앱은 로그인 셸(`$SHELL -l -i`)의 환경변수를 읽어 `claude`·`codex`·`git` 을 찾는다. 그래서 volta·homebrew·`~/.local/bin` 에 설치한 CLI 도 Finder 에서 연 앱이 찾을 수 있다. 상단 오른쪽의 `claude` `codex` `git` 표시가 초록색이면 찾은 것이다.
+| | 전 | 후 |
+|---|---|---|
+| CPU (에이전트가 일하는 중, 60초 평균) | 3.14% | 0.74% — 자주 도는 경로에서 프로세스 띄우기 없앰(ps/lsof → libproc, `git worktree list` → HEAD 파일 직접 읽기) |
+| 메모리 | 194MB | 148MB |
+| 세션 목록 | 108ms | 2ms — 파일 크기·시각이 같으면 다시 읽지 않음 |
+| 화면 코드 | 821KB, 11MB(언어 문법 포함) | 359KB, 3.5MB — 터미널·문법 강조는 쓸 때만 불러옴 |
+| 앱 / dmg | | 7.5MB / 3.8MB |
 
-### 소스에서 빌드
+파일 아이콘은 아이콘 묶음을 넣지 않고 이미 쓰는 lucide 모양에 언어별 색을 입혔다.
+
+### 개발
 
 ```bash
-# 준비: Rust(rustup), Node 20+, pnpm
 pnpm install
 pnpm tauri dev          # 개발 모드
+pnpm check              # tsc + vitest + cargo test
 pnpm tauri build        # src-tauri/target/release/bundle/{macos,dmg}
-pnpm check              # 타입 검사 + 프런트 테스트 + Rust 테스트
 ```
 
-## 사용법
+실제 화면으로 검증하는 E2E (automation 빌드가 떠 있어야 한다):
 
-1. 위의 **+ 저장소** 로 로컬 Git 저장소(비공개 저장소 포함)를 추가한다. 에이전트 세션이 있었던 저장소는 자동으로 발견된다.
-2. 가운데 목록에서 세션을 고른다. 외부 터미널에서 시작한 Claude Code·Codex 세션도 보인다. 고르면 왼쪽 그래프와 오른쪽 파일이 그 세션의 워크트리를 보여 준다.
-3. **재개** 를 누르면 기록된 작업 폴더에서 `claude --resume <id>` 또는 `codex resume <id>` 가 앱 안 터미널로 실행된다. 이전 대화 맥락이 그대로 이어진다.
-4. **+ 새 세션** (⌘N)으로 원하는 워크트리에서 새 에이전트를 시작한다. 여러 세션을 동시에 돌려도 되며, 세션을 바꿔도 다른 에이전트 프로세스는 계속 돈다.
-5. 에이전트나 외부 에디터가 파일을 바꾸면 파일 트리와 변경 표시, diff, Git 상태가 자동으로 갱신된다.
-6. **채팅으로 이어가기**: 세션의 "채팅" 탭에서 원본 CLI 화면 대신 앱의 채팅 화면으로 대화할 수 있다. Claude 는 도구를 쓰기 전에 실제 명령·내용을 카드로 보여 주고 허용/거부를 묻는다(권한 모드 선택). Codex 는 샌드박스 수준(읽기 전용/작업 폴더 쓰기)을 고른다.
-7. **브랜치 체크아웃**: Git 패널 머리글의 브랜치 이름을 누르면 전환 메뉴가 열린다. 브랜치 탭(더블클릭·⋯ 메뉴), 그래프 행 우클릭 메뉴로도 체크아웃·병합·rebase·새 워크트리를 할 수 있다. 에이전트가 쓰는 워크트리를 건드리지 않으려면 "새 워크트리에서 열기"를 쓴다.
-8. **스테이징**: 변경 사항 탭에서 파일 단위로 +/−, 파일을 누르면 오른쪽 "스테이징" 보기에서 hunk 단위로 스테이지·취소·버리기. 커밋은 스테이지된 것만 한다.
-9. **외부 실행 표시**: 다른 터미널·앱에서 지금 실행 중인 세션은 보라색 점과 "터미널 / Codex Desktop" 태그가 붙고, 앱에서 열려고 하면 경고한다.
+```bash
+AITERM_AUTOMATION_SOCKET=/tmp/aiterm-auto.sock pnpm tauri dev --features automation
+scripts/e2e/regression.sh     # 경로 보안·세션 연결·커밋 등 20개
+scripts/e2e/features.sh       # 브랜치 전환·워크트리·부분 담기·병합 충돌·리베이스 24개
+scripts/e2e/hangul.sh         # 터미널 한글 입력(실제 두벌식 입력기를 거친 키 입력)
+scripts/measure.sh            # CPU·메모리
+```
 
-| 단축키 | 동작 |
-|---|---|
-| ⌘N | 새 세션 |
-| ⌘R | 세션·저장소·Git 다시 읽기 |
-| ⌘[ / ⌘] | 이전 / 다음 세션 |
-| ⌘1 ⌘2 ⌘3 | Git / 에이전트 / 파일 패널로 포커스 |
-| ⌘↩ (커밋 메시지 칸) | 커밋 |
+README 그림·시연 영상 다시 만들기 (지어낸 예시 데이터로만 찍는다):
 
-## 데이터와 프라이버시
+```bash
+scripts/make_screenshots.sh             # docs/screenshots/*.png + docs/demo.gif·mp4 (ffmpeg 필요)
+scripts/make_screenshots.sh --no-video  # 그림만
+```
 
-| 무엇 | 어디 | 앱이 하는 일 |
-|---|---|---|
-| Claude Code 기록 | `~/.claude/projects/*/<id>.jsonl` (`CLAUDE_CONFIG_DIR` 지원) | 읽기만 함 |
-| Codex 기록 | `~/.codex/state_*.sqlite`, `~/.codex/sessions/**/rollout-*.jsonl[.zst]` (`CODEX_HOME` 지원) | 읽기 전용으로 엶 |
-| 앱 상태 | `~/Library/Application Support/dev.aiterminal.app/ai-terminal.sqlite3` | 저장소 목록, 세션↔워크트리 연결, 실행 이력, 화면 상태. 대화 내용은 저장하지 않음 |
+예시 저장소·세션은 `/tmp/aiterm-demo`(`DEMO_DIR`)에 새로 만들고, 앱은 ID 를 바꾼 개발 빌드(`dev.aiterminal.demo`)를 가짜 HOME(`AITERM_HOME`)으로 띄운다. 내 실제 기록과 설치된 앱의 설정은 건드리지 않는다. 채팅은 `scripts/demo/fake-claude.sh` 가 답한다.
 
-네트워크로 나가는 것은 사용자가 누른 Git 원격 작업(fetch/pull/push)과, 사용자가 실행한 Claude·Codex CLI 자체의 통신뿐이다.
+### 문서
 
-## 문서
-
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 도메인 모델(Repository·Worktree·AgentSession·AgentExecution), 아키텍처 결정과 근거
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 도메인 모델, 아키텍처 결정과 근거
 - [docs/FEATURES.md](docs/FEATURES.md) — 구현된 기능 / 아직 안 된 기능
-- [docs/TEST_REPORT.md](docs/TEST_REPORT.md) — 실제 CLI 로 수행한 인수 테스트 결과, 성능 측정, 한계
-- 검증 스크립트: `scripts/e2e/regression.sh`, `scripts/e2e/features.sh`, `scripts/e2e/resume-check.js` (automation 빌드 필요), `scripts/measure.sh` (CPU·메모리)
+- [docs/TEST_REPORT.md](docs/TEST_REPORT.md) — 실제 CLI 로 한 인수 테스트, 성능 측정, 고친 문제
+
+### 아직 안 되는 것
+
+- Apple 공증·서명된 배포본, 인텔 맥 확인
+- 줄 단위 스테이징, 3-way 충돌 편집기, 대화형 리베이스, stash
+- 화면 글자는 한국어만
+- 아주 큰 저장소의 그래프는 최근 커밋까지만 그린다(페이지 나눔 없음)
 
 ## 라이선스
 
-MIT. GitKraken 의 정보 구조를 참고했지만 코드와 고유 디자인은 사용하지 않았다. 커밋 그래프 레인 알고리즘은 직접 구현했다(vscode-git-graph·gitamine 코드는 라이선스 때문에 사용하지 않음).
+MIT. GitKraken 의 정보 구조를 참고했지만 코드와 고유 디자인은 쓰지 않았다. 커밋 그래프 레인 알고리즘은 직접 구현했다(vscode-git-graph·gitamine 코드는 라이선스 때문에 쓰지 않음).

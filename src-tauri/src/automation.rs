@@ -51,6 +51,13 @@ pub fn start(app: AppHandle) {
                     app.exit(0);
                     return;
                 }
+                if let Some(f) = req.get("frame").and_then(|v| v.as_array()) {
+                    // 스크린샷용: 창 위치·크기(포인트, 화면 왼쪽 위 기준) 맞추기
+                    let n: Vec<f64> = f.iter().filter_map(|x| x.as_f64()).collect();
+                    let ok = n.len() == 4 && set_frame(&app, n[0], n[1], n[2], n[3]);
+                    let _ = writeln!(writer, "{}", serde_json::json!({ "ok": ok, "value": "null" }));
+                    continue;
+                }
                 if let Some(keys) = req.get("keys").and_then(|v| v.as_array()) {
                     // [[keyCode, "글자"], ...] 를 진짜 키 입력처럼 창에 보낸다(입력기를 거침).
                     let delay = req.get("delayMs").and_then(|v| v.as_u64()).unwrap_or(60);
@@ -92,6 +99,12 @@ pub fn start(app: AppHandle) {
             }
         }
     });
+}
+
+fn set_frame(app: &AppHandle, x: f64, y: f64, w: f64, h: f64) -> bool {
+    let Some(win) = app.get_webview_window("main") else { return false };
+    let _ = win.set_position(tauri::LogicalPosition::new(x, y));
+    win.set_size(tauri::LogicalSize::new(w, h)).is_ok()
 }
 
 /// 앱을 앞으로 가져와 키 이벤트를 NSApplication 으로 보낸다. 손쉬운 사용 권한 없이 자기 창에만 보낸다.

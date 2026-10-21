@@ -235,6 +235,17 @@ pub async fn fs_read(state: State<'_, AppState>, worktree: String, rel: String) 
     .await
 }
 
+/// 그림 파일 바이트를 그대로(JSON 변환 없이) 돌려준다. rev = "HEAD" 면 마지막 커밋의 그림.
+#[tauri::command]
+pub async fn fs_read_image(state: State<'_, AppState>, worktree: String, rel: String, rev: Option<String>) -> Res<tauri::ipc::Response> {
+    let core = state.core.clone();
+    blocking(move || {
+        core.ensure_known(&worktree)?;
+        crate::files::read_image(Path::new(&worktree), &rel, rev.as_deref()).map(tauri::ipc::Response::new)
+    })
+    .await
+}
+
 // ───────────── 세션 ─────────────
 
 #[tauri::command]

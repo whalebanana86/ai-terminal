@@ -3,6 +3,7 @@ import { FolderOpen, Trash2 } from "lucide-react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { api, errorText, type ChangeKind, type DirEntry, type FileContent, type FileDiff, type WorktreeStatus } from "../api";
 import { Empty, WtDot } from "../components/Overlays";
+import { FileIcon, imageMime } from "../fileIcons";
 import { escapeHtml, highlightLines } from "../highlight";
 import { baseName, decorationMap, kindLabel, kindLetter } from "../logic";
 import { useStore } from "../store";
@@ -125,6 +126,7 @@ function FileTree({ worktree }: { worktree: string }) {
         rows.push(
           <li key={e.rel} className={`tree-row dir${e.ignored ? " ignored" : ""}`} style={{ paddingLeft: 8 + depth * 14 }} onClick={() => toggle(e.rel)}>
             <span className="twisty">{open ? "▾" : "▸"}</span>
+            <FileIcon name={e.name} dir open={open} />
             <span className="name">{e.name}</span>
             {n ? <span className="dir-count" title={`안에 바뀐 파일 ${n}개`}>{n}</span> : null}
           </li>,
@@ -141,6 +143,7 @@ function FileTree({ worktree }: { worktree: string }) {
             onClick={() => openFile(e.rel, k)}
             data-rel={e.rel}
           >
+            <FileIcon name={e.name} />
             <span className="name">{e.name}</span>
             {k && (
               <span className={`kind kind-${k}`} title={kindLabel(k)}>
@@ -159,6 +162,7 @@ function FileTree({ worktree }: { worktree: string }) {
       const on = viewer?.kind === "file" && viewer.rel === ent.path;
       rows.push(
         <li key={`del:${ent.path}`} className={`tree-row file k-deleted${on ? " on" : ""}`} style={{ paddingLeft: 22 + depth * 14 }} onClick={() => openViewer({ kind: "file", rel: ent.path, mode: "diff" })} data-rel={ent.path}>
+          <FileIcon name={baseName(ent.path)} />
           <span className="name">{baseName(ent.path)}</span>
           <span className="kind kind-deleted">D</span>
         </li>,
@@ -190,6 +194,7 @@ function FileTree({ worktree }: { worktree: string }) {
               const on = viewer?.kind === "file" && viewer.rel === e.path;
               return (
                 <li key={e.path} className={`tree-row file k-${e.kind}${on ? " on" : ""}`} style={{ paddingLeft: 10 }} onClick={() => openViewer({ kind: "file", rel: e.path, mode: "diff" })} data-rel={e.path}>
+                  <FileIcon name={baseName(e.path)} />
                   <span className="name">{e.path}</span>
                   <span className={`kind kind-${e.kind}`}>{kindLetter(e.kind)}</span>
                 </li>
@@ -213,6 +218,8 @@ function FileViewer({ worktree }: { worktree: string }) {
   const [lines, setLines] = useState<string[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const mode = viewer.kind === "commit-file" ? "diff" : viewer.mode;
+  // 그림 파일은 글자 대신 그림으로(내용 = 지금 그림, 변경 = 마지막 커밋과 나란히)
+  const isImage = imageMime(viewer.rel) !== null;
   const key = viewer.kind === "commit-file" ? `${viewer.sha}:${viewer.rel}` : `${viewer.rel}:${mode}`;
 
   useEffect(() => {
@@ -220,7 +227,9 @@ function FileViewer({ worktree }: { worktree: string }) {
     setErr(null);
     (async () => {
       try {
-        if (viewer.kind === "commit-file") {
+        if (isImage) {
+          // ImageBox 가 직접 읽는다
+        } else if (viewer.kind === "commit-file") {
           const d = await api.diffCommitFile(worktree, viewer.sha, viewer.rel);
           if (alive) setDiff(d);
         } else if (mode === "diff") {
@@ -264,9 +273,11 @@ function FileViewer({ worktree }: { worktree: string }) {
             <button className={mode === "diff" ? "on" : ""} onClick={() => openViewer({ ...viewer, mode: "diff" })} title="마지막 커밋과 비교한 전체 변경">
               변경
             </button>
-            <button className={mode === "stage" ? "on" : ""} onClick={() => openViewer({ ...viewer, mode: "stage" })} title="바뀐 부분(조각)만 골라 커밋에 담기">
-              일부 담기
-            </button>
+            {!isImage && (
+              <button className={mode === "stage" ? "on" : ""} onClick={() => openViewer({ ...viewer, mode: "stage" })} title="바뀐 부분(조각)만 골라 커밋에 담기">
+                일부 담기
+              </button>
+            )}
           </div>
         )}
         <button className="btn btn-ghost btn-small" onClick={() => openViewer(null)} aria-label="닫기">
@@ -275,7 +286,18 @@ function FileViewer({ worktree }: { worktree: string }) {
       </div>
       {err && <div className="banner banner-error">{err}</div>}
       <div className="viewer-body">
-        {mode === "stage" && viewer.kind === "file" ? (
+        {isImage ? (
+          viewer.kind === "commit-file" ? (
+            <ImageBox worktree={worktree} rel={viewer.rel} rev={viewer.sha} label={`커밋 ${viewer.sha.slice(0, 7)}`} />
+          ) : mode === "diff" ? (
+            <div className="img-compare">
+              <ImageBox worktree={worktree} rel={viewer.rel} rev="HEAD" label="마지막 커밋" />
+              <ImageBox worktree={worktree} rel={viewer.rel} label="지금" />
+            </div>
+          ) : (
+            <ImageBox worktree={worktree} rel={viewer.rel} label="지금" />
+          )
+        ) : mode === "stage" && viewer.kind === "file" ? (
           <StageView worktree={worktree} rel={viewer.rel} />
         ) : mode === "diff" ? (
           diff ? <DiffView diff={diff} /> : <div className="loading">…</div>
@@ -300,6 +322,68 @@ function FileViewer({ worktree }: { worktree: string }) {
         )}
       </div>
     </div>
+  );
+}
+
+/** 그림 한 장: 바둑판 배경 위에 창에 맞춰 보여 주고, 누르면 실제 크기 ↔ 맞춤. */
+function ImageBox({ worktree, rel, rev, label }: { worktree: string; rel: string; rev?: string; label: string }) {
+  const fileTick = useFileTick(rel);
+  const [url, setUrl] = useState<string | null>(null);
+  const [bytes, setBytes] = useState(0);
+  const [dims, setDims] = useState<[number, number] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [actual, setActual] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    let made: string | null = null;
+    api.fsReadImage(worktree, rel, rev).then(
+      (buf) => {
+        if (!alive) return;
+        const blob = new Blob([buf], { type: imageMime(rel) ?? "application/octet-stream" });
+        made = URL.createObjectURL(blob);
+        setUrl(made);
+        setBytes(blob.size);
+        setErr(null);
+      },
+      (e) => {
+        if (!alive) return;
+        setUrl(null);
+        setErr(errorText(e));
+      },
+    );
+    return () => {
+      alive = false;
+      if (made) URL.revokeObjectURL(made);
+    };
+    // 지금 그림은 파일이 바뀔 때마다, 커밋의 그림은 git 이 바뀔 때만 다시 읽는다
+  }, [worktree, rel, rev, rev ? 0 : fileTick]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const missing = err && /exists on disk, but not in|does not exist|not exist|No such file|없습니다|invalid object/i.test(err);
+  return (
+    <figure className="img-box" data-testid="image-view">
+      <figcaption className="img-cap">
+        <b>{label}</b>
+        {dims && (
+          <span className="muted">
+            {dims[0]}×{dims[1]} · {bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`}
+          </span>
+        )}
+        {url && (
+          <button className="link-btn" onClick={() => setActual(!actual)} title="실제 크기 ↔ 창에 맞춤">
+            {actual ? "맞춤" : "실제 크기"}
+          </button>
+        )}
+      </figcaption>
+      <div className={`img-stage${actual ? " actual" : ""}`} onClick={() => url && setActual(!actual)}>
+        {url ? (
+          <img src={url} alt={rel} onLoad={(e) => setDims([e.currentTarget.naturalWidth, e.currentTarget.naturalHeight])} onError={() => setErr("이 형식은 그릴 수 없습니다")} />
+        ) : err ? (
+          <div className="muted small pad">{missing ? (rev ? "마지막 커밋에는 없던 그림이에요" : "지금은 없는 그림이에요(지워짐)") : err}</div>
+        ) : (
+          <div className="loading">…</div>
+        )}
+      </div>
+    </figure>
   );
 }
 

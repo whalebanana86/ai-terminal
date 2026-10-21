@@ -102,9 +102,67 @@ pub fn read_file(worktree: &Path, rel: &str) -> Result<FileContent> {
     Ok(FileContent { rel: rel.to_string(), size, binary, truncated, text })
 }
 
+/// 그림으로 보여 줄 수 있는 확장자(WebKit 이 그릴 수 있는 것)
+pub const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp", "tif", "tiff", "avif", "heic"];
+/// 그림 미리보기 크기 상한
+pub const MAX_IMAGE_BYTES: u64 = 40 * 1024 * 1024;
+
+pub fn is_image(rel: &str) -> bool {
+    Path::new(rel)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| IMAGE_EXTS.contains(&e.to_ascii_lowercase().as_str()))
+}
+
+/// 그림 파일 바이트(워크트리 안, 그림 확장자, 크기 상한). rev 가 있으면 그 커밋의 내용(예: HEAD)을 git 에서 읽는다.
+pub fn read_image(worktree: &Path, rel: &str, rev: Option<&str>) -> Result<Vec<u8>> {
+    if !is_image(rel) {
+        bail!("그림 파일이 아닙니다: {rel}");
+    }
+    if let Some(rev) = rev {
+        crate::git::safe_rel_path(rel)?;
+        if rev != "HEAD" && !(rev.len() >= 7 && rev.len() <= 64 && rev.chars().all(|c| c.is_ascii_hexdigit())) {
+            bail!("알 수 없는 커밋: {rev}");
+        }
+        let spec = format!("{rev}:{rel}");
+        let size: u64 = crate::git::run(worktree, &["cat-file", "-s", &spec])?.trim().parse().unwrap_or(u64::MAX);
+        if size > MAX_IMAGE_BYTES {
+            bail!("그림이 너무 큽니다 ({} MB)", size / 1024 / 1024);
+        }
+        return crate::git::run_bytes(worktree, &["cat-file", "blob", &spec]);
+    }
+    let p = resolve_inside(worktree, rel)?;
+    let meta = std::fs::metadata(&p)?;
+    if !meta.is_file() {
+        bail!("일반 파일이 아니라 볼 수 없습니다");
+    }
+    if meta.len() > MAX_IMAGE_BYTES {
+        bail!("그림이 너무 큽니다 ({} MB)", meta.len() / 1024 / 1024);
+    }
+    Ok(std::fs::read(&p)?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_images_only_inside_and_from_head() {
+        let d = tempfile::tempdir().unwrap();
+        let w = d.path();
+        let g = |args: &[&str]| assert!(std::process::Command::new("git").arg("-C").arg(w).args(args).output().unwrap().status.success());
+        g(&["init", "-q"]);
+        std::fs::write(w.join("a.png"), [0x89, b'P', b'N', b'G', 0, 1]).unwrap();
+        std::fs::write(w.join("note.txt"), "x").unwrap();
+        g(&["add", "-A"]);
+        g(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"]);
+        std::fs::write(w.join("a.png"), [0x89, b'P', b'N', b'G', 0, 2]).unwrap();
+        assert_eq!(read_image(w, "a.png", None).unwrap(), vec![0x89, b'P', b'N', b'G', 0, 2]);
+        assert_eq!(read_image(w, "a.png", Some("HEAD")).unwrap(), vec![0x89, b'P', b'N', b'G', 0, 1], "마지막 커밋의 그림");
+        assert!(read_image(w, "note.txt", None).is_err(), "그림이 아닌 파일은 거부");
+        assert!(read_image(w, "../x.png", None).is_err(), "워크트리 밖 거부");
+        assert!(read_image(w, "a.png", Some("--output=/tmp/x")).is_err(), "이상한 rev 거부");
+    }
 
     #[test]
     fn refuses_escape_and_reads_text() {

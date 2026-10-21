@@ -1928,3 +1928,81 @@ li:hover .hover-only,
   border-width: 2px;
   margin-right: 3px;
 }
+
+/* 파일 트리 아이콘 */
+.file-icon {
+  flex: none;
+  margin-right: 2px;
+}
+.tree-row.k-deleted .file-icon {
+  opacity: 0.6;
+}
+
+/* 그림 미리보기 */
+.img-compare {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-auto-rows: minmax(160px, 1fr);
+  gap: 8px;
+  padding: 8px;
+  height: 100%;
+  box-sizing: border-box;
+}
+.img-box {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+.img-compare .img-box {
+  height: auto;
+  min-height: 0;
+}
+.img-cap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.img-cap .link-btn {
+  margin-left: auto;
+}
+.img-stage {
+  position: relative;
+  flex: 1;
+  min-height: 100px;
+  overflow: auto;
+  border-radius: 6px;
+  margin: 0 8px 8px;
+  cursor: zoom-in;
+  /* 투명한 부분이 보이게 바둑판 */
+  background-color: #2a2e37;
+  background-image: conic-gradient(#20242c 25%, transparent 0 50%, #20242c 0 75%, transparent 0);
+  background-size: 16px 16px;
+}
+/* 맞춤: 칸 크기가 정해지지 않아도 늘 칸 안에 들어오게 */
+.img-stage img {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  max-width: calc(100% - 16px);
+  max-height: calc(100% - 16px);
+}
+.img-stage .pad,
+.img-stage .loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+.img-stage.actual {
+  cursor: zoom-out;
+}
+.img-stage.actual img {
+  position: static;
+  margin: 8px;
+  max-width: none;
+  max-height: none;
+}

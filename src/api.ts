@@ -296,6 +296,8 @@ export const api = {
     invoke<string>("git_checkout", { path, target, kind }),
   fsList: (worktree: string, rel: string) => invoke<DirEntry[]>("fs_list", { worktree, rel }),
   fsRead: (worktree: string, rel: string) => invoke<FileContent>("fs_read", { worktree, rel }),
+  /** 그림 파일 바이트. rev 가 "HEAD"(또는 커밋 해시)면 그때의 그림 */
+  fsReadImage: (worktree: string, rel: string, rev?: string) => invoke<ArrayBuffer>("fs_read_image", { worktree, rel, rev: rev ?? null }),
   sessions: () => invoke<LinkedSession[]>("sessions_list"),
   transcript: (id: string) => invoke<Transcript>("session_transcript", { id }),
   execStart: (args: { agent: Agent; mode: "new" | "resume"; sessionId?: string; cwd?: string; cols: number; rows: number; force?: boolean; prompt?: string }) =>
