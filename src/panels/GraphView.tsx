@@ -126,7 +126,9 @@ function Row(props: {
 }) {
   const { row, isHead } = props;
   const color = laneColor(row.color);
-  const clip = (l: number) => Math.min(l, MAX_LANES_SHOWN - 1);
+  // 표시 폭을 넘는 레인은 그리지 않는다(마지막 레인에 겹쳐 그리면 다른 브랜치가 한 줄기처럼 보인다).
+  const fits = (l: number) => l < MAX_LANES_SHOWN;
+  const clip = (l: number) => l;
   return (
     <div
       className={`grow${props.selected ? " selected" : ""}${props.onChain ? " on-chain" : ""}${isHead ? " is-head" : ""}`}
@@ -136,7 +138,7 @@ function Row(props: {
       title={`${row.sha.slice(0, 10)} · ${row.author}`}
     >
       <svg width={props.graphW} height={ROW_H} className="glanes" aria-hidden>
-        {row.segments.map((s, i) => {
+        {row.segments.filter((s) => fits(s.fromLane) && fits(s.toLane)).map((s, i) => {
           const x1 = x(clip(s.fromLane));
           const x2 = x(clip(s.toLane));
           const y1 = Y[s.fromY];
@@ -144,15 +146,20 @@ function Row(props: {
           const d = x1 === x2 ? `M${x1} ${y1}L${x2} ${y2}` : `M${x1} ${y1}C${x1} ${(y1 + y2) / 2} ${x2} ${(y1 + y2) / 2} ${x2} ${y2}`;
           return <path key={i} d={d} stroke={laneColor(s.color)} strokeWidth={2} fill="none" />;
         })}
-        {isHead && <circle cx={x(clip(row.lane))} cy={ROW_H / 2} r={7.5} fill="none" stroke="#fff" strokeWidth={1.5} />}
-        <circle
+        {!fits(row.lane) && (
+          <text x={x(MAX_LANES_SHOWN - 1)} y={ROW_H / 2 + 4} fontSize={10} fill="var(--fg-faint)" textAnchor="middle">
+            ›
+          </text>
+        )}
+        {fits(row.lane) && isHead && <circle cx={x(clip(row.lane))} cy={ROW_H / 2} r={7.5} fill="none" stroke="#fff" strokeWidth={1.5} />}
+        {fits(row.lane) && <circle
           cx={x(clip(row.lane))}
           cy={ROW_H / 2}
           r={row.parents.length > 1 ? 3.5 : 4.5}
           fill={row.parents.length > 1 ? "var(--bg-1)" : color}
           stroke={color}
           strokeWidth={2}
-        />
+        />}
       </svg>
       <div className="gmsg">
         <span className="grefs">

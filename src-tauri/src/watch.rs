@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use notify::RecursiveMode;
-use notify_debouncer_full::{new_debouncer, DebounceEventResult, Debouncer, RecommendedCache};
+use notify_debouncer_full::{new_debouncer_opt, DebounceEventHandler, DebounceEventResult, Debouncer, NoCache};
 use parking_lot::Mutex;
 use serde::Serialize;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -102,6 +102,16 @@ pub fn classify(targets: &[WatchTarget], ignored: &HashMap<PathBuf, Vec<String>>
     out.into_iter().filter(|b| b.files || b.git).collect()
 }
 
+/// 파일 id 캐시 없이 만든다. 기본 캐시(FileIdMap)는 감시를 걸 때 하위 전체를 심볼릭 링크까지
+/// 따라가며 훑어서 node_modules·target·홈을 가리키는 링크가 있으면 매우 느려진다. rename 짝 맞추기는
+/// 이 앱에 필요 없다(경로만 쓴다).
+fn debouncer<F: DebounceEventHandler>(timeout: Duration, f: F) -> Result<Debouncer<notify::RecommendedWatcher, NoCache>> {
+    Ok(new_debouncer_opt::<F, notify::RecommendedWatcher, NoCache>(timeout, None, f, NoCache, notify::Config::default())?)
+}
+
+/// 무시 폴더 목록을 다시 계산하는 최소 간격 (빌드로 새로 생긴 target/, dist/ 반영)
+const IGNORED_REFRESH: Duration = Duration::from_secs(20);
+
 /// 무시되는 폴더(빌드 산출물 등) 목록. 이 아래 이벤트는 버린다.
 fn ignored_dirs(worktree: &Path) -> Vec<String> {
     crate::git::run(worktree, &["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "--no-empty-directory", "-z"])
@@ -110,7 +120,7 @@ fn ignored_dirs(worktree: &Path) -> Vec<String> {
 }
 
 pub struct WorkspaceWatcher {
-    debouncer: Mutex<Debouncer<notify::RecommendedWatcher, RecommendedCache>>,
+    debouncer: Mutex<Debouncer<notify::RecommendedWatcher, NoCache>>,
     state: Arc<Mutex<State>>,
 }
 
@@ -118,14 +128,16 @@ pub struct WorkspaceWatcher {
 struct State {
     targets: Vec<WatchTarget>,
     ignored: HashMap<PathBuf, Vec<String>>,
-    watched: HashSet<PathBuf>,
+    ignored_at: HashMap<PathBuf, std::time::Instant>,
+    /// 감시 중인 경로와 그때의 inode. 폴더를 지웠다 다시 만들면 inode 가 바뀌어 감시를 다시 건다.
+    watched: HashMap<PathBuf, u64>,
 }
 
 impl WorkspaceWatcher {
     pub fn new(emit: Emit) -> Result<Self> {
         let state: Arc<Mutex<State>> = Arc::default();
         let st = state.clone();
-        let debouncer = new_debouncer(Duration::from_millis(250), None, move |res: DebounceEventResult| {
+        let debouncer = debouncer(Duration::from_millis(250), move |res: DebounceEventResult| {
             let Ok(events) = res else { return };
             let paths: Vec<PathBuf> = events.iter().flat_map(|e| e.paths.iter().cloned()).collect();
             if paths.is_empty() {
@@ -136,10 +148,13 @@ impl WorkspaceWatcher {
                 (s.targets.clone(), s.ignored.clone())
             };
             for batch in classify(&targets, &ignored, &paths) {
-                if batch.git && batch.paths.iter().any(|p| p.ends_with(".gitignore")) {
-                    let wt = PathBuf::from(&batch.worktree);
+                let wt = PathBuf::from(&batch.worktree);
+                let stale = st.lock().ignored_at.get(&wt).is_none_or(|t| t.elapsed() > IGNORED_REFRESH);
+                if stale || (batch.git && batch.paths.iter().any(|p| p.ends_with(".gitignore"))) {
                     let dirs = ignored_dirs(&wt);
-                    st.lock().ignored.insert(wt, dirs);
+                    let mut s = st.lock();
+                    s.ignored.insert(wt.clone(), dirs);
+                    s.ignored_at.insert(wt, std::time::Instant::now());
                 }
                 emit(batch);
             }
@@ -164,41 +179,65 @@ impl WorkspaceWatcher {
         let roots: HashSet<PathBuf> = roots.into_iter().collect();
 
         let mut new_ignored = HashMap::new();
+        let mut new_at = HashMap::new();
         for t in &targets {
-            let existing = self.state.lock().ignored.get(&t.worktree).cloned();
-            new_ignored.insert(t.worktree.clone(), existing.unwrap_or_else(|| ignored_dirs(&t.worktree)));
+            let (existing, at) = {
+                let s = self.state.lock();
+                (s.ignored.get(&t.worktree).cloned(), s.ignored_at.get(&t.worktree).copied())
+            };
+            match (existing, at) {
+                (Some(dirs), Some(at)) => {
+                    new_ignored.insert(t.worktree.clone(), dirs);
+                    new_at.insert(t.worktree.clone(), at);
+                }
+                _ => {
+                    new_ignored.insert(t.worktree.clone(), ignored_dirs(&t.worktree));
+                    new_at.insert(t.worktree.clone(), std::time::Instant::now());
+                }
+            }
         }
 
         let mut deb = self.debouncer.lock();
         let mut st = self.state.lock();
-        for old in st.watched.difference(&roots).cloned().collect::<Vec<_>>() {
+        let ino = |p: &Path| std::fs::metadata(p).map(|m| std::os::unix::fs::MetadataExt::ino(&m)).unwrap_or(0);
+        let stale: Vec<PathBuf> = st
+            .watched
+            .iter()
+            .filter(|(p, i)| !roots.contains(*p) || ino(p) != **i)
+            .map(|(p, _)| p.clone())
+            .collect();
+        for old in stale {
             let _ = deb.unwatch(&old);
             st.watched.remove(&old);
         }
-        for r in roots.difference(&st.watched.clone()) {
+        for r in &roots {
+            if st.watched.contains_key(r) {
+                continue;
+            }
             match deb.watch(r, RecursiveMode::Recursive) {
                 Ok(()) => {
-                    st.watched.insert(r.clone());
+                    st.watched.insert(r.clone(), ino(r));
                 }
                 Err(e) => eprintln!("[watch] {} 감시 실패: {e}", r.display()),
             }
         }
         st.targets = targets;
         st.ignored = new_ignored;
+        st.ignored_at = new_at;
         Ok(())
     }
 }
 
 /// Claude/Codex 세션 기록 폴더 감시. 의미 있는 변화만 알린다.
 pub struct SessionWatcher {
-    _debouncer: Debouncer<notify::RecommendedWatcher, RecommendedCache>,
+    _debouncer: Debouncer<notify::RecommendedWatcher, NoCache>,
 }
 
 impl SessionWatcher {
     pub fn new(claude_projects: PathBuf, codex_root: PathBuf, emit: Arc<dyn Fn(Vec<String>) + Send + Sync>) -> Result<Self> {
         let cp = claude_projects.clone();
         let cr = codex_root.clone();
-        let mut deb = new_debouncer(Duration::from_millis(800), None, move |res: DebounceEventResult| {
+        let mut deb = debouncer(Duration::from_millis(800), move |res: DebounceEventResult| {
             let Ok(events) = res else { return };
             let mut hits = BTreeSet::new();
             for p in events.iter().flat_map(|e| e.paths.iter()) {

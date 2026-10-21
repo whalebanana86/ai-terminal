@@ -23,11 +23,16 @@ struct Inner {
     exited: bool,
 }
 
+/// 끝난 실행을 화면 재생용으로 남겨 두는 개수
+const KEEP_EXITED: usize = 8;
+
 pub struct PtyExec {
     pub id: String,
     pub pid: Option<u32>,
-    master: Mutex<Box<dyn MasterPty + Send>>,
-    writer: Mutex<Box<dyn Write + Send>>,
+    /// 끝나면 None 으로 바꿔 PTY 장치(fd)를 바로 돌려준다.
+    master: Mutex<Option<Box<dyn MasterPty + Send>>>,
+    writer: Mutex<Option<Box<dyn Write + Send>>>,
+    started: std::time::Instant,
     child: Mutex<Box<dyn Child + Send + Sync>>,
     inner: Mutex<Inner>,
 }
@@ -94,8 +99,9 @@ impl PtyManager {
         let exec = Arc::new(PtyExec {
             id: id.clone(),
             pid,
-            master: Mutex::new(pair.master),
-            writer: Mutex::new(writer),
+            master: Mutex::new(Some(pair.master)),
+            writer: Mutex::new(Some(writer)),
+            started: std::time::Instant::now(),
             child: Mutex::new(child),
             inner: Mutex::new(Inner { buffer: VecDeque::new(), sinks: Vec::new(), exit_code: None, exited: false }),
         });
@@ -110,10 +116,29 @@ impl PtyManager {
                 let mut inner = reader_exec.inner.lock();
                 inner.exited = true;
                 inner.exit_code = code;
+                inner.sinks.clear();
             }
+            // PTY 장치를 바로 반납한다(오래 켜 두어도 장치 한도에 걸리지 않게).
+            reader_exec.writer.lock().take();
+            reader_exec.master.lock().take();
             on_exit(&reader_exec.id, code);
         })?;
+        self.prune_exited();
         Ok(exec)
+    }
+
+    /// 끝난 실행은 최근 것 몇 개만 남긴다(출력 버퍼 메모리 회수).
+    fn prune_exited(&self) {
+        let mut execs = self.execs.lock();
+        let mut exited: Vec<(String, std::time::Instant)> =
+            execs.values().filter(|e| e.inner.lock().exited).map(|e| (e.id.clone(), e.started)).collect();
+        if exited.len() <= KEEP_EXITED {
+            return;
+        }
+        exited.sort_by_key(|(_, t)| *t);
+        for (id, _) in exited.iter().take(exited.len() - KEEP_EXITED) {
+            execs.remove(id);
+        }
     }
 
     pub fn get(&self, id: &str) -> Option<Arc<PtyExec>> {
@@ -150,6 +175,7 @@ impl PtyManager {
     pub fn write(&self, id: &str, data: &[u8]) -> Result<()> {
         let exec = self.get(id).ok_or_else(|| anyhow!("실행을 찾을 수 없습니다: {id}"))?;
         let mut w = exec.writer.lock();
+        let w = w.as_mut().ok_or_else(|| anyhow!("이미 종료된 실행입니다"))?;
         w.write_all(data)?;
         w.flush()?;
         Ok(())
@@ -157,15 +183,15 @@ impl PtyManager {
 
     pub fn resize(&self, id: &str, cols: u16, rows: u16) -> Result<()> {
         let exec = self.get(id).ok_or_else(|| anyhow!("실행을 찾을 수 없습니다: {id}"))?;
-        exec.master.lock().resize(PtySize { rows: rows.max(2), cols: cols.max(2), pixel_width: 0, pixel_height: 0 })?;
+        if let Some(m) = exec.master.lock().as_ref() {
+            m.resize(PtySize { rows: rows.max(2), cols: cols.max(2), pixel_width: 0, pixel_height: 0 })?;
+        }
         Ok(())
     }
 
     pub fn kill(&self, id: &str) -> Result<()> {
         let exec = self.get(id).ok_or_else(|| anyhow!("실행을 찾을 수 없습니다: {id}"))?;
-        if !exec.inner.lock().exited {
-            exec.child.lock().kill()?;
-        }
+        terminate(&exec);
         Ok(())
     }
 
@@ -177,11 +203,19 @@ impl PtyManager {
         }
     }
 
+    /// 앱 종료 때: 모든 실행의 프로세스 그룹에 SIGHUP → 잠시 뒤 남은 것에 SIGKILL.
     pub fn kill_all(&self) {
-        for e in self.execs.lock().values() {
-            if !e.inner.lock().exited {
-                let _ = e.child.lock().kill();
-            }
+        let list: Vec<Arc<PtyExec>> = self.execs.lock().values().cloned().collect();
+        let alive: Vec<Arc<PtyExec>> = list.into_iter().filter(|e| !e.inner.lock().exited).collect();
+        for e in &alive {
+            signal_group(e, libc::SIGHUP);
+        }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(800);
+        while std::time::Instant::now() < deadline && alive.iter().any(|e| !e.inner.lock().exited) {
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        }
+        for e in &alive {
+            signal_group(e, libc::SIGKILL);
         }
     }
 
@@ -200,6 +234,32 @@ impl PtyExec {
         let inner = self.inner.lock();
         PtyInfo { id: self.id.clone(), pid: self.pid, exited: inner.exited, exit_code: inner.exit_code }
     }
+}
+
+/// PTY 로 띄운 프로세스는 새 세션의 리더라 pid == 프로세스 그룹 id 다.
+/// 그룹 전체에 보내야 에이전트가 띄운 셸·개발 서버 같은 자식까지 정리된다.
+fn signal_group(exec: &PtyExec, sig: libc::c_int) {
+    if let Some(pid) = exec.pid {
+        // SAFETY: 단순 시스템 호출. 실패(이미 종료)는 무시한다.
+        unsafe {
+            libc::killpg(pid as libc::pid_t, sig);
+        }
+    }
+}
+
+/// 사용자 "중지": SIGHUP 을 보내고 1초 안에 안 끝나면 SIGKILL.
+fn terminate(exec: &Arc<PtyExec>) {
+    if exec.inner.lock().exited {
+        return;
+    }
+    signal_group(exec, libc::SIGHUP);
+    let e = exec.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+        if !e.inner.lock().exited {
+            signal_group(&e, libc::SIGKILL);
+        }
+    });
 }
 
 fn pump(mut reader: Box<dyn Read + Send>, exec: &PtyExec) {
@@ -261,6 +321,41 @@ mod tests {
         assert!(text.contains("hello 한글"), "{text}");
         assert!(text.contains("got:abc"), "{text}");
         assert!(m.get("t1").unwrap().info().exited);
+    }
+
+    #[test]
+    fn kill_terminates_grandchildren_too() {
+        let m = PtyManager::default();
+        let (tx, rx) = mpsc::channel();
+        let marker = format!("aiterm-grandchild-{}", std::process::id());
+        let exec = m
+            .spawn(
+                "t3".into(),
+                SpawnSpec {
+                    program: "/bin/sh".into(),
+                    // 백그라운드 손자 프로세스(개발 서버 흉내)를 띄우고 기다린다
+                    args: vec!["-c".into(), format!("(exec -a {marker} sleep 300) & wait")],
+                    cwd: "/".into(),
+                    cols: 80,
+                    rows: 24,
+                    extra_env: vec![],
+                },
+                move |_, code| {
+                    tx.send(code).unwrap();
+                },
+            )
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+        let pgid = exec.pid.unwrap();
+        let before = std::process::Command::new("pgrep").args(["-g", &pgid.to_string()]).output().unwrap();
+        let count = String::from_utf8_lossy(&before.stdout).lines().count();
+        assert!(count >= 2, "shell + background grandchild must be running before kill (got {count})");
+        m.kill("t3").unwrap();
+        rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        std::thread::sleep(Duration::from_millis(200));
+        let out = std::process::Command::new("pgrep").args(["-g", &pgid.to_string()]).output().unwrap();
+        assert!(String::from_utf8_lossy(&out.stdout).trim().is_empty(), "process group must be gone");
+        assert!(m.write("t3", b"x").is_err(), "writer is released after exit");
     }
 
     #[test]

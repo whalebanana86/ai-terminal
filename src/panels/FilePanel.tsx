@@ -45,7 +45,7 @@ export function FilePanel() {
 
 function FileTree({ worktree }: { worktree: string }) {
   const fsTick = useStore((s) => s.fsTick);
-  const gitTick = useStore((s) => s.gitTick);
+  const statusTick = useStore((s) => s.statusTick);
   const viewer = useStore((s) => s.viewer);
   const openViewer = useStore((s) => s.openViewer);
   const [children, setChildren] = useState<Map<string, DirEntry[]>>(new Map());
@@ -77,6 +77,10 @@ function FileTree({ worktree }: { worktree: string }) {
   useEffect(() => {
     void loadDir("");
   }, [loadDir]);
+  // 루트도 외부 변경 때 다시 읽는다(펼친 폴더 목록에 ""가 빠졌을 때 대비)
+  useEffect(() => {
+    if (fsTick) void loadDir("");
+  }, [fsTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 외부 변경(에이전트, 에디터)이 오면 펼쳐 둔 폴더를 모두 다시 읽는다.
   useEffect(() => {
@@ -85,8 +89,12 @@ function FileTree({ worktree }: { worktree: string }) {
   }, [fsTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    api.status(worktree).then(setStatus, () => setStatus(null));
-  }, [worktree, gitTick, fsTick]);
+    let alive = true;
+    api.status(worktree).then((x) => alive && setStatus(x), () => alive && setStatus(null));
+    return () => {
+      alive = false;
+    };
+  }, [worktree, statusTick]);
 
   const deco = useMemo(() => decorationMap(status?.entries ?? []), [status]);
 

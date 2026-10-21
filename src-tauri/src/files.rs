@@ -41,7 +41,8 @@ pub fn resolve_inside(worktree: &Path, rel: &str) -> Result<PathBuf> {
     if !real.starts_with(&root) {
         bail!("워크트리 밖의 경로는 열 수 없습니다: {rel}");
     }
-    Ok(p)
+    // 검사한 실제 경로를 그대로 돌려줘 검사와 사용 사이에 링크를 바꿔치기할 틈을 없앤다.
+    Ok(real)
 }
 
 pub fn list_dir(worktree: &Path, rel: &str) -> Result<Vec<DirEntry>> {
@@ -82,6 +83,10 @@ pub fn read_file(worktree: &Path, rel: &str) -> Result<FileContent> {
     if meta.is_dir() {
         bail!("폴더는 미리 볼 수 없습니다");
     }
+    if !meta.is_file() {
+        // named pipe·소켓·장치 파일은 열면 멈출 수 있다.
+        bail!("일반 파일이 아니라 미리 볼 수 없습니다");
+    }
     let size = meta.len();
     let mut buf = Vec::new();
     std::fs::File::open(&p)?.take(MAX_PREVIEW_BYTES).read_to_end(&mut buf)?;
@@ -111,5 +116,8 @@ mod tests {
         assert!(read_file(d.path(), "b.bin").unwrap().binary);
         assert!(read_file(d.path(), "../x").is_err());
         assert!(list_dir(d.path(), "out").is_err(), "symlink escaping worktree must be refused");
+        let fifo = d.path().join("pipe");
+        assert!(std::process::Command::new("mkfifo").arg(&fifo).status().unwrap().success());
+        assert!(read_file(d.path(), "pipe").is_err(), "FIFO must not block");
     }
 }

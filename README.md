@@ -26,8 +26,12 @@
 
 `AI Terminal_<버전>_aarch64.dmg` 를 열어 `AI Terminal.app` 을 응용 프로그램 폴더로 옮긴다.
 
-> 아직 Apple 공증(notarization)을 받지 않은 ad-hoc 서명 빌드다. 처음 열 때 "확인되지 않은 개발자" 경고가 나오면 Finder 에서 앱을 **우클릭 → 열기** 하거나 다음을 실행한다.
-> `xattr -dr com.apple.quarantine "/Applications/AI Terminal.app"`
+> 아직 Apple 공증(notarization)을 받지 않은 ad-hoc 서명 빌드다. 인터넷에서 받은 경우 처음 열 때 막힌다.
+> - macOS 14 이하: Finder 에서 앱을 **우클릭 → 열기**
+> - macOS 15 이상: 한 번 열어 본 뒤 **시스템 설정 → 개인정보 보호 및 보안 → "그래도 열기"**
+> - 또는 터미널에서 `xattr -dr com.apple.quarantine "/Applications/AI Terminal.app"`
+>
+> 직접 빌드한 앱에는 이 과정이 필요 없다.
 
 ### 필요한 것
 

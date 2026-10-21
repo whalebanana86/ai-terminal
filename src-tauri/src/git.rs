@@ -14,6 +14,7 @@ use crate::env::shell_env;
 
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
 const NETWORK_TIMEOUT: Duration = Duration::from_secs(180);
+const COMMIT_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 
 #[derive(Debug)]
 pub struct GitOutput {
@@ -52,10 +53,16 @@ pub fn git_command(cwd: &Path) -> Command {
         // 비밀번호 입력을 기다리며 멈추지 않게 한다. 인증은 ssh-agent/키체인/credential helper 에 맡긴다.
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_OPTIONAL_LOCKS", "0")
+        // 경로는 글자 그대로: 파일명의 [1], *, ?, :(top) 이 glob/pathspec magic 으로 해석되지 않게
+        .env("GIT_LITERAL_PATHSPECS", "1")
         .env_remove("GIT_DIR")
         .env_remove("GIT_WORK_TREE")
         .env_remove("GIT_INDEX_FILE")
         .args(["-c", "core.quotepath=false", "-c", "color.ui=false", "-c", "core.pager=cat"])
+        // 화면 조회만으로 저장소 설정(.git/config)에 적힌 외부 명령이 자동 실행되지 않게 한다.
+        .args(["-c", "core.fsmonitor=false"])
+        // 사용자 전역 설정이 diff 헤더 형식(a/ b/ 접두사)을 바꾸지 못하게 고정한다.
+        .args(["-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -63,15 +70,25 @@ pub fn git_command(cwd: &Path) -> Command {
 }
 
 fn run_raw(cwd: &Path, args: &[&str], input: Option<&[u8]>, timeout: Duration) -> Result<GitOutput> {
-    let mut cmd = git_command(cwd);
+    run_cmd(git_command(cwd), args, input, timeout)
+}
+
+fn run_cmd(mut cmd: Command, args: &[&str], input: Option<&[u8]>, timeout: Duration) -> Result<GitOutput> {
     cmd.args(args);
     if input.is_some() {
         cmd.stdin(Stdio::piped());
     }
     let mut child = cmd.spawn().context("git 실행 파일을 찾을 수 없습니다")?;
-    if let (Some(data), Some(mut stdin)) = (input, child.stdin.take()) {
-        stdin.write_all(data)?;
-    }
+    // 입력은 별도 스레드에서 쓴다. 출력 파이프가 차서 git 이 멈추면 쓰기도 멈추는 교착을 막는다.
+    let in_t = match (input, child.stdin.take()) {
+        (Some(data), Some(mut stdin)) => {
+            let data = data.to_vec();
+            Some(std::thread::spawn(move || {
+                let _ = stdin.write_all(&data);
+            }))
+        }
+        _ => None,
+    };
     let mut stdout = child.stdout.take().unwrap();
     let mut stderr = child.stderr.take().unwrap();
     let out_t = std::thread::spawn(move || {
@@ -96,6 +113,9 @@ fn run_raw(cwd: &Path, args: &[&str], input: Option<&[u8]>, timeout: Duration) -
         }
         std::thread::sleep(Duration::from_millis(5));
     };
+    if let Some(t) = in_t {
+        let _ = t.join();
+    }
     Ok(GitOutput {
         stdout: out_t.join().unwrap_or_default(),
         stderr: String::from_utf8_lossy(&err_t.join().unwrap_or_default()).into_owned(),
@@ -318,7 +338,8 @@ pub fn parse_status_v2_z(raw: &str) -> WorktreeStatus {
             continue;
         }
         let (tag, rest) = f.split_at(1);
-        let rest = rest.trim_start();
+        // "? 이름" 처럼 태그 뒤 공백은 정확히 한 칸이다. trim 하면 공백으로 시작하는 파일명이 깨진다.
+        let rest = rest.strip_prefix(' ').unwrap_or(rest);
         match tag {
             "1" => {
                 // XY sub mH mI mW hH hI path
@@ -652,12 +673,49 @@ fn parse_hunk_header(h: &str) -> (u32, u32) {
     (old, new)
 }
 
+/// git 이 `"a/q\"uote.txt"` 처럼 C 스타일로 감싼 경로를 원래 문자열로 되돌린다.
+pub fn unquote_c_path(p: &str) -> String {
+    let Some(inner) = p.strip_prefix('"').and_then(|x| x.strip_suffix('"')) else { return p.to_string() };
+    let mut bytes = Vec::new();
+    let mut it = inner.bytes().peekable();
+    while let Some(b) = it.next() {
+        if b != b'\\' {
+            bytes.push(b);
+            continue;
+        }
+        match it.next() {
+            Some(b'n') => bytes.push(b'\n'),
+            Some(b't') => bytes.push(b'\t'),
+            Some(b'r') => bytes.push(b'\r'),
+            Some(b'a') => bytes.push(7),
+            Some(b'b') => bytes.push(8),
+            Some(b'f') => bytes.push(12),
+            Some(b'v') => bytes.push(11),
+            Some(d @ b'0'..=b'7') => {
+                // 8진수 3자리 (UTF-8 바이트)
+                let mut v = (d - b'0') as u32;
+                for _ in 0..2 {
+                    if let Some(&n @ b'0'..=b'7') = it.peek() {
+                        v = v * 8 + (n - b'0') as u32;
+                        it.next();
+                    }
+                }
+                bytes.push(v as u8);
+            }
+            Some(other) => bytes.push(other),
+            None => {}
+        }
+    }
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
 fn strip_diff_path(p: &str) -> Option<String> {
     let p = p.trim_end_matches('\t');
     if p == "/dev/null" {
         return None;
     }
-    Some(p.strip_prefix("a/").or_else(|| p.strip_prefix("b/")).unwrap_or(p).to_string())
+    let p = unquote_c_path(p);
+    Some(p.strip_prefix("a/").or_else(|| p.strip_prefix("b/")).unwrap_or(&p).to_string())
 }
 
 pub fn parse_unified_diff(raw: &str) -> Vec<FileDiff> {
@@ -678,9 +736,9 @@ pub fn parse_unified_diff(raw: &str) -> Vec<FileDiff> {
             } else if line.starts_with("Binary files ") || line.starts_with("GIT binary patch") {
                 file.binary = true;
             } else if let Some(p) = line.strip_prefix("rename from ") {
-                file.old_path = Some(p.into());
+                file.old_path = Some(unquote_c_path(p));
             } else if let Some(p) = line.strip_prefix("rename to ") {
-                file.new_path = Some(p.into());
+                file.new_path = Some(unquote_c_path(p));
             }
         }
         if line.starts_with("@@") {
@@ -722,7 +780,7 @@ pub fn safe_rel_path(rel: &str) -> Result<()> {
     if rel.is_empty()
         || p.is_absolute()
         || p.components().any(|c| matches!(c, std::path::Component::ParentDir))
-        || rel.starts_with('-')
+        || rel.contains('\0')
     {
         bail!("올바르지 않은 경로: {rel}");
     }
@@ -735,12 +793,12 @@ pub fn diff_worktree_file(worktree: &Path, rel: &str) -> Result<Vec<FileDiff>> {
     let tracked = run_raw(worktree, &["ls-files", "--error-unmatch", "--", rel], None, READ_TIMEOUT)?.code == 0;
     let has_head = run_raw(worktree, &["rev-parse", "--verify", "-q", "HEAD"], None, READ_TIMEOUT)?.code == 0;
     let raw = if tracked && has_head {
-        run(worktree, &["diff", "--no-ext-diff", "--no-color", "-M", "HEAD", "--", rel])?
+        run(worktree, &["diff", "--no-ext-diff", "--no-textconv", "--no-color", "-M", "HEAD", "--", rel])?
     } else if worktree.join(rel).exists() {
         // --no-index 는 차이가 있으면 종료 코드 1 을 준다.
         let out = run_raw(
             worktree,
-            &["diff", "--no-ext-diff", "--no-color", "--no-index", "--", "/dev/null", rel],
+            &["diff", "--no-ext-diff", "--no-textconv", "--no-color", "--no-index", "--", "/dev/null", rel],
             None,
             READ_TIMEOUT,
         )?;
@@ -750,7 +808,7 @@ pub fn diff_worktree_file(worktree: &Path, rel: &str) -> Result<Vec<FileDiff>> {
         String::from_utf8_lossy(&out.stdout).into_owned()
     } else {
         // 아직 커밋이 없는 저장소에서 스테이지만 된 파일이 지워진 경우 등
-        run(worktree, &["diff", "--no-ext-diff", "--no-color", "--cached", "--", rel])?
+        run(worktree, &["diff", "--no-ext-diff", "--no-textconv", "--no-color", "--cached", "--", rel])?
     };
     Ok(parse_unified_diff(&raw))
 }
@@ -762,8 +820,8 @@ pub fn diff_commit_file(repo: &Path, sha: &str, rel: &str) -> Result<Vec<FileDif
     let parents = run(repo, &["rev-list", "--parents", "-n1", sha, "--"])?;
     let parent = parents.split_whitespace().nth(1).map(str::to_string);
     let raw = match parent {
-        Some(p) => run(repo, &["diff", "--no-ext-diff", "--no-color", "-M", &p, sha, "--", rel])?,
-        None => run(repo, &["show", "--no-ext-diff", "--no-color", "--format=", sha, "--", rel])?,
+        Some(p) => run(repo, &["diff", "--no-ext-diff", "--no-textconv", "--no-color", "-M", &p, sha, "--", rel])?,
+        None => run(repo, &["show", "--no-ext-diff", "--no-textconv", "--no-color", "--format=", sha, "--", rel])?,
     };
     Ok(parse_unified_diff(&raw))
 }
@@ -798,14 +856,46 @@ pub fn commit(worktree: &Path, paths: &[String], message: &str) -> Result<String
     }
     for p in paths {
         safe_rel_path(p)?;
+        if p.ends_with('/') {
+            // status 가 "dir/" 로 보여 주는 건 중첩 저장소/링크 워크트리다. 커밋하면 gitlink 가 된다.
+            bail!("'{p}' 는 안쪽에 다른 Git 저장소(또는 워크트리)가 있는 폴더라 커밋하지 않습니다");
+        }
     }
-    let mut add: Vec<&str> = vec!["add", "-A", "--"];
-    add.extend(paths.iter().map(String::as_str));
-    run(worktree, &add)?;
+    // 1) 디스크에 있거나 index 에 있는 경로만 add (git mv 의 원래 경로처럼 둘 다 없는 경로는 add 가 실패한다)
+    let in_index: std::collections::HashSet<String> = run(worktree, &["ls-files", "-z", "--cached"])?
+        .split('\0')
+        .filter(|x| !x.is_empty())
+        .map(str::to_string)
+        .collect();
+    let addable: Vec<&str> =
+        paths.iter().filter(|p| worktree.join(p).symlink_metadata().is_ok() || in_index.contains(*p)).map(String::as_str).collect();
+    if !addable.is_empty() {
+        let mut add: Vec<&str> = vec!["add", "-A", "--"];
+        add.extend(addable);
+        run(worktree, &add)?;
+    }
+    // 2) 커밋은 index 나 HEAD 에 있는 경로만 (추가 후 삭제(AD)된 파일은 add 로 index 에서 빠져 둘 다 없음)
+    let in_index: std::collections::HashSet<String> = run(worktree, &["ls-files", "-z", "--cached"])?
+        .split('\0')
+        .filter(|x| !x.is_empty())
+        .map(str::to_string)
+        .collect();
+    let has_head = run_raw(worktree, &["rev-parse", "--verify", "-q", "HEAD"], None, READ_TIMEOUT)?.code == 0;
+    let in_head: std::collections::HashSet<String> = if has_head {
+        run(worktree, &["ls-tree", "-r", "-z", "--name-only", "HEAD"])?.split('\0').filter(|x| !x.is_empty()).map(str::to_string).collect()
+    } else {
+        Default::default()
+    };
+    let committable: Vec<&str> =
+        paths.iter().filter(|p| in_index.contains(*p) || in_head.contains(*p)).map(String::as_str).collect();
+    if committable.is_empty() {
+        bail!("커밋할 변경이 남아 있지 않습니다");
+    }
     // 메시지는 표준입력으로 넘겨 따옴표·줄바꿈 문제를 없앤다. 경로를 주면 그 파일만 커밋된다(--only).
     let mut args: Vec<&str> = vec!["commit", "-F", "-", "--"];
-    args.extend(paths.iter().map(String::as_str));
-    let out = run_raw(worktree, &args, Some(message.as_bytes()), READ_TIMEOUT)?;
+    args.extend(committable);
+    // pre-commit 훅(lint, 테스트)이 오래 걸릴 수 있으므로 읽기 명령보다 길게 기다린다.
+    let out = run_raw(worktree, &args, Some(message.as_bytes()), COMMIT_TIMEOUT)?;
     let stdout = check(&args, out)?;
     Ok(String::from_utf8_lossy(&stdout).into_owned())
 }
@@ -841,7 +931,10 @@ pub fn check_ignored(worktree: &Path, rels: &[String]) -> Result<Vec<String>> {
         return Ok(Vec::new());
     }
     let input = rels.join("\0");
-    let out = run_raw(worktree, &["check-ignore", "-z", "--stdin"], Some(input.as_bytes()), READ_TIMEOUT)?;
+    // check-ignore 는 pathspec 이 아닌 경로를 받으며 literal 모드를 지원하지 않는다(켜면 오류).
+    let mut cmd = git_command(worktree);
+    cmd.env_remove("GIT_LITERAL_PATHSPECS");
+    let out = run_cmd(cmd, &["check-ignore", "-z", "--stdin"], Some(input.as_bytes()), READ_TIMEOUT)?;
     // 종료 코드 1 = 무시되는 파일 없음
     if out.code > 1 {
         return Ok(Vec::new());
@@ -929,6 +1022,86 @@ u UU N... 100644 100644 100644 100644 d e f conflict.txt\0\
         assert!(safe_rel_path("../etc/passwd").is_err());
         assert!(safe_rel_path("/etc/passwd").is_err());
         assert!(safe_rel_path("src/main.rs").is_ok());
+    }
+
+    fn temp_repo() -> tempfile::TempDir {
+        let d = tempfile::tempdir().unwrap();
+        let ok = std::process::Command::new("git").args(["init", "-q"]).current_dir(d.path()).status().unwrap();
+        assert!(ok.success());
+        d
+    }
+
+    #[test]
+    fn check_ignore_with_huge_input_does_not_deadlock() {
+        let d = temp_repo();
+        std::fs::write(d.path().join(".gitignore"), "target/\n").unwrap();
+        let many: Vec<String> = (0..30_000).map(|i| format!("target/debug/deps/file-{i:05}.rlib")).collect();
+        let start = std::time::Instant::now();
+        let ignored = check_ignored(d.path(), &many).unwrap();
+        assert_eq!(ignored.len(), many.len());
+        assert!(start.elapsed() < Duration::from_secs(20));
+    }
+
+    #[test]
+    fn literal_pathspecs_commit_only_the_named_file() {
+        let d = temp_repo();
+        let p = d.path();
+        let g = |a: &[&str]| {
+            let o = std::process::Command::new("git").args(["-c", "user.name=t", "-c", "user.email=t@t"]).args(a).current_dir(p).output().unwrap();
+            assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+        };
+        std::fs::write(p.join("seed"), "0").unwrap();
+        g(&["add", "."]);
+        g(&["commit", "-qm", "seed"]);
+        std::fs::write(p.join("foo[1].txt"), "a").unwrap();
+        std::fs::write(p.join("foo1.txt"), "b").unwrap();
+        std::fs::write(p.join("-dash.txt"), "c").unwrap();
+        // 사용자 이름이 설정되지 않은 환경을 대비해 저장소에 설정
+        g(&["config", "user.name", "t"]);
+        g(&["config", "user.email", "t@t"]);
+        commit(p, &["foo[1].txt".into(), "-dash.txt".into()], "two files").unwrap();
+        let st = status(p).unwrap();
+        let left: Vec<_> = st.entries.iter().map(|e| e.path.as_str()).collect();
+        assert_eq!(left, vec!["foo1.txt"], "glob must not pull in foo1.txt");
+    }
+
+    #[test]
+    fn commit_handles_staged_rename_and_added_then_deleted() {
+        let d = temp_repo();
+        let p = d.path();
+        let g = |a: &[&str]| {
+            let o = std::process::Command::new("git").args(a).current_dir(p).output().unwrap();
+            assert!(o.status.success(), "{a:?} {}", String::from_utf8_lossy(&o.stderr));
+        };
+        g(&["config", "user.name", "t"]);
+        g(&["config", "user.email", "t@t"]);
+        std::fs::write(p.join("page.tsx"), "x").unwrap();
+        g(&["add", "."]);
+        g(&["commit", "-qm", "seed"]);
+        g(&["mv", "page.tsx", "moved.tsx"]);
+        std::fs::write(p.join("z.txt"), "z").unwrap();
+        g(&["add", "z.txt"]);
+        std::fs::remove_file(p.join("z.txt")).unwrap(); // AD
+        let st = status(p).unwrap();
+        let mut paths: Vec<String> = Vec::new();
+        for e in &st.entries {
+            paths.push(e.path.clone());
+            if let Some(o) = &e.orig_path {
+                paths.push(o.clone());
+            }
+        }
+        commit(p, &paths, "rename").unwrap();
+        assert!(status(p).unwrap().entries.is_empty(), "{:?}", status(p).unwrap().entries);
+    }
+
+    #[test]
+    fn leading_space_and_quoted_names() {
+        let st = parse_status_v2_z("?  lead.txt\0");
+        assert_eq!(st.entries[0].path, " lead.txt");
+        assert_eq!(unquote_c_path(r#""a/q\"uote.txt""#), "a/q\"uote.txt");
+        assert_eq!(unquote_c_path(r#""a/\355\225\234.txt""#), "a/한.txt");
+        let d = parse_unified_diff("diff --git \"a/q\\\"x\" \"b/q\\\"x\"\n--- \"a/q\\\"x\"\n+++ \"b/q\\\"x\"\n@@ -1 +1 @@\n-a\n+b\n");
+        assert_eq!(d[0].new_path.as_deref(), Some("q\"x"));
     }
 
     #[test]

@@ -9,6 +9,7 @@ const base: LinkedSession = {
   title: "t",
   firstPrompt: null,
   cwd: "/r",
+  lastCwd: null,
   startBranch: "feat",
   lastBranch: "feat",
   createdAt: 0,
@@ -19,6 +20,8 @@ const base: LinkedSession = {
   repoId: "/r/.git",
   repoName: "r",
   worktreePath: "/r",
+  worktreeAlias: null,
+  cwdMoved: false,
   cwdExists: true,
   currentBranch: "feat",
   currentHead: "abc",
@@ -78,6 +81,14 @@ describe("helpers", () => {
   it("relativeTo stays inside root", () => {
     expect(relativeTo("/r", "/r/src/a.ts")).toBe("src/a.ts");
     expect(relativeTo("/r", "/r2/a.ts")).toBeNull();
+  });
+  it("relativeTo accepts symlinked alias root", () => {
+    expect(relativeTo(["/private/tmp/x", "/tmp/x"], "/tmp/x/src/a.ts")).toBe("src/a.ts");
+    expect(relativeTo(["/private/tmp/x", null], "/tmp/x/a.ts")).toBeNull();
+  });
+  it("moved cwd does not compare start branch", () => {
+    expect(branchState({ ...base, currentBranch: "main", cwdMoved: true }).changedSinceStart).toBe(false);
+    expect(branchState({ ...base, currentBranch: "main", lastBranch: "feat", cwdMoved: true }).changedSinceLast).toBe(true);
   });
   it("decorationMap marks parent dirs", () => {
     const d = decorationMap([

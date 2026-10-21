@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText, type CommitDetail, type GraphData, type WorktreeStatus } from "../api";
 import { AgentBadge, Empty } from "../components/Overlays";
-import { baseName, branchLabel, branchState, checkoutWarning, kindLabel, kindLetter, relativeTime } from "../logic";
+import { baseName, branchLabel, branchState, checkoutWarning, isNestedRepoEntry, kindLabel, kindLetter, relativeTime } from "../logic";
 import { useFocusRepo, useSelectedSession, useStore } from "../store";
 import { GraphView } from "./GraphView";
 
@@ -10,6 +10,7 @@ type Tab = "graph" | "changes" | "worktrees";
 export function GitPanel() {
   const focus = useStore((s) => s.focus);
   const gitTick = useStore((s) => s.gitTick);
+  const statusTick = useStore((s) => s.statusTick);
   const repo = useFocusRepo();
   const session = useSelectedSession();
   const toast = useStore((s) => s.toast);
@@ -45,9 +46,18 @@ export function GitPanel() {
     setSelectedSha(null);
     void load().then(() => setToHead((n) => n + 1));
   }, [wtPath]); // eslint-disable-line react-hooks/exhaustive-deps
+  // .git 이 바뀌면 그래프까지, 파일만 바뀌면 status 만 다시 읽는다(큰 저장소에서 전체 log 반복 방지).
   useEffect(() => {
     if (gitTick) void load();
   }, [gitTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!statusTick || !wtPath) return;
+    const path = wtPath;
+    api.status(path).then(
+      (st) => current.current === path && setStatus(st),
+      () => {},
+    );
+  }, [statusTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sessionHere = session && session.worktreePath === wtPath ? session : null;
   const bs = sessionHere ? branchState(sessionHere) : null;
@@ -324,7 +334,7 @@ function ChangesView({ worktree, status, onCommitted }: { worktree: string; stat
   const toast = useStore((s) => s.toast);
   const openViewer = useStore((s) => s.openViewer);
   const viewer = useStore((s) => s.viewer);
-  const selected = entries.filter((e) => !unchecked.has(e.path));
+  const selected = entries.filter((e) => !unchecked.has(e.path) && !isNestedRepoEntry(e.path));
 
   useEffect(() => setUnchecked(new Set()), [worktree]);
 
@@ -365,7 +375,8 @@ function ChangesView({ worktree, status, onCommitted }: { worktree: string; stat
             <li key={e.path} className={on ? "on" : ""}>
               <input
                 type="checkbox"
-                checked={!unchecked.has(e.path)}
+                disabled={isNestedRepoEntry(e.path)}
+                checked={!unchecked.has(e.path) && !isNestedRepoEntry(e.path)}
                 onChange={(ev) => {
                   const next = new Set(unchecked);
                   if (ev.target.checked) next.delete(e.path);
@@ -381,6 +392,9 @@ function ChangesView({ worktree, status, onCommitted }: { worktree: string; stat
                 {e.path}
               </span>
               {e.index !== "." && e.index !== "?" && <span className="tag" title="스테이지됨">S</span>}
+              {isNestedRepoEntry(e.path) && (
+                <span className="tag tag-warn" title="안쪽에 다른 Git 저장소나 워크트리가 있어 커밋하지 않습니다">중첩 저장소</span>
+              )}
             </li>
           );
         })}

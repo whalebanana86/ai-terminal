@@ -48,10 +48,11 @@ export default function App() {
 
   // 감시 대상 = 포커스 워크트리 + 실행 중인 에이전트의 워크트리
   const watchKey = [focus?.worktreePath ?? "", ...execs.filter((e) => !e.exited).map((e) => e.worktreePath ?? e.cwd)].sort().join("\n");
+  const watchNonce = useStore((s) => s.watchNonce);
   useEffect(() => {
     const list = [...new Set(watchKey.split("\n").filter(Boolean))];
     api.watchSet(list).catch((e) => console.warn("watch_set", e));
-  }, [watchKey]);
+  }, [watchKey, watchNonce]);
 
   // 실행 중 세션이 있으면 주기적으로 세션 목록(마지막 기록 시각 등)을 갱신한다.
   const hasRunning = execs.some((e) => !e.exited);

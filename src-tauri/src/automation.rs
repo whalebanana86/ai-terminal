@@ -64,6 +64,9 @@ pub fn start(app: AppHandle) {
                     None => (false, "no main window".into()),
                 };
                 pending().lock().remove(&id);
+                if !resp.0 && resp.1 == "timeout" {
+                    eprintln!("[automation] 응답 없음(문법 오류였을 수 있음): {}", js.chars().take(300).collect::<String>());
+                }
                 let out = serde_json::json!({ "ok": resp.0, "value": resp.1 });
                 if writeln!(writer, "{out}").is_err() {
                     break;

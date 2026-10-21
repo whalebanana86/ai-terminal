@@ -162,6 +162,32 @@ impl Db {
         Ok(())
     }
 
+    /// 여러 연결을 한 트랜잭션으로 저장한다(세션 목록 갱신마다 수백 번 fsync 하지 않게).
+    pub fn upsert_links(&self, links: &[SessionLink]) -> Result<()> {
+        if links.is_empty() {
+            return Ok(());
+        }
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction()?;
+        {
+            let mut st = tx.prepare(
+                "INSERT INTO session_links(session_id, repo_id, worktree_path, cwd, start_branch, first_seen_at, last_seen_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                 ON CONFLICT(session_id) DO UPDATE SET
+                     repo_id = COALESCE(excluded.repo_id, session_links.repo_id),
+                     worktree_path = COALESCE(excluded.worktree_path, session_links.worktree_path),
+                     cwd = excluded.cwd,
+                     start_branch = COALESCE(session_links.start_branch, excluded.start_branch),
+                     last_seen_at = excluded.last_seen_at",
+            )?;
+            for l in links {
+                st.execute(params![l.session_id, l.repo_id, l.worktree_path, l.cwd, l.start_branch, l.first_seen_at, l.last_seen_at])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn links(&self) -> Result<Vec<SessionLink>> {
         let conn = self.conn.lock();
         let mut st = conn.prepare(

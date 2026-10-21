@@ -19,7 +19,6 @@ use commands::AppState;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // 로그인 셸 환경을 미리 읽어 둔다(첫 git 호출이 느려지지 않게).
@@ -41,7 +40,8 @@ pub fn run() {
                 let _ = h.emit("fs-changed", batch);
             }))
             .map_err(|e| eprintln!("[watch] 작업 폴더 감시를 시작하지 못했습니다: {e:#}"))
-            .ok();
+            .ok()
+            .map(Arc::new);
 
             let h = handle.clone();
             match watch::SessionWatcher::new(

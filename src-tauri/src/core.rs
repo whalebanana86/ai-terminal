@@ -34,8 +34,12 @@ pub struct LinkedSession {
     pub meta: SessionMeta,
     pub repo_id: Option<String>,
     pub repo_name: Option<String>,
-    /// 세션이 일하는 워크트리 최상위 폴더
+    /// 세션이 (지금) 일하는 워크트리 최상위 폴더 (정규화된 실제 경로)
     pub worktree_path: Option<String>,
+    /// 기록에 적힌 형태의 워크트리 경로. /tmp → /private/tmp 처럼 심볼릭 링크 경로로 기록되었을 때만 값이 있다.
+    pub worktree_alias: Option<String>,
+    /// 대화 도중 다른 워크트리(또는 저장소)로 옮겨 갔는지. 그렇다면 시작 브랜치는 다른 곳의 값이다.
+    pub cwd_moved: bool,
     /// 기록된 cwd 가 지금도 디스크에 있는지
     pub cwd_exists: bool,
     /// 워크트리의 **현재** 브랜치 (Git 실시간). detached 면 None
@@ -95,7 +99,24 @@ pub struct AppCore {
     execs: Mutex<HashMap<String, ExecInfo>>,
     /// 최근 목록 (진행 중인 Codex 새 실행 연결용)
     last_sessions: Mutex<Vec<SessionMeta>>,
+    /// 앱이 아는 워크트리 경로 (명령 인자 범위 검증용)
+    known: Mutex<(Option<std::time::Instant>, std::collections::HashSet<String>)>,
+    /// 세션에서 본 워크트리 경로
+    session_worktrees: Mutex<std::collections::HashSet<String>>,
     events: EventSink,
+}
+
+/// 기록된 cwd 가 심볼릭 링크 경로(/tmp/x/sub)이고 워크트리가 실제 경로(/private/tmp/x)일 때,
+/// 기록 형태의 워크트리 경로(/tmp/x)를 돌려준다.
+pub fn path_alias(raw_cwd: &str, canonical_worktree: &str) -> Option<String> {
+    let canon = std::fs::canonicalize(raw_cwd).ok()?;
+    let canon = canon.to_string_lossy();
+    if canon == raw_cwd {
+        return None;
+    }
+    let suffix = canon.strip_prefix(canonical_worktree)?;
+    let alias = raw_cwd.strip_suffix(suffix)?;
+    (!alias.is_empty() && alias != canonical_worktree).then(|| alias.to_string())
 }
 
 fn repo_name(main_path: &str) -> String {
@@ -111,6 +132,8 @@ impl AppCore {
             locate_cache: Mutex::new(HashMap::new()),
             execs: Mutex::new(HashMap::new()),
             last_sessions: Mutex::new(Vec::new()),
+            known: Mutex::new((None, Default::default())),
+            session_worktrees: Mutex::new(Default::default()),
             events,
         })
     }
@@ -134,6 +157,47 @@ impl AppCore {
         let loc = git::locate(Path::new(cwd)).ok().flatten();
         self.locate_cache.lock().insert(cwd.to_string(), (std::time::Instant::now(), loc.clone()));
         loc
+    }
+
+    // ───────────── 경로 범위 검증 ─────────────
+
+    fn refresh_known(&self) {
+        let mut set: std::collections::HashSet<String> = self.session_worktrees.lock().clone();
+        if let Ok(repos) = self.db.repos() {
+            for r in repos {
+                let probe = if Path::new(&r.path).is_dir() { r.path.clone() } else { r.id.clone() };
+                if let Ok(ws) = git::worktrees(Path::new(&probe)) {
+                    set.extend(ws.into_iter().filter(|w| w.exists).map(|w| w.path));
+                }
+            }
+        }
+        *self.known.lock() = (Some(std::time::Instant::now()), set);
+    }
+
+    /// 웹뷰가 넘긴 경로가 앱이 아는 워크트리(또는 그 하위)인지. 아니면 Git·파일 명령을 거부한다.
+    pub fn is_known_worktree(&self, path: &str) -> bool {
+        let Ok(canon) = std::fs::canonicalize(path) else { return false };
+        let canon = canon.to_string_lossy().into_owned();
+        let check = |set: &std::collections::HashSet<String>| {
+            set.iter().any(|k| canon == *k || canon.starts_with(&format!("{}/", k.trim_end_matches('/'))))
+        };
+        {
+            let k = self.known.lock();
+            if k.0.is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(5)) && check(&k.1) {
+                return true;
+            }
+        }
+        // 모르는 경로면 한 번 새로 읽어 본다(방금 만든 워크트리 등).
+        self.refresh_known();
+        check(&self.known.lock().1)
+    }
+
+    pub fn ensure_known(&self, path: &str) -> Result<()> {
+        if self.is_known_worktree(path) {
+            Ok(())
+        } else {
+            bail!("등록된 저장소의 워크트리가 아닙니다: {path}")
+        }
     }
 
     // ───────────── 저장소 ─────────────
@@ -195,10 +259,15 @@ impl AppCore {
             .collect();
 
         let mut out = Vec::with_capacity(metas.len());
+        let mut link_writes = Vec::new();
         for m in metas {
             let cwd = m.cwd.clone().unwrap_or_default();
-            let cwd_exists = Path::new(&cwd).is_dir();
-            let loc = if cwd_exists { self.locate_cached(&cwd) } else { None };
+            // 대화 도중 다른 폴더/워크트리로 옮겼으면 "지금 일하는 곳"은 마지막 cwd 다(재개는 첫 cwd 에서).
+            let work_cwd = m.last_cwd.clone().filter(|c| Path::new(c).is_dir()).unwrap_or_else(|| cwd.clone());
+            let cwd_exists = Path::new(&work_cwd).is_dir() && Path::new(&cwd).is_dir();
+            let loc = if Path::new(&work_cwd).is_dir() { self.locate_cached(&work_cwd) } else { None };
+            let start_loc = if work_cwd != cwd && Path::new(&cwd).is_dir() { self.locate_cached(&cwd) } else { loc.clone() };
+            let cwd_moved = start_loc.as_ref().map(|l| &l.toplevel) != loc.as_ref().map(|l| &l.toplevel);
             let (repo_id, worktree_path) = match &loc {
                 Some(l) => (Some(l.common_dir.clone()), Some(l.toplevel.clone())),
                 None => {
@@ -207,23 +276,29 @@ impl AppCore {
                     (l.and_then(|l| l.repo_id.clone()), l.and_then(|l| l.worktree_path.clone()))
                 }
             };
-            if let Some(l) = &loc {
-                if !repos.contains_key(&l.common_dir) {
-                    let main = git::worktrees(Path::new(&l.toplevel)).ok().and_then(|w| w.into_iter().find(|w| w.is_main)).map(|w| w.path);
-                    let main = main.unwrap_or_else(|| l.toplevel.clone());
-                    let _ = self.db.upsert_repo(&l.common_dir, &main, &repo_name(&main), false);
-                }
+            if let Some(l) = &loc
+                && !repos.contains_key(&l.common_dir)
+            {
+                let main = git::worktrees(Path::new(&l.toplevel)).ok().and_then(|w| w.into_iter().find(|w| w.is_main)).map(|w| w.path);
+                let main = main.unwrap_or_else(|| l.toplevel.clone());
+                let _ = self.db.upsert_repo(&l.common_dir, &main, &repo_name(&main), false);
             }
-            // 연결 정보 저장 (재시작 후 복원, 워크트리가 지워진 뒤에도 표시)
-            let _ = self.db.upsert_link(&SessionLink {
-                session_id: m.id.clone(),
-                repo_id: repo_id.clone(),
-                worktree_path: worktree_path.clone(),
-                cwd: cwd.clone(),
-                start_branch: m.start_branch.clone(),
-                first_seen_at: now,
-                last_seen_at: now,
+            // 연결 정보 저장 (재시작 후 복원, 워크트리가 지워진 뒤에도 표시). 바뀐 것만 모아 한 번에 쓴다.
+            let prev = links.get(&m.id);
+            let changed = prev.is_none_or(|p| {
+                (repo_id.is_some() && p.repo_id != repo_id) || (worktree_path.is_some() && p.worktree_path != worktree_path) || p.cwd != cwd
             });
+            if changed {
+                link_writes.push(SessionLink {
+                    session_id: m.id.clone(),
+                    repo_id: repo_id.clone(),
+                    worktree_path: worktree_path.clone(),
+                    cwd: cwd.clone(),
+                    start_branch: m.start_branch.clone(),
+                    first_seen_at: now,
+                    last_seen_at: now,
+                });
+            }
 
             // 워크트리의 현재 브랜치(실시간)
             let (mut cb, mut ch, mut cd) = (None, None, false);
@@ -250,17 +325,31 @@ impl AppCore {
                     }
                 }
             }
+            let worktree_alias = worktree_path.as_deref().and_then(|wt| path_alias(&work_cwd, wt));
             out.push(LinkedSession {
                 running_exec_id: running.get(&m.id).cloned(),
                 meta: m,
                 repo_id,
                 repo_name,
                 worktree_path,
+                worktree_alias,
+                cwd_moved,
                 cwd_exists,
                 current_branch: cb,
                 current_head: ch,
                 current_detached: cd,
             });
+        }
+        {
+            let mut sw = self.session_worktrees.lock();
+            for s in &out {
+                if let (Some(w), true) = (&s.worktree_path, s.cwd_exists) {
+                    sw.insert(w.clone());
+                }
+            }
+        }
+        if let Err(e) = self.db.upsert_links(&link_writes) {
+            eprintln!("[sessions] 연결 정보 저장 실패: {e:#}");
         }
         self.link_pending_codex_execs();
         Ok(out)
@@ -324,7 +413,7 @@ impl AppCore {
 
     pub fn exec_list(&self) -> Vec<ExecInfo> {
         let mut v: Vec<ExecInfo> = self.execs.lock().values().cloned().collect();
-        v.sort_by(|a, b| a.started_at.cmp(&b.started_at));
+        v.sort_by_key(|a| a.started_at);
         v
     }
 
@@ -335,6 +424,9 @@ impl AppCore {
                 let meta = self.find_session(&sid).ok_or_else(|| anyhow!("세션을 찾을 수 없습니다: {sid}"))?;
                 if meta.agent != agent {
                     bail!("세션 종류가 맞지 않습니다");
+                }
+                if !sessions::is_safe_session_id(&meta.external_id) {
+                    bail!("세션 id 형식이 올바르지 않습니다: {}", meta.external_id);
                 }
                 let cwd = meta.cwd.clone().ok_or_else(|| anyhow!("세션에 작업 폴더 기록이 없습니다"))?;
                 if !Path::new(&cwd).is_dir() {
@@ -368,6 +460,7 @@ impl AppCore {
             _ => bail!("지원하지 않는 실행 요청입니다"),
         };
         // 테스트에서 실제 CLI 대신 가짜 프로그램을 쓸 수 있게 한다.
+        #[cfg(debug_assertions)]
         let program = std::env::var(format!("AITERM_{}_BIN", program.to_uppercase())).unwrap_or(program);
         let loc = self.locate_cached(&cwd);
         let (branch, head) = match &loc {
@@ -431,21 +524,28 @@ impl AppCore {
 
     /// Codex 새 실행은 세션 id 를 미리 알 수 없다. 같은 cwd 에서 실행 이후 생긴 스레드와 연결한다.
     pub fn link_pending_codex_execs(&self) {
+        /// 실행 시작 뒤 이 시간 안에 생긴 스레드만 그 실행의 것으로 본다.
+        const WINDOW_MS: i64 = 10 * 60_000;
         let sessions = self.last_sessions.lock().clone();
         let mut execs = self.execs.lock();
-        let already: Vec<String> = execs.values().filter_map(|e| e.session_id.clone()).collect();
-        for e in execs.values_mut().filter(|e| e.agent == "codex" && e.session_id.is_none()) {
+        let mut taken: std::collections::HashSet<String> = execs.values().filter_map(|e| e.session_id.clone()).collect();
+        // 실행 중인 것만, 먼저 시작한 실행부터 (HashMap 순서에 기대지 않는다)
+        let mut pending: Vec<&mut ExecInfo> =
+            execs.values_mut().filter(|e| e.agent == "codex" && e.session_id.is_none() && !e.exited).collect();
+        pending.sort_by_key(|e| e.started_at);
+        for e in pending {
             let cwd_canon = std::fs::canonicalize(&e.cwd).ok();
             let cand = sessions
                 .iter()
-                .filter(|s| s.agent == "codex" && !already.contains(&s.id))
+                .filter(|s| s.agent == "codex" && !taken.contains(&s.id))
                 .filter(|s| {
                     let sc = s.cwd.as_deref().and_then(|c| std::fs::canonicalize(c).ok());
                     sc.is_some() && sc == cwd_canon
                 })
-                .filter(|s| s.created_at >= e.started_at - 5_000)
+                .filter(|s| s.created_at >= e.started_at - 5_000 && s.created_at <= e.started_at + WINDOW_MS)
                 .min_by_key(|s| s.created_at);
             if let Some(s) = cand {
+                taken.insert(s.id.clone());
                 e.session_id = Some(s.id.clone());
                 let _ = self.db.set_execution_session(&e.id, &s.id);
                 (self.events)("exec-linked", json!({ "execId": e.id, "sessionId": s.id }));
@@ -637,7 +737,8 @@ mod tests {
         write_claude(&home, "c9", &wt, ("feature", "feature"));
         // 실제 claude 대신 인자와 작업 폴더를 출력하는 가짜 프로그램
         let fake = tmp.path().join("fake.sh");
-        std::fs::write(&fake, "#!/bin/sh\necho \"ARGS:$*\"\necho \"PWD:$(pwd -P)\"\n").unwrap();
+        // 실제 CLI 처럼 잠시 살아 있다(종료된 실행은 새 스레드와 연결하지 않으므로).
+        std::fs::write(&fake, "#!/bin/sh\necho \"ARGS:$*\"\necho \"PWD:$(pwd -P)\"\nsleep 5\n").unwrap();
         std::os::unix::fs::PermissionsExt::set_mode(&mut std::fs::metadata(&fake).unwrap().permissions(), 0o755);
         std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
         unsafe {
@@ -671,11 +772,58 @@ mod tests {
         core.list_sessions().unwrap();
         let e = core.exec_list().into_iter().find(|e| e.id == info.id).unwrap();
         assert_eq!(e.session_id.as_deref(), Some("codex:fresh"));
+
+        // 같은 폴더에서 두 번째 새 실행: 이미 연결된 스레드를 다시 가져가지 않는다.
+        let second = core
+            .start(StartRequest { agent: "codex".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24 })
+            .unwrap();
+        core.list_sessions().unwrap();
+        let e2 = core.exec_list().into_iter().find(|e| e.id == second.id).unwrap();
+        assert_eq!(e2.session_id, None, "must not steal the first exec's thread");
+        // 오래된 외부 세션(실행 시작보다 한참 전)과도 연결되지 않는다: x1 같은 2026-10-01 세션
+        let ts2 = chrono_like_iso(now_ms() + 2000);
+        let l2 = json!({"timestamp":ts2,"type":"session_meta","payload":{"id":"fresh2","cwd":main,"source":"cli","timestamp":ts2,"git":{"branch":"main"}}});
+        std::fs::write(dir.join("rollout-2026-10-01T00-00-01-fresh2.jsonl.zst"), zstd::encode_all(format!("{l2}\n").as_bytes(), 3).unwrap()).unwrap();
+        core.list_sessions().unwrap();
+        let e2 = core.exec_list().into_iter().find(|e| e.id == second.id).unwrap();
+        assert_eq!(e2.session_id.as_deref(), Some("codex:fresh2"));
         unsafe {
             std::env::remove_var("AITERM_HOME");
             std::env::remove_var("AITERM_CLAUDE_BIN");
             std::env::remove_var("AITERM_CODEX_BIN");
         }
+    }
+
+    #[test]
+    fn alias_for_symlinked_tmp_and_moved_cwd() {
+        let _g = HOME_LOCK.lock();
+        // macOS 의 /tmp 는 /private/tmp 로 가는 심볼릭 링크
+        let d = tempfile::Builder::new().prefix("aiterm-alias").tempdir_in("/tmp").unwrap();
+        let raw = format!("/tmp/{}", d.path().file_name().unwrap().to_string_lossy());
+        let canon = std::fs::canonicalize(&raw).unwrap().to_string_lossy().into_owned();
+        if canon != raw {
+            std::fs::create_dir(format!("{raw}/sub")).unwrap();
+            assert_eq!(path_alias(&format!("{raw}/sub"), &canon).as_deref(), Some(raw.as_str()));
+        }
+        assert_eq!(path_alias(&canon, &canon), None);
+
+        // 대화 도중 메인 → 링크 워크트리로 옮겨 간 Claude 세션
+        let (tmp, main, wt) = fixture();
+        let home = tmp.path().join("home3");
+        unsafe { std::env::set_var("AITERM_HOME", &home) };
+        let dir = home.join(".claude/projects/x");
+        std::fs::create_dir_all(&dir).unwrap();
+        let lines = [
+            json!({"type":"user","cwd":main,"gitBranch":"main","timestamp":"2026-10-01T00:00:00Z","message":{"content":"시작"}}),
+            json!({"type":"assistant","cwd":wt,"gitBranch":"feature","timestamp":"2026-10-01T00:01:00Z","message":{"content":[{"type":"text","text":"ok"}]}}),
+        ];
+        std::fs::write(dir.join("mv1.jsonl"), lines.iter().map(|l| l.to_string() + "\n").collect::<String>()).unwrap();
+        let core = AppCore::new(Db::open_in_memory().unwrap(), Arc::new(|_, _| {}));
+        let s = core.list_sessions().unwrap().into_iter().find(|s| s.meta.id == "claude:mv1").unwrap();
+        assert_eq!(s.worktree_path.as_deref(), Some(wt.to_str().unwrap()), "links to where it works now");
+        assert!(s.cwd_moved);
+        assert_eq!(s.meta.cwd.as_deref(), Some(main.to_str().unwrap()), "resume still uses the first cwd");
+        unsafe { std::env::remove_var("AITERM_HOME") };
     }
 
     fn chrono_like_iso(ms: i64) -> String {

@@ -19,8 +19,10 @@ declare global {
   }
 }
 
-window.__aiterm = {
-  terminalText: (execId) => {
+/** 테스트 자동화 빌드·개발 모드에서만 터미널 화면 글자를 읽을 수 있게 노출한다. */
+export function exposeTerminals() {
+  window.__aiterm = {
+    terminalText: (execId) => {
     const t = registry.get(execId);
     if (!t) return null;
     const buf = t.buffer.active;
@@ -28,8 +30,9 @@ window.__aiterm = {
     for (let i = 0; i < buf.length; i++) lines.push(buf.getLine(i)?.translateToString(true) ?? "");
     return lines.join("\n");
   },
-  terminalIds: () => [...registry.keys()],
-};
+    terminalIds: () => [...registry.keys()],
+  };
+}
 
 const THEME = {
   background: "#0f1115",

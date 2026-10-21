@@ -12,6 +12,7 @@ export interface AppInfo {
   claudeDir: string;
   codexDir: string;
   dataDir: string;
+  automation: boolean;
 }
 
 export interface Worktree {
@@ -44,6 +45,7 @@ export interface SessionMeta {
   title: string;
   firstPrompt: string | null;
   cwd: string | null;
+  lastCwd: string | null;
   startBranch: string | null;
   lastBranch: string | null;
   createdAt: number;
@@ -57,6 +59,10 @@ export interface LinkedSession extends SessionMeta {
   repoId: string | null;
   repoName: string | null;
   worktreePath: string | null;
+  /** 기록에 적힌 형태의 워크트리 경로(/tmp → /private/tmp 같은 심볼릭 링크일 때만) */
+  worktreeAlias: string | null;
+  /** 대화 도중 다른 워크트리로 옮겨 감 → 시작 브랜치는 다른 곳의 값 */
+  cwdMoved: boolean;
   cwdExists: boolean;
   currentBranch: string | null;
   currentHead: string | null;
@@ -216,7 +222,7 @@ export interface ChangeBatch {
 export const api = {
   appInfo: () => invoke<AppInfo>("app_info"),
   repoList: () => invoke<RepoSummary[]>("repo_list"),
-  repoAdd: (path: string) => invoke<RepoSummary>("repo_add", { path }),
+  repoAdd: (path: string) => invoke<{ id: string; path: string; name: string; pinned: boolean }>("repo_add", { path }),
   repoSetPinned: (id: string, pinned: boolean) => invoke<void>("repo_set_pinned", { id, pinned }),
   worktrees: (path: string) => invoke<Worktree[]>("git_worktrees", { path }),
   graph: (path: string, limit?: number) => invoke<GraphData>("git_graph", { path, limit }),

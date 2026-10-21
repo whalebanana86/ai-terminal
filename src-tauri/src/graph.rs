@@ -83,11 +83,10 @@ pub fn layout(commits: &[Commit]) -> Vec<GraphRow> {
         let mut segments = Vec::new();
         // 지나가는 레인: 위에서 아래로 곧게
         for (i, s) in lanes.iter().enumerate() {
-            if let Some(s) = s {
-                if s.sha != c.sha {
+            if let Some(s) = s
+                && s.sha != c.sha {
                     segments.push(Segment { from_lane: i, from_y: 0, to_lane: i, to_y: 2, color: s.color });
                 }
-            }
         }
         // 이 커밋을 기대하던 레인들: 위에서 노드로 모인다
         for &h in &hits {

@@ -39,8 +39,12 @@ interface State {
   selectedSessionId: string | null;
   focus: Focus | null;
   viewer: Viewer;
-  /** 포커스 워크트리의 파일/깃 변경 신호 (값이 바뀌면 다시 읽는다) */
+  /** 포커스 워크트리의 변경 신호 (값이 바뀌면 다시 읽는다)
+   *  fsTick: 파일 내용/목록, statusTick: git status(파일 또는 git 변경), gitTick: HEAD·refs·워크트리(그래프) */
   fsTick: number;
+  statusTick: number;
+  /** 같은 워크트리를 다시 골랐을 때 감시를 다시 걸기 위한 신호 */
+  watchNonce: number;
   gitTick: number;
   changedPaths: string[];
   /** 워크트리 → 최근 파일 변경 시각 (실행 중인 다른 세션 표시용) */
@@ -82,6 +86,8 @@ export const useStore = create<State>((set, get) => ({
   focus: null,
   viewer: null,
   fsTick: 0,
+  statusTick: 0,
+  watchNonce: 0,
   gitTick: 0,
   changedPaths: [],
   worktreeActivity: {},
@@ -97,6 +103,11 @@ export const useStore = create<State>((set, get) => ({
       api.kvGet("selectedSession").catch(() => null),
     ]);
     set({ info });
+    if (info?.automation || import.meta.env.DEV) {
+      exposeForAutomation();
+      const { exposeTerminals } = await import("./panels/TerminalView");
+      exposeTerminals();
+    }
     try {
       if (focusRaw) set({ focus: JSON.parse(focusRaw) });
       if (selRaw) set({ selectedSessionId: JSON.parse(selRaw) });
@@ -115,27 +126,18 @@ export const useStore = create<State>((set, get) => ({
     set({ restored: true });
   },
 
-  refreshRepos: async () => {
-    try {
-      set({ repos: await api.repoList() });
-    } catch (e) {
-      get().toast("error", `저장소 목록을 읽지 못했습니다: ${errorText(e)}`);
-    }
-  },
+  refreshRepos: () =>
+    coalesce("repos", async () => {
+      const seq = ++repoSeq;
+      try {
+        const repos = await api.repoList();
+        if (seq === repoSeq) set({ repos });
+      } catch (e) {
+        get().toast("error", `저장소 목록을 읽지 못했습니다: ${errorText(e)}`);
+      }
+    }),
 
-  refreshSessions: async () => {
-    set({ sessionsLoading: true });
-    try {
-      const raw = await api.sessions();
-      set({ rawSessions: raw, sessions: mergeSessions(raw, get().execs) });
-      // 세션에서 저장소가 새로 발견되었을 수 있다.
-      if (raw.some((s) => s.repoId && !get().repos.some((r) => r.id === s.repoId))) await get().refreshRepos();
-    } catch (e) {
-      get().toast("error", `세션 목록을 읽지 못했습니다: ${errorText(e)}`);
-    } finally {
-      set({ sessionsLoading: false });
-    }
-  },
+  refreshSessions: () => coalesce("sessions", () => loadSessions()),
 
   refreshExecs: async () => {
     const execs = await api.execList().catch(() => get().execs);
@@ -163,7 +165,9 @@ export const useStore = create<State>((set, get) => ({
 
   setFocusWorktree: (path) => {
     const focus: Focus = { worktreePath: path, source: "manual" };
-    set({ focus, viewer: null });
+    // 같은 워크트리를 다시 고르면 새로 읽는다(폴더를 지웠다 다시 만든 경우 등).
+    const same = get().focus?.worktreePath === path;
+    set({ focus, viewer: null, ...(same ? { gitTick: get().gitTick + 1, statusTick: get().statusTick + 1, fsTick: get().fsTick + 1, watchNonce: get().watchNonce + 1 } : {}) });
     persist("focus", focus);
   },
 
@@ -201,8 +205,9 @@ export const useStore = create<State>((set, get) => ({
         patch.fsTick = get().fsTick + 1;
         patch.changedPaths = paths;
       }
-      // 파일이 바뀌면 git 상태(수정 표시)도 바뀐다.
-      patch.gitTick = get().gitTick + 1;
+      // 파일이 바뀌면 status 만, .git 이 바뀌었을 때만 그래프(전체 log)를 다시 읽는다.
+      patch.statusTick = get().statusTick + 1;
+      if (git) patch.gitTick = get().gitTick + 1;
     }
     set(patch);
     if (git) {
@@ -212,8 +217,54 @@ export const useStore = create<State>((set, get) => ({
     }
   },
 
-  bumpGit: () => set({ gitTick: get().gitTick + 1 }),
+  bumpGit: () => set({ gitTick: get().gitTick + 1, statusTick: get().statusTick + 1 }),
 }));
+
+// ── 갱신 합치기 / 순서 보장 ──
+// 이벤트가 몰려도 같은 갱신은 한 번에 하나만 돌고, 도는 중에 다시 요청되면 끝난 뒤 한 번만 더 돈다.
+// 응답은 가장 최근 요청의 것만 반영한다(늦게 온 옛 결과가 새 결과를 덮지 않게).
+const running = new Map<string, Promise<void>>();
+const again = new Set<string>();
+function coalesce(key: string, fn: () => Promise<void>): Promise<void> {
+  const cur = running.get(key);
+  if (cur) {
+    again.add(key);
+    return cur;
+  }
+  const p = (async () => {
+    try {
+      await fn();
+    } finally {
+      running.delete(key);
+      if (again.delete(key)) void coalesce(key, fn);
+    }
+  })();
+  running.set(key, p);
+  return p;
+}
+let repoSeq = 0;
+let sessionSeq = 0;
+
+async function loadSessions() {
+  const get = useStore.getState;
+  const set = useStore.setState;
+  const seq = ++sessionSeq;
+  {
+    set({ sessionsLoading: true });
+    try {
+      const raw = await api.sessions();
+      if (seq !== sessionSeq) return;
+      set({ rawSessions: raw, sessions: mergeSessions(raw, get().execs) });
+      // 세션에서 저장소가 새로 발견되었을 수 있다.
+      if (raw.some((s) => s.repoId && !get().repos.some((r) => r.id === s.repoId))) await get().refreshRepos();
+    } catch (e) {
+      get().toast("error", `세션 목록을 읽지 못했습니다: ${errorText(e)}`);
+    } finally {
+      set({ sessionsLoading: false });
+    }
+  }
+}
+
 
 /** 현재 포커스 워크트리가 속한 저장소 */
 export function useFocusRepo(): RepoSummary | null {
@@ -228,5 +279,7 @@ export function useSelectedSession(): LinkedSession | null {
   return useStore((s) => (s.selectedSessionId ? s.sessions.find((x) => x.id === s.selectedSessionId) ?? null : null));
 }
 
-// 테스트 자동화·디버깅용: 화면 상태를 읽고 동작을 호출할 수 있게 노출한다(앱 안에서만 접근 가능).
-(window as unknown as { __aitermStore: typeof useStore }).__aitermStore = useStore;
+/** 테스트 자동화 빌드나 개발 모드에서만 화면 상태를 창 객체에 노출한다(배포 빌드에는 없음). */
+export function exposeForAutomation() {
+  (window as unknown as { __aitermStore: typeof useStore }).__aitermStore = useStore;
+}

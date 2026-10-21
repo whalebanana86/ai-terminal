@@ -15,7 +15,7 @@ use crate::watch::WorkspaceWatcher;
 
 pub struct AppState {
     pub core: Arc<AppCore>,
-    pub watcher: Option<WorkspaceWatcher>,
+    pub watcher: Option<Arc<WorkspaceWatcher>>,
 }
 
 type Res<T> = Result<T, String>;
@@ -43,6 +43,8 @@ pub struct AppInfo {
     pub claude_dir: String,
     pub codex_dir: String,
     pub data_dir: String,
+    /// 테스트 자동화 빌드인지 (화면이 테스트용 객체를 노출할지 결정)
+    pub automation: bool,
 }
 
 #[tauri::command]
@@ -61,6 +63,7 @@ pub async fn app_info(app: tauri::AppHandle) -> Res<AppInfo> {
             claude_dir: crate::sessions::claude_dir().to_string_lossy().into_owned(),
             codex_dir: crate::sessions::codex_dir().to_string_lossy().into_owned(),
             data_dir,
+            automation: cfg!(feature = "automation"),
         })
     })
     .await
@@ -87,8 +90,13 @@ pub async fn repo_set_pinned(state: State<'_, AppState>, id: String, pinned: boo
 }
 
 #[tauri::command]
-pub async fn git_worktrees(path: String) -> Res<Vec<Worktree>> {
-    blocking(move || git::worktrees(Path::new(&path))).await
+pub async fn git_worktrees(state: State<'_, AppState>, path: String) -> Res<Vec<Worktree>> {
+    let core = state.core.clone();
+    blocking(move || {
+        core.ensure_known(&path)?;
+        git::worktrees(Path::new(&path))
+    })
+    .await
 }
 
 // ───────────── Git 조회 ─────────────
@@ -96,71 +104,135 @@ pub async fn git_worktrees(path: String) -> Res<Vec<Worktree>> {
 #[tauri::command]
 pub async fn git_graph(state: State<'_, AppState>, path: String, limit: Option<usize>) -> Res<GraphData> {
     let core = state.core.clone();
-    blocking(move || core.graph(&path, limit.unwrap_or(1500).clamp(50, 20000))).await
+    blocking(move || {
+        core.ensure_known(&path)?;
+        core.graph(&path, limit.unwrap_or(1500).clamp(50, 20000))
+    })
+    .await
 }
 
 #[tauri::command]
-pub async fn git_status(path: String) -> Res<WorktreeStatus> {
-    blocking(move || git::status(Path::new(&path))).await
+pub async fn git_status(state: State<'_, AppState>, path: String) -> Res<WorktreeStatus> {
+    let core = state.core.clone();
+    blocking(move || {
+        core.ensure_known(&path)?;
+        git::status(Path::new(&path))
+    })
+    .await
 }
 
 #[tauri::command]
-pub async fn git_commit_detail(path: String, sha: String) -> Res<CommitDetail> {
-    blocking(move || git::commit_detail(Path::new(&path), &sha)).await
+pub async fn git_commit_detail(state: State<'_, AppState>, path: String, sha: String) -> Res<CommitDetail> {
+    let core = state.core.clone();
+    blocking(move || {
+        core.ensure_known(&path)?;
+        git::commit_detail(Path::new(&path), &sha)
+    })
+    .await
 }
 
 #[tauri::command]
-pub async fn git_diff_file(path: String, rel: String) -> Res<Vec<FileDiff>> {
-    blocking(move || git::diff_worktree_file(Path::new(&path), &rel)).await
+pub async fn git_diff_file(state: State<'_, AppState>, path: String, rel: String) -> Res<Vec<FileDiff>> {
+    let core = state.core.clone();
+    blocking(move || {
+        core.ensure_known(&path)?;
+        git::diff_worktree_file(Path::new(&path), &rel)
+    })
+    .await
 }
 
 #[tauri::command]
-pub async fn git_diff_commit_file(path: String, sha: String, rel: String) -> Res<Vec<FileDiff>> {
-    blocking(move || git::diff_commit_file(Path::new(&path), &sha, &rel)).await
+pub async fn git_diff_commit_file(state: State<'_, AppState>, path: String, sha: String, rel: String) -> Res<Vec<FileDiff>> {
+    let core = state.core.clone();
+    blocking(move || {
+        core.ensure_known(&path)?;
+        git::diff_commit_file(Path::new(&path), &sha, &rel)
+    })
+    .await
 }
 
 #[tauri::command]
-pub async fn git_remotes(path: String) -> Res<Vec<String>> {
-    blocking(move || git::remotes(Path::new(&path))).await
+pub async fn git_remotes(state: State<'_, AppState>, path: String) -> Res<Vec<String>> {
+    let core = state.core.clone();
+    blocking(move || {
+        core.ensure_known(&path)?;
+        git::remotes(Path::new(&path))
+    })
+    .await
 }
 
 // ───────────── Git 쓰기 (UI 확인 후에만 호출) ─────────────
 
 #[tauri::command]
-pub async fn git_fetch(path: String) -> Res<String> {
-    blocking(move || git::fetch(Path::new(&path))).await
+pub async fn git_fetch(state: State<'_, AppState>, path: String) -> Res<String> {
+    let core = state.core.clone();
+    blocking(move || {
+        core.ensure_known(&path)?;
+        git::fetch(Path::new(&path))
+    })
+    .await
 }
 
 #[tauri::command]
-pub async fn git_pull(path: String) -> Res<String> {
-    blocking(move || git::pull_ff_only(Path::new(&path))).await
+pub async fn git_pull(state: State<'_, AppState>, path: String) -> Res<String> {
+    let core = state.core.clone();
+    blocking(move || {
+        core.ensure_known(&path)?;
+        git::pull_ff_only(Path::new(&path))
+    })
+    .await
 }
 
 #[tauri::command]
-pub async fn git_push(path: String, set_upstream_remote: Option<String>) -> Res<String> {
-    blocking(move || git::push(Path::new(&path), set_upstream_remote.as_deref())).await
+pub async fn git_push(state: State<'_, AppState>, path: String, set_upstream_remote: Option<String>) -> Res<String> {
+    let core = state.core.clone();
+    blocking(move || {
+        core.ensure_known(&path)?;
+        git::push(Path::new(&path), set_upstream_remote.as_deref())
+    })
+    .await
 }
 
 #[tauri::command]
-pub async fn git_commit(path: String, paths: Vec<String>, message: String) -> Res<String> {
-    blocking(move || git::commit(Path::new(&path), &paths, &message)).await
+pub async fn git_commit(state: State<'_, AppState>, path: String, paths: Vec<String>, message: String) -> Res<String> {
+    let core = state.core.clone();
+    blocking(move || {
+        core.ensure_known(&path)?;
+        git::commit(Path::new(&path), &paths, &message)
+    })
+    .await
 }
 
 #[tauri::command]
-pub async fn git_checkout(path: String, target: String, kind: String) -> Res<String> {
-    blocking(move || git::checkout(Path::new(&path), &target, &kind)).await
+pub async fn git_checkout(state: State<'_, AppState>, path: String, target: String, kind: String) -> Res<String> {
+    let core = state.core.clone();
+    blocking(move || {
+        core.ensure_known(&path)?;
+        git::checkout(Path::new(&path), &target, &kind)
+    })
+    .await
 }
 
 // ───────────── 파일 ─────────────
 
 #[tauri::command]
-pub async fn fs_list(worktree: String, rel: String) -> Res<Vec<DirEntry>> {
-    blocking(move || crate::files::list_dir(Path::new(&worktree), &rel)).await
+pub async fn fs_list(state: State<'_, AppState>, worktree: String, rel: String) -> Res<Vec<DirEntry>> {
+    let core = state.core.clone();
+    blocking(move || {
+        core.ensure_known(&worktree)?;
+        crate::files::list_dir(Path::new(&worktree), &rel)
+    })
+    .await
 }
 
 #[tauri::command]
-pub async fn fs_read(worktree: String, rel: String) -> Res<FileContent> {
-    blocking(move || crate::files::read_file(Path::new(&worktree), &rel)).await
+pub async fn fs_read(state: State<'_, AppState>, worktree: String, rel: String) -> Res<FileContent> {
+    let core = state.core.clone();
+    blocking(move || {
+        core.ensure_known(&worktree)?;
+        crate::files::read_file(Path::new(&worktree), &rel)
+    })
+    .await
 }
 
 // ───────────── 세션 ─────────────
@@ -251,11 +323,17 @@ pub async fn exec_history(state: State<'_, AppState>, limit: Option<usize>) -> R
 #[tauri::command]
 pub async fn watch_set(state: State<'_, AppState>, worktrees: Vec<String>) -> Res<()> {
     let core = state.core.clone();
-    let targets = blocking(move || Ok(core.watch_targets(&worktrees))).await?;
-    if let Some(w) = &state.watcher {
-        w.set_targets(targets).map_err(err)?;
-    }
-    Ok(())
+    let watcher = state.watcher.clone();
+    // 감시 등록·무시 폴더 계산은 디스크를 읽으므로 async 실행 스레드를 막지 않게 따로 돌린다.
+    blocking(move || {
+        let worktrees: Vec<String> = worktrees.into_iter().filter(|w| core.is_known_worktree(w)).collect();
+        let targets = core.watch_targets(&worktrees);
+        if let Some(w) = watcher {
+            w.set_targets(targets)?;
+        }
+        Ok(())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -270,7 +348,8 @@ pub fn kv_set(state: State<'_, AppState>, key: String, value: String) -> Res<()>
 
 /// 경로를 Finder 에서 보여 준다.
 #[tauri::command]
-pub fn reveal_in_finder(path: String) -> Res<()> {
+pub fn reveal_in_finder(state: State<'_, AppState>, path: String) -> Res<()> {
+    state.core.ensure_known(&path).map_err(err)?;
     let p = PathBuf::from(&path);
     if !p.exists() {
         return Err(format!("경로가 없습니다: {path}"));

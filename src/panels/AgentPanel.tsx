@@ -278,14 +278,31 @@ function SessionHeader({ s, running, onResume, onStop }: { s: LinkedSession; run
 
 function TerminalHost({ selectedExecId }: { selectedExecId: string | null }) {
   const execs = useStore((s) => s.execs);
-  // 실행마다 터미널을 하나씩 유지하고 선택된 것만 보이게 한다(전환해도 프로세스·화면 유지).
+  // 실행 중인 것마다 터미널을 유지하고 선택된 것만 보이게 한다(전환해도 프로세스·화면 유지).
+  // 끝난 실행은 보고 있을 때만 그린다(다시 붙으면 백엔드 버퍼에서 재생). 메모리·WebGL 컨텍스트 절약.
+  const shown = execs.filter((e) => !e.exited || e.id === selectedExecId);
   return (
     <div className="term-stack" style={{ display: selectedExecId ? "block" : "none" }}>
-      {execs.map((e) => (
+      {shown.map((e) => (
         <TerminalView key={e.id} execId={e.id} visible={e.id === selectedExecId} />
       ))}
     </div>
   );
+}
+
+/** 값이 자주 바뀌어도 최소 ms 간격으로만 바뀐 값을 돌려준다(마지막 값은 반드시 반영). */
+function useThrottled<T>(value: T, ms: number): T {
+  const [v, setV] = useState(value);
+  const last = useRef(0);
+  useEffect(() => {
+    const wait = Math.max(0, last.current + ms - Date.now());
+    const t = window.setTimeout(() => {
+      last.current = Date.now();
+      setV(value);
+    }, wait);
+    return () => window.clearTimeout(t);
+  }, [value, ms]);
+  return v;
 }
 
 function HistoryView({ s }: { s: LinkedSession }) {
@@ -294,6 +311,8 @@ function HistoryView({ s }: { s: LinkedSession }) {
   const [showTools, setShowTools] = useState(true);
   const bottom = useRef<HTMLDivElement>(null);
   const pending = s.id.startsWith("exec:") || !s.sourcePath;
+  // 에이전트가 일하는 동안 기록이 1초마다 바뀐다. 큰 기록을 매번 다시 읽지 않게 최소 3초 간격을 둔다.
+  const updatedAt = useThrottled(s.updatedAt, 3000);
   useEffect(() => {
     if (pending) return;
     let alive = true;
@@ -304,7 +323,7 @@ function HistoryView({ s }: { s: LinkedSession }) {
     return () => {
       alive = false;
     };
-  }, [s.id, s.updatedAt, pending]);
+  }, [s.id, updatedAt, pending]);
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
   }, [t]);
@@ -342,35 +361,37 @@ function HistoryView({ s }: { s: LinkedSession }) {
 function TouchedFilesView({ s }: { s: LinkedSession }) {
   const [t, setT] = useState<Transcript | null>(null);
   const [status, setStatus] = useState<WorktreeStatus | null>(null);
-  const gitTick = useStore((st) => st.gitTick);
+  const statusTick = useStore((st) => st.statusTick);
   const openViewer = useStore((st) => st.openViewer);
   const focus = useStore((st) => st.focus);
   const pending = s.id.startsWith("exec:") || !s.sourcePath;
+  const updatedAt = useThrottled(s.updatedAt, 3000);
   useEffect(() => {
     let alive = true;
     if (!pending) api.transcript(s.id).then((x) => alive && setT(x), () => alive && setT(null));
     return () => {
       alive = false;
     };
-  }, [s.id, s.updatedAt, pending]);
+  }, [s.id, updatedAt, pending]);
   useEffect(() => {
     let alive = true;
     if (s.worktreePath && s.cwdExists) api.status(s.worktreePath).then((x) => alive && setStatus(x), () => alive && setStatus(null));
     return () => {
       alive = false;
     };
-  }, [s.worktreePath, s.cwdExists, gitTick]);
+  }, [s.worktreePath, s.cwdExists, statusTick]);
   const now = Date.now();
   if (pending) return <Empty title="아직 기록이 없습니다" />;
   if (!t) return <div className="loading">…</div>;
   if (!t.touchedFiles.length) return <Empty title="에이전트가 파일을 수정한 기록이 없습니다">Edit/Write(Claude), apply_patch(Codex) 도구 기록을 기준으로 합니다.</Empty>;
-  const root = s.worktreePath ?? s.cwd ?? "";
+  // 기록의 경로는 /tmp/… 처럼 심볼릭 링크 형태일 수 있어 실제 경로와 별칭을 모두 본다.
+  const roots = [s.worktreePath, s.worktreeAlias, s.worktreePath ? null : s.cwd];
   const kinds = new Map((status?.entries ?? []).map((e) => [e.path, e.kind]));
   const viewing = focus?.worktreePath === s.worktreePath;
   return (
     <ul className="file-list touched">
       {t.touchedFiles.map((f) => {
-        const rel = relativeTo(root, f.path);
+        const rel = relativeTo(roots, f.path);
         const now_kind = rel !== null ? kinds.get(rel) : undefined;
         return (
           <li

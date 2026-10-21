@@ -16,7 +16,7 @@ def main():
     path = os.environ.get("AITERM_AUTOMATION_SOCKET", "/tmp/aiterm-auto.sock")
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.connect(path)
-    s.sendall((json.dumps({"js": js, "timeoutMs": 60000}) + "\n").encode())
+    s.sendall((json.dumps({"js": js, "timeoutMs": int(os.environ.get("AITERM_EVAL_TIMEOUT_MS", "60000"))}) + "\n").encode())
     buf = b""
     while not buf.endswith(b"\n"):
         chunk = s.recv(65536)

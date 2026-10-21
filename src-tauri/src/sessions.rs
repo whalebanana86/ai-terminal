@@ -22,6 +22,8 @@ pub struct SessionMeta {
     pub first_prompt: Option<String>,
     /// CLI 가 기록한 작업 폴더. 재개는 반드시 이 폴더에서 한다.
     pub cwd: Option<String>,
+    /// 마지막 기록의 작업 폴더. 대화 도중 cd/워크트리 이동이 있었으면 cwd 와 다르다.
+    pub last_cwd: Option<String>,
     /// 세션 시작 때 기록된 브랜치 (과거 기록)
     pub start_branch: Option<String>,
     /// 세션 마지막 기록의 브랜치 (과거 기록)
@@ -170,8 +172,16 @@ fn claude_user_text(v: &Value) -> Option<String> {
     (!is_claude_noise(&text)).then_some(text)
 }
 
+/// CLI 인자로 넘길 세션 id 로 안전한지 (옵션으로 해석될 수 있는 값 거부)
+pub fn is_safe_session_id(id: &str) -> bool {
+    !id.is_empty() && !id.starts_with('-') && id.len() <= 128 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
 pub fn parse_claude_session(path: &Path) -> Option<SessionMeta> {
     let external_id = path.file_stem()?.to_str()?.to_string();
+    if !is_safe_session_id(&external_id) {
+        return None;
+    }
     let (_, mtime) = file_stamp(path)?;
     let mut meta = SessionMeta {
         id: format!("claude:{external_id}"),
@@ -238,23 +248,23 @@ pub fn parse_claude_session(path: &Path) -> Option<SessionMeta> {
             if v.get("isSidechain").and_then(Value::as_bool) == Some(true) {
                 continue;
             }
-            if !found_branch {
-                if let Some(b) = v.get("gitBranch").and_then(Value::as_str).filter(|s| !s.is_empty()) {
+            if meta.last_cwd.is_none() {
+                meta.last_cwd = v.get("cwd").and_then(Value::as_str).map(str::to_string);
+            }
+            if !found_branch
+                && let Some(b) = v.get("gitBranch").and_then(Value::as_str).filter(|s| !s.is_empty()) {
                     meta.last_branch = Some(b.to_string());
                     found_branch = true;
                     if let Some(ts) = v.get("timestamp").and_then(Value::as_str).and_then(parse_iso_ms) {
                         meta.updated_at = meta.updated_at.max(ts);
                     }
                 }
-            }
         }
         if found_branch {
             break;
         }
     }
-    if meta.cwd.is_none() {
-        return None; // cwd 가 없는 기록은 재개할 수 없다
-    }
+    meta.cwd.as_ref()?;
     if meta.created_at == 0 {
         meta.created_at = meta.updated_at;
     }
@@ -472,11 +482,10 @@ pub struct SessionIndex {
 impl SessionIndex {
     pub fn claude_meta(&mut self, path: &Path) -> Option<SessionMeta> {
         let stamp = file_stamp(path)?;
-        if let Some((s, m)) = self.claude.get(path) {
-            if *s == stamp {
+        if let Some((s, m)) = self.claude.get(path)
+            && *s == stamp {
                 return m.clone();
             }
-        }
         let meta = parse_claude_session(path);
         self.claude.insert(path.to_path_buf(), (stamp, meta.clone()));
         meta
@@ -484,11 +493,10 @@ impl SessionIndex {
 
     pub fn rollout_header(&mut self, path: &Path) -> Option<RolloutHeader> {
         let stamp = file_stamp(path)?;
-        if let Some((s, h)) = self.rollout.get(path) {
-            if *s == stamp {
+        if let Some((s, h)) = self.rollout.get(path)
+            && *s == stamp {
                 return h.clone();
             }
-        }
         let h = parse_rollout_header(path);
         self.rollout.insert(path.to_path_buf(), (stamp, h.clone()));
         h
@@ -506,7 +514,7 @@ impl SessionIndex {
         if let Some(db) = codex_state_db() {
             match read_codex_threads(&db) {
                 Ok(rows) => {
-                    for t in rows {
+                    for t in rows.into_iter().filter(|t| is_safe_session_id(&t.id)) {
                         let path = resolve_rollout(&t.rollout_path);
                         let header = path.as_ref().and_then(|p| self.rollout_header(p));
                         let mtime = path.as_ref().and_then(|p| file_stamp(p)).map(|s| s.1).unwrap_or(0);
@@ -530,6 +538,7 @@ impl SessionIndex {
                                 title,
                                 first_prompt: first,
                                 cwd: Some(t.cwd.clone()).filter(|s| !s.is_empty()),
+                                last_cwd: None,
                                 start_branch: header.as_ref().and_then(|h| h.branch.clone()).or(t.git_branch.clone()),
                                 last_branch: t.git_branch.clone(),
                                 created_at: t.created_ms,
@@ -547,7 +556,7 @@ impl SessionIndex {
         // DB 에 없는 rollout (옛 버전, DB 없음) 은 파일 머리로 보충한다.
         for p in codex_rollout_files() {
             let Some(h) = self.rollout_header(&p) else { continue };
-            let Some(id) = h.id.clone() else { continue };
+            let Some(id) = h.id.clone().filter(|i| is_safe_session_id(i)) else { continue };
             if by_id.contains_key(&id) {
                 continue;
             }
@@ -561,6 +570,7 @@ impl SessionIndex {
                     title: h.first_prompt.as_ref().map(|f| one_line(f, 80)).unwrap_or_else(|| "(제목 없음)".into()),
                     first_prompt: h.first_prompt.clone(),
                     cwd: h.cwd.clone(),
+                    last_cwd: None,
                     start_branch: h.branch.clone(),
                     last_branch: h.branch.clone(),
                     created_at: if h.created_at > 0 { h.created_at } else { mtime },
@@ -694,12 +704,11 @@ pub fn claude_transcript(path: &Path) -> Result<Transcript> {
                         Some("tool_use") => {
                             let name = it.get("name").and_then(Value::as_str).unwrap_or("tool").to_string();
                             let input = it.get("input").cloned().unwrap_or(Value::Null);
-                            if matches!(name.as_str(), "Edit" | "Write" | "MultiEdit" | "NotebookEdit") {
-                                if let Some(p) = input.get("file_path").or_else(|| input.get("notebook_path")).and_then(Value::as_str) {
+                            if matches!(name.as_str(), "Edit" | "Write" | "MultiEdit" | "NotebookEdit")
+                                && let Some(p) = input.get("file_path").or_else(|| input.get("notebook_path")).and_then(Value::as_str) {
                                     let op = if name == "Write" { "write" } else { "edit" };
                                     c.touch(p, op, ts);
                                 }
-                            }
                             c.push("tool", tool_summary(&name, &input), Some(name), ts, false);
                         }
                         _ => {}

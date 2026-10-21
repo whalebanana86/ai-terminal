@@ -24,7 +24,9 @@ export interface BranchState {
   unknownCurrent: boolean;
 }
 
-export function branchState(s: Pick<LinkedSession, "startBranch" | "lastBranch" | "currentBranch" | "currentDetached" | "worktreePath" | "cwdExists">): BranchState {
+export function branchState(
+  s: Pick<LinkedSession, "startBranch" | "lastBranch" | "currentBranch" | "currentDetached" | "worktreePath" | "cwdExists"> & { cwdMoved?: boolean },
+): BranchState {
   const unknownCurrent = !s.worktreePath || !s.cwdExists;
   const current = s.currentDetached ? "HEAD" : s.currentBranch;
   const differs = (rec: string | null) => !unknownCurrent && !!rec && rec !== current;
@@ -33,7 +35,8 @@ export function branchState(s: Pick<LinkedSession, "startBranch" | "lastBranch" 
     last: s.lastBranch,
     current: s.currentBranch,
     currentDetached: s.currentDetached,
-    changedSinceStart: differs(s.startBranch),
+    // 대화 도중 다른 워크트리로 옮겼으면 시작 브랜치는 다른 워크트리의 값이라 비교하지 않는다.
+    changedSinceStart: !s.cwdMoved && differs(s.startBranch),
     changedSinceLast: differs(s.lastBranch),
     unknownCurrent,
   };
@@ -48,6 +51,7 @@ export function pendingSessionFromExec(e: ExecInfo): LinkedSession {
     title: e.agent === "claude" ? "새 Claude 세션" : "새 Codex 세션",
     firstPrompt: null,
     cwd: e.cwd,
+    lastCwd: null,
     startBranch: e.branchAtStart,
     lastBranch: e.branchAtStart,
     createdAt: e.startedAt,
@@ -58,6 +62,8 @@ export function pendingSessionFromExec(e: ExecInfo): LinkedSession {
     repoId: null,
     repoName: null,
     worktreePath: e.worktreePath,
+    worktreeAlias: null,
+    cwdMoved: false,
     cwdExists: true,
     currentBranch: e.branchAtStart,
     currentHead: e.headAtStart,
@@ -102,12 +108,19 @@ export function relativeTime(ms: number, now: number): string {
   return `${date.getFullYear()}.${date.getMonth() + 1}.${date.getDate()}`;
 }
 
-/** 절대 경로를 워크트리 기준 상대 경로로. 워크트리 밖이면 null */
-export function relativeTo(root: string, abs: string): string | null {
-  const r = root.endsWith("/") ? root : root + "/";
-  if (abs === root) return "";
-  return abs.startsWith(r) ? abs.slice(r.length) : null;
+/** 절대 경로를 워크트리 기준 상대 경로로. 여러 루트(실제 경로, 심볼릭 링크 경로) 중 맞는 것을 쓴다. 밖이면 null */
+export function relativeTo(root: string | (string | null | undefined)[], abs: string): string | null {
+  for (const r0 of Array.isArray(root) ? root : [root]) {
+    if (!r0) continue;
+    const r = r0.endsWith("/") ? r0 : r0 + "/";
+    if (abs === r0) return "";
+    if (abs.startsWith(r)) return abs.slice(r.length);
+  }
+  return null;
 }
+
+/** git status 가 "dir/" 로 보여 주는 중첩 저장소/워크트리 (커밋하면 gitlink 가 됨) */
+export const isNestedRepoEntry = (path: string) => path.endsWith("/");
 
 export function baseName(p: string): string {
   const parts = p.replace(/\/+$/, "").split("/");
