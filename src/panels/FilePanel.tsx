@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { api, errorText, type ChangeKind, type DirEntry, type FileContent, type FileDiff, type WorktreeStatus } from "../api";
 import { Empty } from "../components/Overlays";
@@ -205,8 +205,7 @@ function FileTree({ worktree }: { worktree: string }) {
 function FileViewer({ worktree }: { worktree: string }) {
   const viewer = useStore((s) => s.viewer)!;
   const openViewer = useStore((s) => s.openViewer);
-  const fsTick = useStore((s) => s.fsTick);
-  const gitTick = useStore((s) => s.gitTick);
+  const fileTick = useFileTick(viewer.rel);
   const [content, setContent] = useState<FileContent | null>(null);
   const [diff, setDiff] = useState<FileDiff[] | null>(null);
   const [lines, setLines] = useState<string[] | null>(null);
@@ -245,7 +244,7 @@ function FileViewer({ worktree }: { worktree: string }) {
       alive = false;
     };
     // 커밋 diff 는 변하지 않지만, 워크트리 파일은 외부 변경 때마다 다시 읽는다.
-  }, [worktree, key, viewer.kind === "commit-file" ? 0 : fsTick + gitTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [worktree, key, viewer.kind === "commit-file" ? 0 : fileTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const title = viewer.rel;
   return (
@@ -303,9 +302,17 @@ function FileViewer({ worktree }: { worktree: string }) {
 }
 
 /** 한 파일의 스테이지 안 된/된 변경을 hunk 단위로 보여 주고 스테이지·취소·버리기 */
+/** 이 파일이 바뀐 신호(또는 .git 변경)일 때만 값이 바뀐다 → 다른 파일 이벤트로는 다시 읽지 않는다. */
+function useFileTick(rel: string): number {
+  const fs = useStore((s) => (s.changedPaths.includes(rel) ? s.fsTick : -1));
+  const git = useStore((s) => s.gitTick);
+  const last = useRef(0);
+  if (fs >= 0) last.current = fs;
+  return last.current * 100000 + git;
+}
+
 function StageView({ worktree, rel }: { worktree: string; rel: string }) {
-  const fsTick = useStore((s) => s.fsTick);
-  const statusTick = useStore((s) => s.statusTick);
+  const fileTick = useFileTick(rel);
   const toast = useStore((s) => s.toast);
   const ask = useStore((s) => s.ask);
   const [data, setData] = useState<[FileDiff[], FileDiff[]] | null>(null);
@@ -321,7 +328,7 @@ function StageView({ worktree, rel }: { worktree: string; rel: string }) {
     return () => {
       alive = false;
     };
-  }, [worktree, rel, fsTick, statusTick, nonce]);
+  }, [worktree, rel, fileTick, nonce]);
 
   const apply = async (action: "stage" | "unstage" | "discard", index: number, id: string) => {
     if (action === "discard") {
@@ -342,6 +349,9 @@ function StageView({ worktree, rel }: { worktree: string; rel: string }) {
 
   if (err) return <div className="banner banner-error">{err}</div>;
   if (!data) return <div className="loading">…</div>;
+  const total = [...data[0], ...data[1]].reduce((n, f) => n + f.hunks.reduce((m, h) => m + h.lines.length, 0), 0);
+  if (total > MAX_DIFF_LINES)
+    return <Empty title="변경이 너무 큽니다">{total}줄이 바뀌어 hunk 단위 보기를 생략했습니다. 왼쪽 목록의 + / − 로 파일 단위 스테이지를 쓰세요.</Empty>;
   const [unstaged, staged] = data;
   const section = (title: string, files: FileDiff[], side: "unstaged" | "staged") => (
     <div className="stage-section" data-side={side}>
@@ -394,10 +404,32 @@ function StageView({ worktree, rel }: { worktree: string; rel: string }) {
   );
 }
 
-export function DiffView({ diff }: { diff: FileDiff[] }) {
-  if (!diff.length) return <Empty title="변경 없음">HEAD 와 같습니다.</Empty>;
+/** 한 번에 그리는 diff 줄 수 상한(넘으면 앞부분만). 큰 생성 파일이 화면·메모리를 잡아먹지 않게. */
+const MAX_DIFF_LINES = 4000;
+
+function capDiff(diff: FileDiff[]): { files: FileDiff[]; hidden: number } {
+  let left = MAX_DIFF_LINES;
+  let hidden = 0;
+  const files = diff.map((f) => ({
+    ...f,
+    hunks: f.hunks
+      .map((h) => {
+        const take = Math.max(0, Math.min(left, h.lines.length));
+        hidden += h.lines.length - take;
+        left -= take;
+        return { ...h, lines: h.lines.slice(0, take) };
+      })
+      .filter((h) => h.lines.length > 0),
+  }));
+  return { files, hidden };
+}
+
+export function DiffView({ diff: full }: { diff: FileDiff[] }) {
+  if (!full.length) return <Empty title="변경 없음">HEAD 와 같습니다.</Empty>;
+  const { files: diff, hidden } = capDiff(full);
   return (
     <div className="diff" data-testid="diff-view">
+      {hidden > 0 && <div className="banner">변경이 커서 앞의 {MAX_DIFF_LINES}줄만 보여 줍니다 ({hidden}줄 생략).</div>}
       {diff.map((f, fi) => (
         <div key={fi} className="diff-file">
           <div className="diff-file-head">

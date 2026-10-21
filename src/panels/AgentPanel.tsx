@@ -1,5 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { api, errorText, externalRunning, type Agent, type ChatInfo, type LinkedSession, type LiveRun, type Transcript, type WorktreeStatus } from "../api";
 import { AgentBadge, Empty } from "../components/Overlays";
@@ -7,7 +7,8 @@ import { activity, baseName, branchLabel, branchState, clientLabel, externalRunO
 import { useSelectedSession, useStore } from "../store";
 import { PanelHead } from "./GitPanel";
 import { ChatView } from "./ChatView";
-import { TerminalView } from "./TerminalView";
+// 터미널(xterm + WebGL, 약 460KB)은 실제로 띄울 때만 불러온다.
+const TerminalView = lazy(() => import("./TerminalView").then((m) => ({ default: m.TerminalView })));
 
 type DetailTab = "terminal" | "chat" | "history" | "files";
 
@@ -87,7 +88,8 @@ function SessionList() {
         .some((x) => x!.toLowerCase().includes(needle));
     });
   }, [sessions, q, agent, scope, showArchived, focusRepoId]);
-  const now = Date.now();
+  // 상대 시각("3분 전")은 30초마다만 다시 계산한다.
+  const now = Math.floor(Date.now() / 30_000) * 30_000;
 
   return (
     <div className="session-list">
@@ -116,7 +118,7 @@ function SessionList() {
             key={s.id}
             s={s}
             selected={s.id === selected}
-            onSelect={() => select(s.id)}
+            onSelect={select}
             now={now}
             ext={externalRunOf(s.id, liveRuns)}
             chat={chats.find((c) => c.sessionId === s.id || `chat:${c.id}` === s.id) ?? null}
@@ -128,13 +130,25 @@ function SessionList() {
   );
 }
 
-function SessionItem({ s, selected, onSelect, now, ext, chat }: { s: LinkedSession; selected: boolean; onSelect: () => void; now: number; ext: LiveRun | null; chat: ChatInfo | null }) {
+type ItemProps = { s: LinkedSession; selected: boolean; onSelect: (id: string) => void; now: number; ext: LiveRun | null; chat: ChatInfo | null };
+
+/** 목록이 갱신돼도 바뀐 항목만 다시 그린다(에이전트 작업 중 매초 갱신되므로). */
+const SessionItem = memo(SessionItemView, (a, b) =>
+  a.selected === b.selected &&
+  a.now === b.now &&
+  a.onSelect === b.onSelect &&
+  JSON.stringify(a.s) === JSON.stringify(b.s) &&
+  JSON.stringify(a.ext) === JSON.stringify(b.ext) &&
+  JSON.stringify(a.chat) === JSON.stringify(b.chat),
+);
+
+function SessionItemView({ s, selected, onSelect, now, ext, chat }: ItemProps) {
   const bs = branchState(s);
   const act = s.runningExecId || chat ? "running" : ext ? "external" : activity(s.updatedAt, now);
   const dotTitle =
     act === "running" ? (chat ? "앱의 채팅으로 열려 있음" : "앱의 터미널에서 실행 중") : act === "external" && ext ? `${clientLabel(ext.client)}에서 실행 중 (PID ${ext.pid}${ext.status ? ", " + ext.status : ""})` : act === "live" ? "방금 기록됨" : "";
   return (
-    <li role="option" aria-selected={selected} className={`session${selected ? " on" : ""}`} onClick={onSelect} data-session={s.id}>
+    <li role="option" aria-selected={selected} className={`session${selected ? " on" : ""}`} onClick={() => onSelect(s.id)} data-session={s.id}>
       <div className="s-line">
         <AgentBadge agent={s.agent} small />
         <span className="s-title">{s.title}</span>
@@ -399,9 +413,13 @@ function TerminalHost({ selectedExecId }: { selectedExecId: string | null }) {
   const shown = execs.filter((e) => !e.exited || e.id === selectedExecId);
   return (
     <div className="term-stack" style={{ display: selectedExecId ? "block" : "none" }}>
-      {shown.map((e) => (
-        <TerminalView key={e.id} execId={e.id} visible={e.id === selectedExecId} />
-      ))}
+      {shown.length > 0 && (
+        <Suspense fallback={<div className="loading">터미널 준비 중…</div>}>
+          {shown.map((e) => (
+            <TerminalView key={e.id} execId={e.id} visible={e.id === selectedExecId} />
+          ))}
+        </Suspense>
+      )}
     </div>
   );
 }

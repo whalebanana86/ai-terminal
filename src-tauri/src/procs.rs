@@ -8,7 +8,6 @@
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
-use std::process::Command;
 
 use crate::sessions::{claude_dir, codex_dir, is_safe_session_id};
 
@@ -66,9 +65,136 @@ pub fn parse_ps(raw: &str, now_ms: i64) -> Vec<ProcInfo> {
         .collect()
 }
 
+/// 실행 중 프로세스 목록. 외부 프로그램(ps)을 띄우지 않고 커널(libproc)에서 바로 읽는다(수 ms).
 pub fn list_procs() -> Vec<ProcInfo> {
-    let Ok(out) = Command::new("/bin/ps").args(["-axo", "pid=,ppid=,etime=,command="]).output() else { return Vec::new() };
-    parse_ps(&String::from_utf8_lossy(&out.stdout), crate::db::now_ms())
+    libproc::all_pids()
+        .into_iter()
+        .filter_map(|pid| {
+            let info = libproc::bsd_info(pid)?;
+            // 실행 파일 경로(없으면 프로세스 이름)를 command 로 쓴다. 판별은 claude/codex 포함 여부뿐이다.
+            let command = libproc::pid_path(pid).unwrap_or_else(|| libproc::cstr(&info.pbi_name));
+            Some(ProcInfo {
+                pid: pid as u32,
+                ppid: info.pbi_ppid,
+                start_ms: info.pbi_start_tvsec as i64 * 1000 + info.pbi_start_tvusec as i64 / 1000,
+                command,
+            })
+        })
+        .collect()
+}
+
+/// macOS libproc 얇은 래퍼
+mod libproc {
+    use std::ffi::c_int;
+
+    pub fn all_pids() -> Vec<c_int> {
+        // SAFETY: 크기를 먼저 묻고 그만큼(여유 포함) 버퍼를 준다.
+        unsafe {
+            let n = libc::proc_listallpids(std::ptr::null_mut(), 0);
+            if n <= 0 {
+                return Vec::new();
+            }
+            let mut buf: Vec<c_int> = vec![0; n as usize + 64];
+            let got = libc::proc_listallpids(buf.as_mut_ptr().cast(), (buf.len() * std::mem::size_of::<c_int>()) as c_int);
+            if got <= 0 {
+                return Vec::new();
+            }
+            buf.truncate(got as usize);
+            buf.retain(|p| *p > 0);
+            buf
+        }
+    }
+
+    pub fn bsd_info(pid: c_int) -> Option<libc::proc_bsdinfo> {
+        // SAFETY: 구조체 크기만큼 버퍼를 주고, 돌아온 크기가 정확히 같을 때만 쓴다.
+        unsafe {
+            let mut info: libc::proc_bsdinfo = std::mem::zeroed();
+            let size = std::mem::size_of::<libc::proc_bsdinfo>() as c_int;
+            let n = libc::proc_pidinfo(pid, libc::PROC_PIDTBSDINFO, 0, (&mut info as *mut libc::proc_bsdinfo).cast(), size);
+            (n == size).then_some(info)
+        }
+    }
+
+    pub fn pid_path(pid: c_int) -> Option<String> {
+        let mut buf = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
+        // SAFETY: 버퍼 크기를 정확히 넘긴다.
+        let n = unsafe { libc::proc_pidpath(pid, buf.as_mut_ptr().cast(), buf.len() as u32) };
+        (n > 0).then(|| String::from_utf8_lossy(&buf[..n as usize]).into_owned())
+    }
+
+    /// 프로세스의 현재 작업 폴더
+    pub fn cwd(pid: c_int) -> Option<String> {
+        // SAFETY: 구조체 크기만큼 버퍼를 주고 반환 크기를 확인한다.
+        unsafe {
+            let mut vi: libc::proc_vnodepathinfo = std::mem::zeroed();
+            let size = std::mem::size_of::<libc::proc_vnodepathinfo>() as c_int;
+            let n = libc::proc_pidinfo(pid, libc::PROC_PIDVNODEPATHINFO, 0, (&mut vi as *mut libc::proc_vnodepathinfo).cast(), size);
+            if n != size {
+                return None;
+            }
+            let flat: &[std::ffi::c_char] = std::slice::from_raw_parts(vi.pvi_cdir.vip_path.as_ptr().cast(), 1024);
+            let s = cstr(flat);
+            (!s.is_empty()).then_some(s)
+        }
+    }
+
+    pub fn cstr(chars: &[std::ffi::c_char]) -> String {
+        let bytes: Vec<u8> = chars.iter().take_while(|c| **c != 0).map(|c| *c as u8).collect();
+        String::from_utf8_lossy(&bytes).into_owned()
+    }
+
+    #[repr(C)]
+    struct ProcFileInfo {
+        fi_openflags: u32,
+        fi_status: u32,
+        fi_offset: i64,
+        fi_type: i32,
+        fi_guardflags: u32,
+    }
+
+    #[repr(C)]
+    struct VnodeFdInfoWithPath {
+        pfi: ProcFileInfo,
+        pvip: libc::vnode_info_path,
+    }
+
+    const PROC_PIDFDVNODEPATHINFO: c_int = 2;
+
+    /// 프로세스가 열어 둔 파일 경로들
+    pub fn open_files(pid: c_int) -> Vec<String> {
+        let mut out = Vec::new();
+        // SAFETY: 각 호출에 정확한 버퍼 크기를 넘기고, 반환 크기를 확인한다.
+        unsafe {
+            let need = libc::proc_pidinfo(pid, libc::PROC_PIDLISTFDS, 0, std::ptr::null_mut(), 0);
+            if need <= 0 {
+                return out;
+            }
+            let cap = need as usize / std::mem::size_of::<libc::proc_fdinfo>() + 16;
+            let mut fds: Vec<libc::proc_fdinfo> = Vec::with_capacity(cap);
+            let got = libc::proc_pidinfo(
+                pid,
+                libc::PROC_PIDLISTFDS,
+                0,
+                fds.as_mut_ptr().cast(),
+                (cap * std::mem::size_of::<libc::proc_fdinfo>()) as c_int,
+            );
+            if got <= 0 {
+                return out;
+            }
+            fds.set_len(got as usize / std::mem::size_of::<libc::proc_fdinfo>());
+            for fd in fds.iter().filter(|f| f.proc_fdtype == libc::PROX_FDTYPE_VNODE as u32) {
+                let mut vi: VnodeFdInfoWithPath = std::mem::zeroed();
+                let size = std::mem::size_of::<VnodeFdInfoWithPath>() as c_int;
+                let n = libc::proc_pidfdinfo(pid, fd.proc_fd, PROC_PIDFDVNODEPATHINFO, (&mut vi as *mut VnodeFdInfoWithPath).cast(), size);
+                if n != size {
+                    continue;
+                }
+                let flat: &[std::ffi::c_char] = std::slice::from_raw_parts(vi.pvip.vip_path.as_ptr().cast(), 1024);
+                out.push(cstr(flat));
+            }
+        }
+        out
+    }
 }
 
 /// pid 가 roots 중 하나이거나 그 자손인지
@@ -161,12 +287,26 @@ pub fn parse_lsof_locks(raw: &str) -> Vec<(u32, String)> {
 }
 
 pub fn codex_runs(procs: &HashMap<u32, ProcInfo>, lock_dir: &std::path::Path) -> Vec<LiveRun> {
-    // codex 프로세스가 하나도 없으면 lsof 를 부르지 않는다.
-    if !procs.values().any(|p| p.command.contains("codex")) || !lock_dir.is_dir() {
+    if !lock_dir.is_dir() {
         return Vec::new();
     }
-    let Ok(out) = Command::new("/usr/sbin/lsof").args(["-nP", "-F", "pn", "+D"]).arg(lock_dir).output() else { return Vec::new() };
-    parse_lsof_locks(&String::from_utf8_lossy(&out.stdout))
+    // codex 프로세스들이 열어 둔 파일 중 잠금 폴더 안의 것 = 그 프로세스가 쓰고 있는 대화
+    let dir = std::fs::canonicalize(lock_dir).unwrap_or_else(|_| lock_dir.to_path_buf());
+    let mut pairs: Vec<(u32, String)> = Vec::new();
+    for p in procs.values().filter(|p| p.command.contains("codex") || p.command.contains("Codex")) {
+        for f in libproc::open_files(p.pid as std::ffi::c_int) {
+            let path = std::path::Path::new(&f);
+            if path.parent() != Some(dir.as_path()) && path.parent() != Some(lock_dir) {
+                continue;
+            }
+            if let Some(id) = path.file_name().and_then(|n| n.to_str()).and_then(|n| n.strip_suffix(".lock")) {
+                if !id.starts_with('.') && is_safe_session_id(id) {
+                    pairs.push((p.pid, id.to_string()));
+                }
+            }
+        }
+    }
+    pairs
         .into_iter()
         .filter_map(|(pid, id)| {
             let p = procs.get(&pid)?;
@@ -176,7 +316,8 @@ pub fn codex_runs(procs: &HashMap<u32, ProcInfo>, lock_dir: &std::path::Path) ->
                 pid,
                 client: client_of(&p.command, None),
                 status: None,
-                cwd: None,
+                // 데스크톱 앱 서버는 작업 폴더가 대화 폴더와 무관하다
+                cwd: if p.command.contains(".app/") { None } else { libproc::cwd(pid as std::ffi::c_int) },
                 started_at: p.start_ms,
                 owned_by_app: false,
             })

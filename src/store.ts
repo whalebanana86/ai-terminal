@@ -252,7 +252,9 @@ export const useStore = create<State>((set, get) => ({
     }
   },
 
-  setLiveRuns: (runs) => set({ liveRuns: runs }),
+  setLiveRuns: (runs) => {
+    if (JSON.stringify(runs) !== JSON.stringify(get().liveRuns)) set({ liveRuns: runs });
+  },
 
   setNewSessionOpen: (open) => set({ newSessionOpen: open }),
 
@@ -305,23 +307,28 @@ function coalesce(key: string, fn: () => Promise<void>): Promise<void> {
 }
 let repoSeq = 0;
 let sessionSeq = 0;
+let lastSessionsKey = "";
 
 async function loadSessions() {
   const get = useStore.getState;
   const set = useStore.setState;
   const seq = ++sessionSeq;
   {
-    set({ sessionsLoading: true });
+    if (!get().sessionsLoading) set({ sessionsLoading: true });
     try {
       const raw = await api.sessions();
       if (seq !== sessionSeq) return;
+      // 내용이 그대로면 상태를 바꾸지 않는다(다시 그리기·GPU 칠하기 없음). 에이전트가 일하는 동안 자주 불린다.
+      const key = JSON.stringify(raw);
+      if (key === lastSessionsKey) return;
+      lastSessionsKey = key;
       set({ rawSessions: raw, sessions: mergeSessions(raw, get().execs, get().chats) });
       // 세션에서 저장소가 새로 발견되었을 수 있다.
       if (raw.some((s) => s.repoId && !get().repos.some((r) => r.id === s.repoId))) await get().refreshRepos();
     } catch (e) {
       get().toast("error", `세션 목록을 읽지 못했습니다: ${errorText(e)}`);
     } finally {
-      set({ sessionsLoading: false });
+      if (get().sessionsLoading) set({ sessionsLoading: false });
     }
   }
 }

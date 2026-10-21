@@ -15,8 +15,8 @@ use std::sync::Arc;
 
 use crate::env::shell_env;
 
-/// 채팅 하나에 보관하는 이벤트 수(다시 붙을 때 재생). 넘치면 오래된 것부터 버린다.
-const MAX_EVENTS: usize = 3000;
+/// 채팅 하나에 보관하는 이벤트 양(다시 붙을 때 재생). 넘치면 오래된 것부터 버린다.
+const MAX_EVENT_BYTES: usize = 8 * 1024 * 1024;
 const MAX_TEXT: usize = 20_000;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -29,8 +29,9 @@ pub enum ChatEvent {
     Assistant { text: String },
     #[serde(rename_all = "camelCase")]
     Tool { id: String, name: String, summary: String, status: String, output: Option<String> },
+    /// summary 는 실제 입력(명령·경로·내용 미리보기), description 은 모델이 쓴 설명(참고용)
     #[serde(rename_all = "camelCase")]
-    Permission { request_id: String, tool: String, summary: String, input: Value },
+    Permission { request_id: String, tool: String, summary: String, description: Option<String>, input: Value },
     #[serde(rename_all = "camelCase")]
     PermissionResolved { request_id: String, allowed: bool },
     #[serde(rename_all = "camelCase")]
@@ -61,12 +62,18 @@ pub type Sink = Box<dyn Fn(&ChatEvent) -> bool + Send>;
 
 struct State {
     events: VecDeque<ChatEvent>,
+    event_bytes: usize,
     sinks: Vec<(u64, Sink)>,
     busy: bool,
+    /// 턴 번호. 이전 턴의 프로세스가 늦게 끝나도 새 턴 상태를 건드리지 않게 한다.
+    turn: u64,
     session_id: Option<String>,
-    child: Option<Child>,
-    stdin: Option<ChildStdin>,
+    /// 지금 돌고 있는 프로세스(그룹 리더) pid. 프로세스 자체는 리더 스레드가 갖는다.
     pid: Option<u32>,
+    /// Claude 상주 프로세스가 살아 있는지 (Codex 는 항상 true)
+    alive: bool,
+    /// 답을 기다리는 승인 요청: request_id → 도구 원본 입력. 허용할 때 이 값만 돌려준다(화면이 바꿔치기 못 함).
+    pending: HashMap<String, Value>,
 }
 
 pub struct Chat {
@@ -75,6 +82,8 @@ pub struct Chat {
     pub cwd: String,
     pub mode: String,
     state: Mutex<State>,
+    /// Claude 표준입력. 상태 잠금과 따로 둬서 쓰는 동안 다른 작업을 막지 않는다.
+    stdin: Mutex<Option<ChildStdin>>,
 }
 
 pub struct StartChat {
@@ -113,6 +122,64 @@ fn summary_of(input: &Value) -> String {
     input.to_string().chars().take(300).collect()
 }
 
+fn lines_preview(text: &str, max_lines: usize) -> String {
+    let mut out: Vec<&str> = text.lines().take(max_lines).collect();
+    let total = text.lines().count();
+    let mut s = out.join("\n");
+    if total > max_lines {
+        out.clear();
+        s.push_str(&format!("\n… ({}줄 더)", total - max_lines));
+    }
+    s
+}
+
+/// 승인 카드에 보여 줄 실제 입력. 모델이 쓴 설명이 아니라 실행될 명령·경로·내용을 보여 준다.
+pub fn permission_summary(tool: &str, input: &Value) -> String {
+    let get = |k: &str| input.get(k).and_then(Value::as_str).unwrap_or("");
+    let s = match tool {
+        "Bash" => get("command").to_string(),
+        "Write" => format!("{}\n{}", get("file_path"), lines_preview(get("content"), 30)),
+        "Edit" => format!("{}\n- {}\n+ {}", get("file_path"), lines_preview(get("old_string"), 12), lines_preview(get("new_string"), 12)),
+        "MultiEdit" => format!("{} (편집 {}곳)", get("file_path"), input.get("edits").and_then(Value::as_array).map(|a| a.len()).unwrap_or(0)),
+        "NotebookEdit" => format!("{}\n{}", get("notebook_path"), lines_preview(get("new_source"), 20)),
+        "WebFetch" => get("url").to_string(),
+        _ => serde_json::to_string_pretty(input).unwrap_or_default(),
+    };
+    s.chars().take(4000).collect()
+}
+
+/// 화면에 보낼 입력: 아주 긴 문자열(Write 내용 등)은 잘라 낸다. 원본은 pending 에만 둔다.
+fn trim_value(v: &Value) -> Value {
+    match v {
+        Value::String(s) if s.len() > 4000 => Value::String(clip_to(s, 4000)),
+        Value::Array(a) => Value::Array(a.iter().take(200).map(trim_value).collect()),
+        Value::Object(o) => Value::Object(o.iter().map(|(k, v)| (k.clone(), trim_value(v))).collect()),
+        other => other.clone(),
+    }
+}
+
+fn clip_to(s: &str, max: usize) -> String {
+    let mut cut = max.min(s.len());
+    while !s.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    if cut < s.len() {
+        format!("{}…", &s[..cut])
+    } else {
+        s.to_string()
+    }
+}
+
+fn ev_size(ev: &ChatEvent) -> usize {
+    match ev {
+        ChatEvent::User { text } | ChatEvent::Assistant { text } | ChatEvent::Error { text } => text.len() + 32,
+        ChatEvent::Tool { summary, output, .. } => summary.len() + output.as_ref().map_or(0, |o| o.len()) + 64,
+        ChatEvent::Permission { summary, input, .. } => summary.len() + input.to_string().len() + 64,
+        ChatEvent::FileChange { paths } => paths.iter().map(|p| p.len()).sum::<usize>() + 32,
+        _ => 64,
+    }
+}
+
 fn base_command(program: &str, cwd: &str) -> Result<Command> {
     #[cfg(debug_assertions)]
     let program = std::env::var(format!("AITERM_{}_BIN", program.to_uppercase())).unwrap_or_else(|_| program.to_string());
@@ -126,28 +193,46 @@ fn base_command(program: &str, cwd: &str) -> Result<Command> {
 }
 
 impl Chat {
-    fn push(&self, ev: ChatEvent) {
+    /// 이벤트를 보관하고 화면에 보낸다. turn 이 주어지면 그 턴이 지금 턴일 때만 busy 를 내린다.
+    fn push_turn(&self, ev: ChatEvent, turn: Option<u64>) {
         let mut st = self.state.lock();
-        if let ChatEvent::Session { session_id } = &ev {
-            st.session_id = Some(session_id.clone());
-        }
-        match &ev {
-            ChatEvent::TurnEnd { .. } | ChatEvent::Exit { .. } => st.busy = false,
+        Self::push_locked(&mut st, ev, turn);
+    }
+
+    fn push(&self, ev: ChatEvent) {
+        self.push_turn(ev, None);
+    }
+
+    fn push_locked(st: &mut State, ev: ChatEvent, turn: Option<u64>) {
+        let mut ev = ev;
+        match &mut ev {
+            ChatEvent::Session { session_id } => st.session_id = Some(session_id.clone()),
+            ChatEvent::Permission { request_id, input, .. } => {
+                st.pending.insert(request_id.clone(), input.clone());
+                *input = trim_value(input);
+            }
+            ChatEvent::PermissionResolved { request_id, .. } => {
+                st.pending.remove(request_id);
+            }
+            ChatEvent::TurnEnd { .. } | ChatEvent::Exit { .. } => {
+                if turn.is_none_or(|t| t == st.turn) {
+                    st.busy = false;
+                }
+            }
             _ => {}
         }
         st.sinks.retain(|(_, s)| s(&ev));
+        st.event_bytes += ev_size(&ev);
         st.events.push_back(ev);
-        while st.events.len() > MAX_EVENTS {
-            st.events.pop_front();
+        while st.event_bytes > MAX_EVENT_BYTES && st.events.len() > 1 {
+            if let Some(old) = st.events.pop_front() {
+                st.event_bytes = st.event_bytes.saturating_sub(ev_size(&old));
+            }
         }
     }
 
     pub fn info(&self) -> ChatInfo {
         let st = self.state.lock();
-        let alive = match self.agent.as_str() {
-            "claude" => st.child.is_some(),
-            _ => true, // Codex 는 메시지마다 프로세스를 띄우므로 채팅 자체는 항상 열려 있다
-        };
         ChatInfo {
             id: self.id.clone(),
             agent: self.agent.clone(),
@@ -155,9 +240,21 @@ impl Chat {
             cwd: self.cwd.clone(),
             busy: st.busy,
             mode: self.mode.clone(),
-            alive,
+            alive: st.alive,
             pid: st.pid,
         }
+    }
+
+    pub fn alive(&self) -> bool {
+        self.state.lock().alive
+    }
+
+    fn write_line(&self, v: &Value) -> Result<()> {
+        let mut g = self.stdin.lock();
+        let stdin = g.as_mut().ok_or_else(|| anyhow!("Claude 프로세스가 끝났습니다. 채팅을 닫고 다시 여세요."))?;
+        writeln!(stdin, "{v}")?;
+        stdin.flush()?;
+        Ok(())
     }
 }
 
@@ -223,12 +320,20 @@ pub fn claude_line_to_events(v: &Value) -> Vec<ChatEvent> {
         }),
         Some("control_request") if v.pointer("/request/subtype").and_then(Value::as_str) == Some("can_use_tool") => {
             let input = v.pointer("/request/input").cloned().unwrap_or(Value::Null);
+            let tool = v.pointer("/request/tool_name").and_then(Value::as_str).unwrap_or("tool").to_string();
             out.push(ChatEvent::Permission {
                 request_id: v.get("request_id").and_then(Value::as_str).unwrap_or("").to_string(),
-                tool: v.pointer("/request/tool_name").and_then(Value::as_str).unwrap_or("tool").to_string(),
-                summary: v.pointer("/request/description").and_then(Value::as_str).map(str::to_string).unwrap_or_else(|| summary_of(&input)),
+                summary: permission_summary(&tool, &input),
+                description: v.pointer("/request/description").and_then(Value::as_str).map(str::to_string),
+                tool,
                 input,
             });
+        }
+        // CLI 가 승인 요청을 거둬들임(턴 중단 등)
+        Some("control_cancel_request") => {
+            if let Some(id) = v.get("request_id").and_then(Value::as_str) {
+                out.push(ChatEvent::PermissionResolved { request_id: id.to_string(), allowed: false });
+            }
         }
         _ => {}
     }
@@ -311,9 +416,19 @@ impl ChatManager {
         self.chats.lock().values().map(|c| c.info()).collect()
     }
 
-    /// 이 세션을 이미 채팅으로 열어 둔 것이 있으면 그 채팅
+    /// 이 세션을 살아 있는 채팅으로 열어 둔 것이 있으면 그 채팅
     pub fn find_by_session(&self, session_id: &str) -> Option<Arc<Chat>> {
-        self.chats.lock().values().find(|c| c.state.lock().session_id.as_deref() == Some(session_id)).cloned()
+        self.chats.lock().values().find(|c| c.alive() && c.state.lock().session_id.as_deref() == Some(session_id)).cloned()
+    }
+
+    /// 프로세스가 끝난 채로 남은 같은 세션의 채팅(다시 열 때 정리용)
+    pub fn dead_for_session(&self, session_id: &str) -> Vec<String> {
+        self.chats
+            .lock()
+            .values()
+            .filter(|c| !c.alive() && c.state.lock().session_id.as_deref() == Some(session_id))
+            .map(|c| c.id.clone())
+            .collect()
     }
 
     pub fn start(&self, req: StartChat, on_change: Arc<dyn Fn(&ChatInfo) + Send + Sync>) -> Result<ChatInfo> {
@@ -338,7 +453,18 @@ impl ChatManager {
             agent: req.agent.clone(),
             cwd: req.cwd.clone(),
             mode: req.mode.clone(),
-            state: Mutex::new(State { events: VecDeque::new(), sinks: Vec::new(), busy: false, session_id, child: None, stdin: None, pid: None }),
+            state: Mutex::new(State {
+                events: VecDeque::new(),
+                event_bytes: 0,
+                sinks: Vec::new(),
+                busy: false,
+                turn: 0,
+                session_id,
+                pid: None,
+                alive: true,
+                pending: HashMap::new(),
+            }),
+            stdin: Mutex::new(None),
         });
         if req.agent == "claude" {
             let mode = match req.mode.as_str() {
@@ -371,19 +497,12 @@ impl ChatManager {
                 }
             }
             let mut child = cmd.spawn().context("claude 를 실행하지 못했습니다")?;
-            let stdout = child.stdout.take().unwrap();
-            let stderr = child.stderr.take().unwrap();
-            let mut stdin = child.stdin.take().unwrap();
+            let stdin = child.stdin.take().unwrap();
+            chat.state.lock().pid = Some(child.id());
+            *chat.stdin.lock() = Some(stdin);
             // 승인 요청을 앱이 받도록 제어 프로토콜을 연다.
-            writeln!(stdin, "{}", json!({"type":"control_request","request_id":"aiterm-init","request":{"subtype":"initialize","hooks":null}}))?;
-            stdin.flush()?;
-            {
-                let mut st = chat.state.lock();
-                st.pid = Some(child.id());
-                st.child = Some(child);
-                st.stdin = Some(stdin);
-            }
-            spawn_reader(chat.clone(), stdout, stderr, true, on_change);
+            chat.write_line(&json!({"type":"control_request","request_id":"aiterm-init","request":{"subtype":"initialize","hooks":null}}))?;
+            spawn_reader(chat.clone(), child, true, 0, on_change);
         }
         self.chats.lock().insert(id.clone(), chat.clone());
         Ok(chat.info())
@@ -414,22 +533,32 @@ impl ChatManager {
         if text.trim().is_empty() {
             bail!("보낼 내용을 입력하세요");
         }
-        if chat.state.lock().busy {
-            bail!("에이전트가 아직 답하는 중입니다");
-        }
-        chat.push(ChatEvent::User { text: clip(text) });
-        chat.state.lock().busy = true;
-        on_change(&chat.info());
-        if chat.agent == "claude" {
+        // busy 확인과 설정을 한 잠금 안에서: 두 번 눌러도 턴이 하나만 시작된다.
+        let turn = {
             let mut st = chat.state.lock();
-            let stdin = st.stdin.as_mut().ok_or_else(|| anyhow!("Claude 프로세스가 끝났습니다. 채팅을 다시 여세요."))?;
-            writeln!(stdin, "{}", json!({"type":"user","message":{"role":"user","content":text}}))?;
-            stdin.flush()?;
-            return Ok(());
+            if !st.alive {
+                bail!("에이전트 프로세스가 끝났습니다. 채팅을 닫고 다시 여세요.");
+            }
+            if st.busy {
+                bail!("에이전트가 아직 답하는 중입니다");
+            }
+            st.busy = true;
+            st.turn += 1;
+            Chat::push_locked(&mut st, ChatEvent::User { text: clip(text) }, None);
+            st.turn
+        };
+        on_change(&chat.info());
+        let fail = |e: anyhow::Error| {
+            chat.push_turn(ChatEvent::TurnEnd { cost_usd: None, is_error: true, text: Some(e.to_string()) }, Some(turn));
+            on_change(&chat.info());
+            e
+        };
+        if chat.agent == "claude" {
+            return chat.write_line(&json!({"type":"user","message":{"role":"user","content":text}})).map_err(fail);
         }
         // Codex: 메시지마다 exec 를 띄운다. 프롬프트는 표준입력으로(인자 길이·따옴표 문제 없음).
         let sandbox = if chat.mode == "workspace-write" { "workspace-write" } else { "read-only" };
-        let mut cmd = base_command("codex", &chat.cwd)?;
+        let mut cmd = base_command("codex", &chat.cwd).map_err(fail)?;
         let resume = chat.state.lock().session_id.clone().and_then(|s| s.strip_prefix("codex:").map(str::to_string));
         match resume {
             Some(r) => {
@@ -439,41 +568,26 @@ impl ChatManager {
                 cmd.args(["exec", "--json", "--skip-git-repo-check", "-s", sandbox, "-C", &chat.cwd, "-"]);
             }
         }
-        let mut child = match cmd.spawn() {
-            Ok(c) => c,
-            Err(e) => {
-                chat.state.lock().busy = false;
-                return Err(anyhow!("codex 를 실행하지 못했습니다: {e}"));
-            }
-        };
+        let mut child = cmd.spawn().map_err(|e| fail(anyhow!("codex 를 실행하지 못했습니다: {e}")))?;
         let mut stdin = child.stdin.take().unwrap();
-        stdin.write_all(text.as_bytes())?;
-        drop(stdin); // EOF → 프롬프트 끝
-        let stdout = child.stdout.take().unwrap();
-        let stderr = child.stderr.take().unwrap();
-        {
-            let mut st = chat.state.lock();
-            st.pid = Some(child.id());
-            st.child = Some(child);
-        }
-        spawn_reader(chat.clone(), stdout, stderr, false, on_change);
-        Ok(())
+        chat.state.lock().pid = Some(child.id());
+        // 프롬프트를 쓰고 닫는다(EOF = 프롬프트 끝). 쓰기는 잠금 밖에서 한다.
+        let write = stdin.write_all(text.as_bytes());
+        drop(stdin);
+        spawn_reader(chat.clone(), child, false, turn, on_change);
+        write.map_err(|e| anyhow!("codex 에 메시지를 보내지 못했습니다: {e}"))
     }
 
-    /// Claude 도구 승인 요청에 답한다.
-    pub fn respond_permission(&self, id: &str, request_id: &str, allow: bool, input: Option<Value>) -> Result<()> {
+    /// Claude 도구 승인 요청에 답한다. 허용 시 도구 입력은 요청 때 받은 원본을 그대로 돌려준다.
+    pub fn respond_permission(&self, id: &str, request_id: &str, allow: bool) -> Result<()> {
         let chat = self.get(id).ok_or_else(|| anyhow!("채팅을 찾을 수 없습니다"))?;
+        let original = chat.state.lock().pending.remove(request_id).ok_or_else(|| anyhow!("이미 답했거나 없는 승인 요청입니다"))?;
         let response = if allow {
-            json!({"behavior":"allow","updatedInput": input.unwrap_or(json!({}))})
+            json!({"behavior":"allow","updatedInput": original})
         } else {
             json!({"behavior":"deny","message":"사용자가 AI Terminal 에서 거부했습니다"})
         };
-        {
-            let mut st = chat.state.lock();
-            let stdin = st.stdin.as_mut().ok_or_else(|| anyhow!("Claude 프로세스가 끝났습니다"))?;
-            writeln!(stdin, "{}", json!({"type":"control_response","response":{"subtype":"success","request_id":request_id,"response":response}}))?;
-            stdin.flush()?;
-        }
+        chat.write_line(&json!({"type":"control_response","response":{"subtype":"success","request_id":request_id,"response":response}}))?;
         chat.push(ChatEvent::PermissionResolved { request_id: request_id.to_string(), allowed: allow });
         Ok(())
     }
@@ -481,12 +595,11 @@ impl ChatManager {
     /// 지금 답하는 중인 턴만 멈춘다(채팅은 유지).
     pub fn interrupt(&self, id: &str) -> Result<()> {
         let chat = self.get(id).ok_or_else(|| anyhow!("채팅을 찾을 수 없습니다"))?;
+        if !chat.state.lock().busy {
+            return Ok(());
+        }
         if chat.agent == "claude" {
-            let mut st = chat.state.lock();
-            if let Some(stdin) = st.stdin.as_mut() {
-                writeln!(stdin, "{}", json!({"type":"control_request","request_id":uuid::Uuid::new_v4().to_string(),"request":{"subtype":"interrupt"}}))?;
-                stdin.flush()?;
-            }
+            chat.write_line(&json!({"type":"control_request","request_id":uuid::Uuid::new_v4().to_string(),"request":{"subtype":"interrupt"}}))?;
         } else {
             kill_group(chat.state.lock().pid, libc::SIGINT);
         }
@@ -496,17 +609,18 @@ impl ChatManager {
     /// 채팅을 닫는다(프로세스 그룹 종료). 대화 기록은 CLI 쪽에 남아 다시 이어갈 수 있다.
     pub fn close(&self, id: &str) {
         let Some(chat) = self.chats.lock().remove(id) else { return };
-        let mut st = chat.state.lock();
-        st.stdin.take();
-        let pid = st.pid;
-        if let Some(mut child) = st.child.take() {
+        chat.stdin.lock().take(); // EOF → Claude 가 스스로 끝난다
+        let pid = chat.state.lock().pid;
+        if pid.is_some() {
             kill_group(pid, libc::SIGTERM);
+            let c = chat.clone();
             std::thread::spawn(move || {
                 std::thread::sleep(std::time::Duration::from_millis(800));
-                if matches!(child.try_wait(), Ok(None)) {
-                    kill_group(pid, libc::SIGKILL);
+                // 리더 스레드가 프로세스를 회수했으면 pid 가 지워진다.
+                let still = c.state.lock().pid;
+                if still.is_some() {
+                    kill_group(still, libc::SIGKILL);
                 }
-                let _ = child.wait();
             });
         }
     }
@@ -519,13 +633,11 @@ impl ChatManager {
     }
 }
 
-fn spawn_reader(
-    chat: Arc<Chat>,
-    stdout: std::process::ChildStdout,
-    stderr: std::process::ChildStderr,
-    claude: bool,
-    on_change: Arc<dyn Fn(&ChatInfo) + Send + Sync>,
-) {
+/// 프로세스 출력을 읽어 이벤트로 바꾼다. 프로세스(Child)는 이 스레드가 갖고, 끝나면 잠금 밖에서 회수한다.
+fn spawn_reader(chat: Arc<Chat>, mut child: Child, claude: bool, turn: u64, on_change: Arc<dyn Fn(&ChatInfo) + Send + Sync>) {
+    let stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
+    let pid = child.id();
     // stderr 는 마지막 몇 줄만 모아 두었다가 비정상 종료 때 보여 준다.
     let tail: Arc<Mutex<VecDeque<String>>> = Arc::default();
     let t2 = tail.clone();
@@ -551,32 +663,43 @@ fn spawn_reader(
                     session_known = Some(session_id.clone());
                 }
                 let changed = matches!(ev, ChatEvent::Session { .. } | ChatEvent::TurnEnd { .. });
-                chat.push(ev);
+                chat.push_turn(ev, if claude { None } else { Some(turn) });
                 if changed {
                     on_change(&chat.info());
                 }
             }
         }
-        // 출력이 끝났다 = 프로세스 종료
-        let code = {
-            let mut st = chat.state.lock();
-            st.stdin.take();
-            st.child.take().and_then(|mut c| c.wait().ok()).and_then(|s| s.code())
-        };
-        let was_busy = chat.state.lock().busy;
+        // 출력이 끝났다 = 프로세스 종료. 잠금 없이 회수한다.
+        let code = child.wait().ok().and_then(|s| s.code());
         if code.is_some_and(|c| c != 0) || (claude && code.is_none()) {
             let err = tail.lock().iter().cloned().collect::<Vec<_>>().join("\n");
             if !err.trim().is_empty() {
                 chat.push(ChatEvent::Error { text: clip(&err) });
             }
         }
-        if claude {
-            chat.push(ChatEvent::Exit { code });
-        } else if was_busy {
-            // Codex exec 는 턴마다 끝난다. turn.completed 없이 끝났으면 턴을 닫는다.
-            chat.push(ChatEvent::TurnEnd { cost_usd: None, is_error: code != Some(0), text: None });
+        {
+            let mut st = chat.state.lock();
+            if st.pid == Some(pid) {
+                st.pid = None;
+            }
+            if claude {
+                st.alive = false;
+                st.pending.clear();
+            }
         }
-        chat.state.lock().busy = false;
+        if claude {
+            chat.stdin.lock().take();
+            chat.push(ChatEvent::Exit { code });
+        } else {
+            // Codex exec 는 턴마다 끝난다. 이 턴이 아직 열려 있으면(turn.completed 없이 끝남) 닫는다.
+            let open = {
+                let st = chat.state.lock();
+                st.busy && st.turn == turn
+            };
+            if open {
+                chat.push_turn(ChatEvent::TurnEnd { cost_usd: None, is_error: code != Some(0), text: None }, Some(turn));
+            }
+        }
         on_change(&chat.info());
     });
 }
@@ -595,7 +718,10 @@ mod tests {
         assert_eq!(ev[1], ChatEvent::FileChange { paths: vec!["/r/a.txt".into()] });
         assert!(matches!(&ev[2], ChatEvent::Tool { id, name, status, .. } if id == "t1" && name == "Write" && status == "running"));
         let p = json!({"type":"control_request","request_id":"r9","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"ls"},"description":"목록"}});
-        assert!(matches!(&claude_line_to_events(&p)[0], ChatEvent::Permission { request_id, tool, summary, .. } if request_id == "r9" && tool == "Bash" && summary == "목록"));
+        // 카드에는 모델이 쓴 설명("목록")이 아니라 실제 명령이 나온다
+        assert!(matches!(&claude_line_to_events(&p)[0], ChatEvent::Permission { request_id, tool, summary, description, .. } if request_id == "r9" && tool == "Bash" && summary == "ls" && description.as_deref() == Some("목록")));
+        let cancel = json!({"type":"control_cancel_request","request_id":"r9"});
+        assert_eq!(claude_line_to_events(&cancel), vec![ChatEvent::PermissionResolved { request_id: "r9".into(), allowed: false }]);
         let r = json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"ok","is_error":false}]}});
         assert!(matches!(&claude_line_to_events(&r)[0], ChatEvent::Tool { status, output, .. } if status == "ok" && output.as_deref() == Some("ok")));
         let end = json!({"type":"result","total_cost_usd":0.12,"is_error":false});
@@ -672,10 +798,68 @@ done"#,
         m.send(&info.id, "파일 만들어 줘", Arc::new(|_| {})).unwrap();
         assert!(wait_for(&got, |e| e.iter().any(|x| matches!(x, ChatEvent::Permission { .. }))));
         assert!(m.send(&info.id, "또", Arc::new(|_| {})).is_err(), "busy until turn ends");
-        m.respond_permission(&info.id, "p1", true, None).unwrap();
+        m.respond_permission(&info.id, "p1", true).unwrap();
+        assert!(m.respond_permission(&info.id, "p1", true).is_err(), "cannot answer twice");
         assert!(wait_for(&got, |e| e.iter().any(|x| matches!(x, ChatEvent::TurnEnd { .. }))));
         assert!(!m.get(&info.id).unwrap().info().busy);
         m.close(&info.id);
+        unsafe { std::env::remove_var("AITERM_CLAUDE_BIN") };
+    }
+
+    #[test]
+    fn codex_next_turn_while_previous_process_still_exiting_does_not_deadlock() {
+        let _g = BIN_LOCK.lock();
+        let d = tempfile::tempdir().unwrap();
+        // turn.completed 를 낸 뒤에도 잠시 살아 있다가 끝나는 codex (실제 codex 처럼)
+        let bin = fake(
+            d.path(),
+            "codex",
+            r#"p=$(cat)
+echo '{"type":"thread.started","thread_id":"t-9"}'
+echo '{"type":"item.completed","item":{"id":"i","type":"agent_message","text":"'"$p"'"}}'
+echo '{"type":"turn.completed"}'
+sleep 1"#,
+        );
+        unsafe { std::env::set_var("AITERM_CODEX_BIN", &bin) };
+        let m = ChatManager::default();
+        let info = m
+            .start(StartChat { agent: "codex".into(), resume_id: None, cwd: d.path().to_string_lossy().into(), mode: "read-only".into() }, Arc::new(|_| {}))
+            .unwrap();
+        let got = collect(&m, &info.id);
+        m.send(&info.id, "하나", Arc::new(|_| {})).unwrap();
+        assert!(wait_for(&got, |e| e.iter().any(|x| matches!(x, ChatEvent::TurnEnd { .. }))));
+        // 첫 프로세스가 아직 끝나지 않은 사이 바로 다음 턴
+        m.send(&info.id, "둘", Arc::new(|_| {})).unwrap();
+        let t = std::time::Instant::now();
+        let _ = m.list();
+        assert!(t.elapsed() < std::time::Duration::from_millis(300), "list must not block");
+        // 첫 프로세스가 끝나도 둘째 턴의 busy 를 내리지 않는다
+        std::thread::sleep(std::time::Duration::from_millis(1300));
+        let ends = got.lock().iter().filter(|x| matches!(x, ChatEvent::TurnEnd { .. })).count();
+        if ends < 2 {
+            assert!(m.get(&info.id).unwrap().info().busy, "turn 2 still running");
+        }
+        assert!(wait_for(&got, |e| e.iter().filter(|x| matches!(x, ChatEvent::TurnEnd { .. })).count() == 2));
+        assert!(wait_for(&got, |e| e.iter().any(|x| *x == ChatEvent::Assistant { text: "둘".into() })));
+        unsafe { std::env::remove_var("AITERM_CODEX_BIN") };
+    }
+
+    #[test]
+    fn claude_dead_process_blocks_send_without_sticking_busy() {
+        let _g = BIN_LOCK.lock();
+        let d = tempfile::tempdir().unwrap();
+        let bin = fake(d.path(), "claude", "read init\nexit 3");
+        unsafe { std::env::set_var("AITERM_CLAUDE_BIN", &bin) };
+        let m = ChatManager::default();
+        let info = m
+            .start(StartChat { agent: "claude".into(), resume_id: Some("s2".into()), cwd: d.path().to_string_lossy().into(), mode: "default".into() }, Arc::new(|_| {}))
+            .unwrap();
+        let got = collect(&m, &info.id);
+        assert!(wait_for(&got, |e| e.iter().any(|x| matches!(x, ChatEvent::Exit { .. }))));
+        assert!(m.send(&info.id, "안녕", Arc::new(|_| {})).is_err());
+        assert!(!m.get(&info.id).unwrap().info().busy);
+        assert!(m.find_by_session("claude:s2").is_none(), "dead chat must not occupy the session");
+        assert_eq!(m.dead_for_session("claude:s2"), vec![info.id.clone()]);
         unsafe { std::env::remove_var("AITERM_CLAUDE_BIN") };
     }
 

@@ -112,6 +112,12 @@ export async function newWorktree(repoPath: string, opts: { base?: string; exist
 
 export async function removeWorktree(repoPath: string, wt: Worktree) {
   if (wt.isMain) return st().toast("error", "메인 워크트리는 지울 수 없습니다");
+  if (!wt.exists) {
+    // 폴더가 이미 없으면 등록만 정리한다
+    const ok = await st().ask({ title: "사라진 워크트리 정리", body: `${wt.path}\n폴더가 없습니다. 워크트리 등록을 정리합니다(git worktree prune).`, confirmLabel: "정리" });
+    if (ok) await run("워크트리 정리", () => api.worktreePrune(repoPath));
+    return;
+  }
   const dirty = wt.exists ? await dirtyCount(wt.path) : 0;
   const agents = agentsIn(wt.path);
   const values = await st().promptForm({
@@ -130,7 +136,28 @@ export async function removeWorktree(repoPath: string, wt: Worktree) {
   });
   if (!values) return;
   const focus = st().focus?.worktreePath;
-  const res = await run("워크트리 삭제", () => api.worktreeRemove(repoPath, wt.path, values.force === "true" || (!wt.exists && true)));
+  const force = values.force === "true";
+  let res: string | null = null;
+  try {
+    res = await api.worktreeRemove(repoPath, wt.path, force);
+  } catch (e) {
+    const m = /EXTERNAL_AGENTS:(\d+)/.exec(errorText(e));
+    if (!m) {
+      st().toast("error", `워크트리 삭제 실패: ${errorText(e)}`);
+      afterChange();
+      return;
+    }
+    const go = await st().ask({
+      title: "외부 에이전트가 실행 중",
+      body: `이 워크트리에서 앱 밖의 에이전트 ${m[1]}개가 실행 중입니다. 폴더를 지우면 그 에이전트가 하던 작업이 깨집니다.\n그래도 삭제할까요?`,
+      danger: true,
+      confirmLabel: "그래도 삭제",
+    });
+    if (!go) return;
+    res = await run("워크트리 삭제", () => api.worktreeRemove(repoPath, wt.path, force, true));
+  }
+  if (res !== null) st().toast("success", "워크트리 삭제 완료");
+  afterChange();
   if (res !== null && values.deleteBranch === "true" && wt.branch) {
     await run(`브랜치 '${wt.branch}' 삭제`, () => api.branchDelete(repoPath, wt.branch!, false));
   }

@@ -247,7 +247,7 @@ export type ChatEvent =
   | { kind: "user"; text: string }
   | { kind: "assistant"; text: string }
   | { kind: "tool"; id: string; name: string; summary: string; status: "running" | "ok" | "error"; output: string | null }
-  | { kind: "permission"; requestId: string; tool: string; summary: string; input: unknown }
+  | { kind: "permission"; requestId: string; tool: string; summary: string; description: string | null; input: unknown }
   | { kind: "permissionResolved"; requestId: string; allowed: boolean }
   | { kind: "fileChange"; paths: string[] }
   | { kind: "turnEnd"; costUsd: number | null; isError: boolean; text: string | null }
@@ -315,8 +315,7 @@ export const api = {
   chatAttach: (id: string, onEvent: Channel<ChatEvent>) => invoke<number>("chat_attach", { id, onEvent }),
   chatDetach: (id: string, sinkId: number) => invoke<void>("chat_detach", { id, sinkId }),
   chatSend: (id: string, text: string) => invoke<void>("chat_send", { id, text }),
-  chatPermission: (id: string, requestId: string, allow: boolean, input?: unknown) =>
-    invoke<void>("chat_permission", { id, requestId, allow, input }),
+  chatPermission: (id: string, requestId: string, allow: boolean) => invoke<void>("chat_permission", { id, requestId, allow }),
   chatInterrupt: (id: string) => invoke<void>("chat_interrupt", { id }),
   chatClose: (id: string) => invoke<void>("chat_close", { id }),
   chatList: () => invoke<ChatInfo[]>("chat_list"),
@@ -327,7 +326,8 @@ export const api = {
   compare: (path: string, a: string, b: string) => invoke<Compare>("git_compare", { path, a, b }),
   worktreeAdd: (path: string, target: string, newBranch: string | null, base: string | null) =>
     invoke<string>("git_worktree_add", { path, target, newBranch, base }),
-  worktreeRemove: (path: string, target: string, force: boolean) => invoke<string>("git_worktree_remove", { path, target, force }),
+  worktreeRemove: (path: string, target: string, force: boolean, ignoreAgents = false) =>
+    invoke<string>("git_worktree_remove", { path, target, force, ignoreAgents }),
   worktreePrune: (path: string) => invoke<string>("git_worktree_prune", { path }),
   diffSplit: (path: string, rel: string) => invoke<[FileDiff[], FileDiff[]]>("git_diff_split", { path, rel }),
   hunk: (path: string, rel: string, action: "stage" | "unstage" | "discard", index: number, hunkId: string) =>

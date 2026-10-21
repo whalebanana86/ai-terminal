@@ -39,10 +39,15 @@ pub struct SessionMeta {
 
 // ───────────────────────────── 공통 도구 ─────────────────────────────
 
+/// 테스트(디버그 빌드)에서 가짜 HOME 을 쓰는 중인지. 배포 빌드에서는 항상 false.
+fn test_home_override() -> bool {
+    cfg!(debug_assertions) && std::env::var_os("AITERM_HOME").is_some()
+}
+
 pub fn claude_dir() -> PathBuf {
     shell_env()
         .get("CLAUDE_CONFIG_DIR")
-        .filter(|_| std::env::var_os("AITERM_HOME").is_none())
+        .filter(|_| !test_home_override())
         .map(PathBuf::from)
         .unwrap_or_else(|| home_dir().join(".claude"))
 }
@@ -50,7 +55,7 @@ pub fn claude_dir() -> PathBuf {
 pub fn codex_dir() -> PathBuf {
     shell_env()
         .get("CODEX_HOME")
-        .filter(|_| std::env::var_os("AITERM_HOME").is_none())
+        .filter(|_| !test_home_override())
         .map(PathBuf::from)
         .unwrap_or_else(|| home_dir().join(".codex"))
 }

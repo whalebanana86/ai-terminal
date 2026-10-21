@@ -38,7 +38,9 @@ export function ChangesView({ worktree, status, onChanged }: { worktree: string;
       useStore.getState().bumpGit();
     }
   };
-  const pathsOf = (list: StatusEntry[]) => list.filter((e) => !isNestedRepoEntry(e.path)).flatMap((e) => (e.origPath ? [e.path, e.origPath] : [e.path]));
+  // 일괄 스테이지에서는 중첩 저장소와 충돌 파일을 뺀다(충돌 파일은 '해결됨' 검사를 거쳐야 한다).
+  const pathsOf = (list: StatusEntry[]) =>
+    list.filter((e) => !isNestedRepoEntry(e.path) && e.kind !== "conflicted").flatMap((e) => (e.origPath ? [e.path, e.origPath] : [e.path]));
   const discard = async (e: StatusEntry) => {
     const ok = await ask({
       title: "변경 버리기",
@@ -91,7 +93,13 @@ export function ChangesView({ worktree, status, onChanged }: { worktree: string;
           </button>
         )}
         {side === "unstaged" && !nested && (
-          <button className="icon-btn" disabled={busy} title={e.kind === "conflicted" ? "해결됨으로 스테이지" : "스테이지"} aria-label={`${e.path} 스테이지`} onClick={() => act("스테이지", () => api.stage(worktree, [e.path]))}>
+          <button
+            className="icon-btn"
+            disabled={busy}
+            title={e.kind === "conflicted" ? "충돌 표시가 없으면 해결됨으로 표시" : "스테이지"}
+            aria-label={`${e.path} 스테이지`}
+            onClick={() => (e.kind === "conflicted" ? act("해결됨 표시", () => api.resolve(worktree, e.path, "mark"), false) : act("스테이지", () => api.stage(worktree, [e.path])))}
+          >
             +
           </button>
         )}

@@ -155,6 +155,21 @@ fn file_diff_raw(worktree: &Path, rel: &str, staged: bool) -> Result<String> {
     run(worktree, &args)
 }
 
+/// hunk 를 다시 적용하려면 diff 바이트가 손실 없이 문자열이어야 한다(UTF-8 아니면 거부).
+fn file_diff_exact(worktree: &Path, rel: &str, staged: bool) -> Result<String> {
+    let mut args = vec!["diff", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames"];
+    if staged {
+        args.push("--cached");
+    }
+    args.extend(["--", rel]);
+    let bytes = git::run_bytes(worktree, &args)?;
+    let text = String::from_utf8(bytes).map_err(|_| anyhow!("UTF-8 이 아닌 파일은 hunk 단위로 다룰 수 없습니다. 파일 단위(+ / −)로 스테이지하세요."))?;
+    if text.starts_with("diff --cc") || text.contains("\n@@@ ") {
+        bail!("충돌 중인 파일은 hunk 단위로 다룰 수 없습니다. 위쪽 진행 배너에서 해결하세요.");
+    }
+    Ok(text)
+}
+
 /// 스테이지된/안 된 변경을 따로 본다(hunk 스테이징 화면용).
 pub fn diff_split(worktree: &Path, rel: &str) -> Result<(Vec<git::FileDiff>, Vec<git::FileDiff>)> {
     safe_rel_path(rel)?;
@@ -168,7 +183,7 @@ pub fn diff_split(worktree: &Path, rel: &str) -> Result<(Vec<git::FileDiff>, Vec
 pub fn apply_hunk(worktree: &Path, rel: &str, action: &str, index: usize, expected_id: &str) -> Result<()> {
     safe_rel_path(rel)?;
     let staged_source = action == "unstage";
-    let raw = file_diff_raw(worktree, rel, staged_source)?;
+    let raw = file_diff_exact(worktree, rel, staged_source)?;
     let (header, hunks) = split_patch(&raw).ok_or_else(|| anyhow!("변경을 찾을 수 없습니다. 다시 읽어 주세요."))?;
     let hunk = hunks.get(index).ok_or_else(|| anyhow!("변경 조각이 바뀌었습니다. 다시 읽어 주세요."))?;
     if fingerprint(hunk) != expected_id {
@@ -314,6 +329,8 @@ pub fn op_control(worktree: &Path, action: &str) -> Result<OpResult> {
         ("rebase", "skip") => vec!["rebase", "--skip"],
         ("cherry-pick", a @ ("continue" | "abort" | "skip")) => vec!["cherry-pick", if a == "continue" { "--continue" } else if a == "abort" { "--abort" } else { "--skip" }],
         ("revert", a @ ("continue" | "abort" | "skip")) => vec!["revert", if a == "continue" { "--continue" } else if a == "abort" { "--abort" } else { "--skip" }],
+        ("am", a @ ("continue" | "abort" | "skip")) => vec!["am", if a == "continue" { "--continue" } else if a == "abort" { "--abort" } else { "--skip" }],
+        ("bisect", "abort") => vec!["bisect", "reset"],
         (op, a) => bail!("{op} 에서는 {a} 를 할 수 없습니다"),
     };
     let out = run_raw(worktree, &args, None, COMMIT_TIMEOUT)?;
@@ -376,7 +393,23 @@ pub fn op_state(worktree: &Path) -> Result<OpState> {
     } else {
         None
     };
-    let onto = read("rebase-merge/onto_name").or_else(|| read("MERGE_MSG").and_then(|m| m.lines().next().map(str::to_string)));
+    // rebase: "topic → main(abc1234)" 형태, merge: MERGE_MSG 첫 줄
+    let onto = if gd.join("rebase-merge").exists() || gd.join("rebase-apply").exists() {
+        let dir = if gd.join("rebase-merge").exists() { "rebase-merge" } else { "rebase-apply" };
+        let head = read(&format!("{dir}/head-name")).map(|h| h.trim_start_matches("refs/heads/").to_string());
+        let onto_sha = read(&format!("{dir}/onto"));
+        let onto_name = onto_sha.as_deref().and_then(|sha| {
+            git::refs(worktree).ok()?.into_iter().find(|r| r.kind == "branch" && r.target == sha).map(|r| r.short)
+        });
+        let target = onto_name.or_else(|| onto_sha.map(|s| s.chars().take(7).collect()));
+        match (head, target) {
+            (Some(h), Some(t)) => Some(format!("{h} → {t}")),
+            (None, Some(t)) => Some(format!("→ {t}")),
+            _ => None,
+        }
+    } else {
+        read("MERGE_MSG").and_then(|m| m.lines().next().map(str::to_string))
+    };
     let conflicted = git::status(worktree)?.entries.into_iter().filter(|e| e.kind == "conflicted").map(|e| e.path).collect();
     Ok(OpState { operation, step, onto, conflicted })
 }
@@ -521,6 +554,41 @@ mod tests {
         assert!(!res.conflict);
         let c = compare(&r, "topic", "main").unwrap();
         assert_eq!((c.ahead, c.behind), (1, 0));
+    }
+
+    #[test]
+    fn non_utf8_and_conflicted_files_refuse_hunk_ops() {
+        let (_t, r) = repo();
+        // EUC-KR "한" = c7 d1
+        std::fs::write(r.join("euc.txt"), b"a\n").unwrap();
+        sh(&r, &["add", "."]);
+        sh(&r, &["commit", "-qm", "euc"]);
+        std::fs::write(r.join("euc.txt"), b"a\n\xc7\xd1\n").unwrap();
+        let (unstaged, _) = diff_split(&r, "euc.txt").unwrap();
+        let err = apply_hunk(&r, "euc.txt", "stage", 0, &unstaged[0].hunks[0].id).unwrap_err();
+        assert!(err.to_string().contains("UTF-8"), "{err}");
+        assert_eq!(sh(&r, &["diff", "--cached"]), "", "index untouched");
+        assert!(discard_paths(&r, &[".".into()]).is_err(), "'.' must be refused");
+    }
+
+    #[test]
+    fn rebase_state_shows_branch_and_target() {
+        let (_t, r) = repo();
+        sh(&r, &["switch", "-q", "-c", "topic"]);
+        std::fs::write(r.join("f.txt"), "topic\n").unwrap();
+        sh(&r, &["commit", "-qam", "topic"]);
+        sh(&r, &["switch", "-q", "main"]);
+        std::fs::write(r.join("f.txt"), "main\n").unwrap();
+        sh(&r, &["commit", "-qam", "main2"]);
+        sh(&r, &["switch", "-q", "topic"]);
+        assert!(rebase(&r, "main").unwrap().conflict);
+        let st = op_state(&r).unwrap();
+        assert_eq!(st.onto.as_deref(), Some("topic → main"));
+        let (unstaged, _) = diff_split(&r, "f.txt").unwrap_or_default();
+        if let Some(h) = unstaged.first().and_then(|f| f.hunks.first()) {
+            assert!(apply_hunk(&r, "f.txt", "stage", 0, &h.id).is_err(), "conflicted file refuses hunk staging");
+        }
+        op_control(&r, "abort").unwrap();
     }
 
     #[test]

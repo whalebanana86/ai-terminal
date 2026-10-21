@@ -62,7 +62,8 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
       fontSize: 12.5,
       lineHeight: 1.15,
       cursorBlink: true,
-      scrollback: 20000,
+      // 화면 메모리 절약: 이전 출력은 백엔드 버퍼(2MB)에도 남아 다시 붙을 때 재생된다.
+      scrollback: 5000,
       allowProposedApi: true,
       macOptionIsMeta: true,
       theme: THEME,

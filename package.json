@@ -12,6 +12,8 @@
     "check": "tsc --noEmit -p . && vitest run && cd src-tauri && cargo test"
   },
   "dependencies": {
+    "@shikijs/langs": "4.5.0",
+    "@shikijs/themes": "4.5.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.8.3",
     "@xterm/addon-fit": "^0.11.0",

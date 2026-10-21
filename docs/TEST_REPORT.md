@@ -106,3 +106,69 @@
 - "작업한 파일" 은 기록의 Edit/Write/NotebookEdit(Claude)·apply_patch(Codex) 도구만 본다. 에이전트가 `printf >>` 같은 셸 명령으로 고친 파일은 빠진다(실제 E2E 에서 확인). 현재 변경은 Git 패널·파일 트리에는 정확히 나온다.
 - 대용량 저장소(수만 파일)에서의 성능, 파일 트리 가상화는 검증·구현하지 않았다.
 - `.gitattributes` 의 clean 필터(LFS 등)는 status 계산 때 실행될 수 있다(Git 동작 그대로).
+
+
+---
+
+# 2차 작업 검증 (채팅·외부 감지·브랜치/워크트리·hunk·Merge/Rebase·자원)
+
+## 자동 테스트
+
+| 묶음 | 개수 | 결과 |
+|---|---|---|
+| Rust 단위 + 통합 | 59 | 통과 |
+| 프런트 단위(vitest, 채팅 이벤트 접기 포함) | 13 | 통과 |
+| 앱 회귀 `scripts/e2e/regression.sh` | 20 | 통과 |
+| 새 기능 E2E `scripts/e2e/features.sh` (실제 버튼·메뉴, git CLI 로 판정) | 24 | 통과 |
+
+새로 추가된 회귀 테스트 중 중요한 것
+- `codex_next_turn_while_previous_process_still_exiting_does_not_deadlock`: Codex 가 `turn.completed` 뒤에도 잠시 살아 있는 사이 다음 메시지를 보내도 멈추지 않고, 이전 프로세스가 새 턴의 상태를 건드리지 않는다(리뷰에서 재현된 앱 전체 교착).
+- `claude_dead_process_blocks_send_without_sticking_busy`, `non_utf8_and_conflicted_files_refuse_hunk_ops`, `rebase_state_shows_branch_and_target`, `read_head_matches_git_cli`(packed-refs·링크 워크트리·detached 포함), `hunk_stage_unstage_discard`, `merge_conflict_resolve_and_continue`, `branch_and_worktree_lifecycle`.
+
+## 실제 CLI 검증
+
+| 시나리오 | 결과 |
+|---|---|
+| Claude 외부 세션을 **채팅**으로 이어가기 | "파란고래-42" 응답(맥락 유지) |
+| Claude 채팅 도구 승인 — 허용 | 카드에 실제 경로·내용 표시 → 허용 → 파일 생성, 파일 트리에 U 표시 |
+| Claude 채팅 도구 승인 — 거부 | 파일 미생성, Claude 가 거부됐다고 응답 |
+| Codex 새 채팅(작업 폴더 쓰기) | 첫 응답 뒤 스레드 연결·선택 이동, 둘째 메시지가 같은 대화로 이어짐 |
+| 외부 tmux 에서 `claude --resume` 실행 | 목록 태그·배너 표시, 재개 시 경고 확인창, 외부 종료 후 5초 안에 표시 해제 |
+| Codex Desktop 이 연 대화 | "Codex Desktop" 태그 |
+
+## 리뷰(2차)로 찾아 고친 문제
+
+| 심각도 | 문제 | 조치 |
+|---|---|---|
+| 높음 | Codex 채팅 턴 경계에서 이전 리더가 잠금을 쥔 채 새 프로세스를 기다려 앱 전체 교착 | 프로세스는 각 턴 리더 스레드가 소유, 공유 상태는 턴 번호·pid 만, 잠금 안에서 기다리거나 쓰지 않음 |
+| 높음 | 승인 카드가 모델이 쓴 설명("테스트 실행")만 보여 줘 실제 명령(`curl … \| sh`)을 모르고 허용 가능 | 실제 명령·경로·내용 미리보기를 표시, 설명은 보조 |
+| 높음 | UTF-8 아닌 파일 hunk 스테이지가 index 에 깨진 바이트(U+FFFD) 기록 | diff 를 바이트로 받아 UTF-8 아니면 거부(파일 단위로 안내) |
+| 중간 | 승인 응답에 웹뷰가 보낸 입력을 그대로 사용, 같은 요청에 여러 번 응답 가능 | 원본 입력을 백엔드가 보관해 그 값만 사용, 한 번만 응답 |
+| 중간 | 죽은 Claude 채팅이 세션을 계속 점유, busy 가 영원히 남음 | 살아 있는 채팅만 점유, 다시 열 때 정리, 보내기 전 확인 |
+| 중간 | 워크트리 삭제: 변경 버림 동의가 외부 에이전트 검사까지 건너뜀, Codex 작업 폴더 미감지, 경로 문자열 비교 | 동의 분리, libproc 으로 Codex cwd, 정규화 비교, 사라진 폴더는 prune |
+| 중간 | 충돌 표시가 남은 파일이 "모두 스테이지하고 커밋"으로 커밋됨 | 일괄 작업에서 충돌 파일 제외, + 는 해결됨 검사 |
+| 중간 | 채팅 보관이 개수 기준(최대 수십 MB), 큰 diff 무제한 렌더 | 채팅 8MB 바이트 상한·입력 자르기, diff 4000줄 상한, 보던 파일이 바뀔 때만 다시 읽기 |
+| 낮음 | 열기 직전 외부 실행 판단이 최대 5초 오래됨, 같은 세션 동시 열기 경쟁 | 열기 직전 다시 감지(4ms), 열기 잠금 |
+| 낮음 | rebase 대상 표시 오류, `git am`·다중 cherry-pick·bisect 미구분, `.` 경로로 전체 버리기 | 판별 보강, `.` 거부, `diff.suppressBlankEmpty` 고정 |
+
+## 성능·자원 (배포 빌드, Apple Silicon, 60초 평균, 이 대화가 계속 기록되는 "에이전트 작업 중" 조건)
+
+`scripts/measure.sh` 로 앱 + 앱의 WebKit 프로세스(화면·네트워크·GPU)를 합산했다.
+
+| 항목 | 개선 전 | 개선 후 | 한 일 |
+|---|---|---|---|
+| 평균 CPU | 3.14% | **0.74%** | 같은 데이터면 다시 그리지 않음, 세션 항목 메모이즈, 상대 시각 30초 단위 |
+| 주기 감지의 숨은 CPU(자식 ps·lsof) | 약 5% | **0%** | `ps`/`lsof` 대신 libproc 직접 호출(1회 260ms CPU → 4ms) |
+| 세션 목록 갱신 1회 | 108ms | **2ms** | 저장소마다 `git worktree list` 대신 HEAD 파일 직접 읽기(테스트로 git 과 대조) |
+| 메모리(RSS 합, 정상 상태) | 194MB | **148MB** | 웹뷰 70→35MB: 번들 축소, 터미널 지연 로딩, 스크롤백 2만→5천 줄 |
+| 첫 화면 JS / 전체 프런트 | 821KB / 11MB | **359KB / 3.5MB** | Shiki 핵심+JS 정규식 엔진(WASM 제거)+필요 언어만, xterm 지연 로딩 |
+| .app / .dmg | 8.8 / 5.1MB | **7.5 / 3.8MB** | |
+
+- 창이 숨겨지거나 최소화되면 감지 주기를 15초로 늘린다.
+- 배포 바이너리: 네트워크 소켓 0, 자동화 코드 0, 주기적으로 띄우는 자식 프로세스 0.
+
+## 2차 작업의 한계
+- Codex 채팅은 대화형 승인 대신 샌드박스 수준만 고른다(Codex `exec` 에 승인 중계가 없음).
+- Claude 채팅의 승인 프로토콜(`--permission-prompt-tool stdio`, `initialize` 제어 요청)은 Claude Code SDK 가 쓰는 비공개에 가까운 경로다. CLI 버전이 바뀌면 깨질 수 있다(2.1.305 에서 검증).
+- 외부 실행 감지의 Claude 쪽은 Claude Code 가 쓰는 `~/.claude/sessions/<pid>.json` 형식에 의존한다.
+- 사용자 Claude·Codex 기록에 E2E 테스트 대화가 남는다(`/private/tmp/aiterm-e2e*` 폴더의 세션).

@@ -438,8 +438,8 @@ pub async fn chat_send(app: tauri::AppHandle, state: State<'_, AppState>, id: St
 }
 
 #[tauri::command]
-pub fn chat_permission(state: State<'_, AppState>, id: String, request_id: String, allow: bool, input: Option<serde_json::Value>) -> Res<()> {
-    state.core.chats.respond_permission(&id, &request_id, allow, input).map_err(err)
+pub fn chat_permission(state: State<'_, AppState>, id: String, request_id: String, allow: bool) -> Res<()> {
+    state.core.chats.respond_permission(&id, &request_id, allow).map_err(err)
 }
 
 #[tauri::command]
@@ -502,22 +502,28 @@ git_cmd!(git_op_control, (path: String, action: String), path, gitops::OpResult,
 git_cmd!(git_resolve, (path: String, rel: String, side: String), path, (), gitops::resolve(Path::new(&path), &rel, &side));
 git_cmd!(git_op_state, (path: String), path, gitops::OpState, gitops::op_state(Path::new(&path)));
 
-/// 워크트리 삭제: 앱에서 그 워크트리로 실행 중인 에이전트가 있으면 막는다.
+/// 워크트리 삭제. 앱의 에이전트가 그 워크트리에서 돌고 있으면 막고, 외부 에이전트는 따로 확인(ignore_agents)받는다.
+/// force 는 "커밋하지 않은 변경을 버림" 동의만 뜻한다.
 #[tauri::command]
-pub async fn git_worktree_remove(state: State<'_, AppState>, path: String, target: String, force: bool) -> Res<String> {
+pub async fn git_worktree_remove(state: State<'_, AppState>, path: String, target: String, force: bool, ignore_agents: Option<bool>) -> Res<String> {
     let core = state.core.clone();
     blocking(move || {
         core.ensure_known(&path)?;
+        if !Path::new(&target).exists() {
+            anyhow::bail!("폴더가 이미 없는 워크트리입니다. '정리' 로 등록을 지우세요.");
+        }
         core.ensure_known(&target)?;
-        let canon = std::fs::canonicalize(&target).map(|p| p.to_string_lossy().into_owned()).unwrap_or(target.clone());
-        let busy_exec = core.exec_list().into_iter().any(|e| !e.exited && e.worktree_path.as_deref() == Some(canon.as_str()));
-        let busy_chat = core.chats.list().into_iter().any(|c| std::fs::canonicalize(&c.cwd).map(|p| p.starts_with(&canon)).unwrap_or(false));
+        let canon = std::fs::canonicalize(&target)?;
+        let inside = |p: &str| std::fs::canonicalize(p).map(|c| c.starts_with(&canon)).unwrap_or(false);
+        let busy_exec = core.exec_list().into_iter().any(|e| !e.exited && inside(&e.cwd));
+        let busy_chat = core.chats.list().into_iter().any(|c| c.alive && inside(&c.cwd));
         if busy_exec || busy_chat {
             anyhow::bail!("이 워크트리에서 앱의 에이전트가 실행 중입니다. 먼저 중지하세요.");
         }
-        let live = core.live_runs().into_iter().filter(|r| r.cwd.as_deref().is_some_and(|c| c.starts_with(&canon))).count();
-        if live > 0 && !force {
-            anyhow::bail!("이 워크트리에서 외부 에이전트 {live}개가 실행 중입니다.");
+        core.refresh_live();
+        let live = core.live_runs().into_iter().filter(|r| !r.owned_by_app && r.cwd.as_deref().is_some_and(inside)).count();
+        if live > 0 && !ignore_agents.unwrap_or(false) {
+            anyhow::bail!("EXTERNAL_AGENTS:{live}");
         }
         gitops::worktree_remove(Path::new(&path), &target, force)
     })

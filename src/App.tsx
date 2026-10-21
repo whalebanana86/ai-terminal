@@ -29,7 +29,8 @@ export default function App() {
       listen<ChangeBatch>("fs-changed", (e) => st().onFsChanged(e.payload.worktree, e.payload.paths, e.payload.files, e.payload.git)),
       listen<string[]>("sessions-changed", () => {
         window.clearTimeout(sessionTimer);
-        sessionTimer = window.setTimeout(() => void st().refreshSessions(), 400);
+        // 에이전트가 일하는 동안 기록이 계속 바뀌므로 1초 단위로 묶는다.
+        sessionTimer = window.setTimeout(() => void st().refreshSessions(), 1000);
       }),
       listen<{ id: string; code: number | null }>("exec-exit", async (e) => {
         await st().refreshExecs();
@@ -60,7 +61,7 @@ export default function App() {
   const hasRunning = execs.some((e) => !e.exited);
   useEffect(() => {
     if (!hasRunning) return;
-    const t = window.setInterval(() => void useStore.getState().refreshSessions(), 15_000);
+    const t = window.setInterval(() => void useStore.getState().refreshSessions(), 60_000);
     return () => window.clearInterval(t);
   }, [hasRunning]);
 

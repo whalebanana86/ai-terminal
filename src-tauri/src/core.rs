@@ -100,6 +100,8 @@ pub struct AppCore {
     pub chats: ChatManager,
     /// 마지막으로 감지한 실행 중 에이전트(외부 포함)
     live: Mutex<Vec<LiveRun>>,
+    /// 세션 열기(재개·채팅)를 한 번에 하나씩: 같은 세션을 두 번 띄우는 경쟁 방지
+    open_lock: Mutex<()>,
     index: Mutex<SessionIndex>,
     locate_cache: Mutex<HashMap<String, (std::time::Instant, Option<RepoLocation>)>>,
     /// 실행 id → 실행 정보 (앱이 띄운 것)
@@ -137,6 +139,7 @@ impl AppCore {
             pty: PtyManager::default(),
             chats: ChatManager::default(),
             live: Mutex::new(Vec::new()),
+            open_lock: Mutex::new(()),
             index: Mutex::new(SessionIndex::default()),
             locate_cache: Mutex::new(HashMap::new()),
             execs: Mutex::new(HashMap::new()),
@@ -151,9 +154,9 @@ impl AppCore {
         (self.events)(name, payload);
     }
 
-    /// cwd → 저장소 위치. 15초 안의 결과는 다시 쓰되, 저장소 폴더가 사라졌으면 다시 확인한다.
+    /// cwd → 저장소 위치. 60초 안의 결과는 다시 쓰되, 저장소 폴더가 사라졌으면 다시 확인한다.
     pub fn locate_cached(&self, cwd: &str) -> Option<RepoLocation> {
-        const TTL: std::time::Duration = std::time::Duration::from_secs(15);
+        const TTL: std::time::Duration = std::time::Duration::from_secs(60);
         if let Some((at, hit)) = self.locate_cache.lock().get(cwd).cloned() {
             let still_valid = match &hit {
                 Some(loc) => Path::new(&loc.toplevel).is_dir(),
@@ -309,19 +312,23 @@ impl AppCore {
                 });
             }
 
-            // 워크트리의 현재 브랜치(실시간)
+            // 워크트리의 현재 브랜치(실시간). git 을 띄우지 않고 HEAD 파일을 직접 읽는다(목록 갱신이 잦아서).
             let (mut cb, mut ch, mut cd) = (None, None, false);
-            if let (Some(l), Some(wp)) = (&loc, &worktree_path) {
-                let list = wt_cache.entry(l.common_dir.clone()).or_insert_with(|| git::worktrees(Path::new(wp)).unwrap_or_default());
-                if let Some(w) = list.iter().find(|w| &w.path == wp) {
-                    cb = w.branch.clone();
-                    ch = w.head.clone();
-                    cd = w.detached;
+            if let Some(l) = &loc {
+                if let Some((b, h, d)) = git::read_head(Path::new(&l.git_dir), Path::new(&l.common_dir)) {
+                    cb = b;
+                    ch = h;
+                    cd = d;
                 }
             }
             let repo_name = repo_id.as_ref().and_then(|id| repos.get(id).map(|r| r.name.clone())).or_else(|| {
                 loc.as_ref().map(|l| {
-                    let p = wt_cache.get(&l.common_dir).and_then(|w| w.iter().find(|w| w.is_main)).map(|w| w.path.clone());
+                    let p = wt_cache
+                        .entry(l.common_dir.clone())
+                        .or_insert_with(|| git::worktrees(Path::new(&l.toplevel)).unwrap_or_default())
+                        .iter()
+                        .find(|w| w.is_main)
+                        .map(|w| w.path.clone());
                     repo_name(&p.unwrap_or(l.toplevel.clone()))
                 })
             });
@@ -427,6 +434,7 @@ impl AppCore {
     }
 
     pub fn start(self: &Arc<Self>, req: StartRequest) -> Result<ExecInfo> {
+        let _open = self.open_lock.lock();
         let (program, mut args, cwd, session_id) = match (req.agent.as_str(), req.mode.as_str()) {
             (agent @ ("claude" | "codex"), "resume") => {
                 let sid = req.session_id.clone().ok_or_else(|| anyhow!("재개할 세션을 고르세요"))?;
@@ -440,6 +448,9 @@ impl AppCore {
                 let cwd = meta.cwd.clone().ok_or_else(|| anyhow!("세션에 작업 폴더 기록이 없습니다"))?;
                 if !Path::new(&cwd).is_dir() {
                     bail!("세션이 작업하던 폴더가 없습니다: {cwd}\n워크트리가 삭제되었을 수 있습니다.");
+                }
+                for dead in self.chats.dead_for_session(&sid) {
+                    self.chats.close(&dead);
                 }
                 self.ensure_not_open(&sid, req.force)?;
                 let args = if agent == "claude" {
@@ -538,6 +549,8 @@ impl AppCore {
             bail!("이 세션은 이미 앱의 채팅으로 열려 있습니다");
         }
         if !force {
+            // 5초 주기 결과는 오래되었을 수 있으니 열기 직전에 다시 훑는다(libproc, 수 ms).
+            self.refresh_live();
             if let Some(r) = self.live.lock().iter().find(|r| r.session_id == session_id && !r.owned_by_app) {
                 bail!("EXTERNAL_RUNNING:{}:{}", r.pid, r.client);
             }
@@ -575,10 +588,15 @@ impl AppCore {
     pub fn chat_start(&self, agent: &str, session_id: Option<&str>, cwd: Option<&str>, mode: &str, force: bool) -> Result<ChatInfo> {
         let events = self.events.clone();
         let on_change: Arc<dyn Fn(&ChatInfo) + Send + Sync> = Arc::new(move |info| events("chat-changed", json!(info)));
+        let _open = self.open_lock.lock();
         let (resume_id, cwd) = match session_id {
             Some(sid) => {
                 if let Some(c) = self.chats.find_by_session(sid) {
                     return Ok(c.info()); // 이미 열린 채팅
+                }
+                // 프로세스가 끝난 채 남은 채팅은 정리하고 새로 연다.
+                for dead in self.chats.dead_for_session(sid) {
+                    self.chats.close(&dead);
                 }
                 self.ensure_not_open(sid, force)?;
                 let meta = self.find_session(sid).ok_or_else(|| anyhow!("세션을 찾을 수 없습니다: {sid}"))?;

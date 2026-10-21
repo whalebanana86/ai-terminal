@@ -159,3 +159,14 @@ UI 는 셋이 다르면 경고 배지를 띄운다. 어떤 값도 체크아웃�
 - **PTY 수명**: 종료 즉시 PTY 장치 반납, 끝난 실행은 최근 8개만 출력 재생용으로 보관. 중지·앱 종료는 프로세스 그룹 단위(SIGHUP → SIGKILL).
 - **파일 감시**: 파일 id 캐시 없는 디바운서(감시 등록 때 하위 전체를 훑지 않음), 무시 폴더 목록 20초마다 갱신, 감시 루트의 inode 가 바뀌면 다시 등록.
 - **Git 실행 고정 옵션**: `GIT_OPTIONAL_LOCKS=0`, `GIT_LITERAL_PATHSPECS=1`(check-ignore 제외), `core.fsmonitor=false`, `diff.noprefix=false`, `diff.mnemonicPrefix=false`, `core.quotepath=false`, diff 는 `--no-ext-diff --no-textconv`.
+
+## 10. 2차 작업에서 추가된 구조
+
+- **채팅(`chat.rs`)**: 원본 CLI 를 JSON 모드로 실행하고 출력을 공통 `ChatEvent`(session/user/assistant/tool/permission/fileChange/turnEnd/error/exit)로 바꾼다. 화면은 `Channel` 로 받는다.
+  - Claude: `claude -p --input-format stream-json --output-format stream-json --verbose --permission-prompts host --permission-prompt-tool stdio --permission-mode <모드> --resume <id>|--session-id <새 id>`. 시작 때 `initialize` 제어 요청을 보내면 도구 실행 전 `control_request(can_use_tool)` 가 오고, `control_response(allow|deny)` 로 답한다. 허용 시 입력은 요청 때 받은 원본만 쓴다.
+  - Codex: 메시지마다 `codex exec --json -s <샌드박스> -C <cwd> -` / `codex exec resume --json -c sandbox_mode=… <id> -` (프롬프트는 표준입력).
+  - 프로세스는 각 리더 스레드가 소유하고, 공유 상태는 턴 번호·pid·busy 만 갖는다(교착 방지).
+- **실행 감지(`procs.rs`)**: libproc(`proc_listallpids`, `PROC_PIDTBSDINFO`, `proc_pidpath`, `PROC_PIDLISTFDS`+`PROC_PIDFDVNODEPATHINFO`, `PROC_PIDVNODEPATHINFO`)로 외부 프로그램 없이 읽는다. Claude 는 `~/.claude/sessions/<pid>.json`(세션 id·cwd·상태·시작 시각)과 대조, Codex 는 `~/.codex/thread-writer-locks/<thread>.lock` 을 연 프로세스. 앱이 띄운 pid 와 그 자손은 `ownedByApp`.
+- **열기 규칙**: 한 대화는 한 곳에서만. 앱 안(터미널·채팅)은 막고, 외부 실행 중이면 `EXTERNAL_RUNNING` 오류 → 화면에서 확인 후 `force`. 열기 직전 감지를 새로 하고 열기 잠금으로 경쟁을 막는다.
+- **Git 쓰기(`gitops.rs`)**: 브랜치·워크트리·hunk(`git apply --cached [-R]`, 지문으로 화면과 실제 일치 확인)·merge/rebase/continue/abort/skip·충돌 해결. 모든 git 은 `GIT_EDITOR=true`, `GIT_SEQUENCE_EDITOR=true` 로 편집기를 띄우지 않는다.
+- **성능 원칙**: 자주 도는 경로는 외부 프로세스를 띄우지 않는다(HEAD 파일 직접 읽기, libproc). 같은 데이터면 화면 상태를 바꾸지 않는다. 무거운 화면 모듈(xterm, Shiki 언어)은 필요할 때 불러온다.

@@ -15,7 +15,7 @@ interface ToolItem {
 type Item =
   | { kind: "user" | "assistant" | "error" | "note"; text: string }
   | ToolItem
-  | { kind: "permission"; requestId: string; tool: string; summary: string; input: unknown; resolved: boolean | null }
+  | { kind: "permission"; requestId: string; tool: string; summary: string; description: string | null; resolved: boolean | null }
   | { kind: "turnEnd"; costUsd: number | null; isError: boolean; text: string | null };
 
 /** 이벤트 목록 → 화면 항목 (순수 함수, 테스트 대상) */
@@ -45,7 +45,7 @@ export function foldChatEvents(events: ChatEvent[]): Item[] {
         break;
       }
       case "permission": {
-        const p = { kind: "permission" as const, requestId: e.requestId, tool: e.tool, summary: e.summary, input: e.input, resolved: null };
+        const p = { kind: "permission" as const, requestId: e.requestId, tool: e.tool, summary: e.summary, description: e.description, resolved: null };
         perms.set(e.requestId, p);
         items.push(p);
         break;
@@ -125,9 +125,9 @@ export function ChatView({ chat }: { chat: ChatInfo }) {
       setSending(false);
     }
   };
-  const answer = async (requestId: string, allow: boolean, input: unknown) => {
+  const answer = async (requestId: string, allow: boolean) => {
     try {
-      await api.chatPermission(chat.id, requestId, allow, allow ? input : undefined);
+      await api.chatPermission(chat.id, requestId, allow);
     } catch (e) {
       toast("error", errorText(e));
     }
@@ -212,13 +212,15 @@ export function ChatView({ chat }: { chat: ChatInfo }) {
                   <div>
                     <b>{it.tool}</b> 사용 허락을 요청합니다
                   </div>
-                  <div className="perm-summary">{it.summary}</div>
+                  {/* 실제로 실행될 명령·경로·내용. 모델이 쓴 설명은 참고로만 아래에 둔다. */}
+                  <pre className="perm-summary">{it.summary}</pre>
+                  {it.description && it.description !== it.summary && <div className="muted small">모델 설명: {it.description}</div>}
                   {it.resolved === null ? (
                     <div className="perm-actions">
-                      <button className="btn btn-small btn-danger" onClick={() => answer(it.requestId, false, it.input)}>
+                      <button className="btn btn-small btn-danger" onClick={() => answer(it.requestId, false)}>
                         거부
                       </button>
-                      <button className="btn btn-small btn-primary" onClick={() => answer(it.requestId, true, it.input)} data-action="allow">
+                      <button className="btn btn-small btn-primary" onClick={() => answer(it.requestId, true)} data-action="allow">
                         허용
                       </button>
                     </div>

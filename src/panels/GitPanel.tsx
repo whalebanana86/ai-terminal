@@ -275,7 +275,7 @@ export function PanelHead({ title, children }: { title: string; children?: React
   );
 }
 
-const OP_NAME: Record<string, string> = { merge: "병합", rebase: "rebase", "cherry-pick": "cherry-pick", revert: "revert", bisect: "bisect" };
+const OP_NAME: Record<string, string> = { merge: "병합", rebase: "rebase", "cherry-pick": "cherry-pick", revert: "revert", bisect: "bisect", am: "패치 적용(am)" };
 
 /** 병합/rebase 진행 중: 충돌 파일 해결과 계속·건너뛰기·중단 */
 function OpBanner({ worktree, op, onChanged }: { worktree: string; op: OpState; onChanged: () => void }) {
@@ -318,10 +318,12 @@ function OpBanner({ worktree, op, onChanged }: { worktree: string; op: OpState; 
         )}
         {op.onto && <span className="muted"> · {op.onto}</span>}
         <span className="spacer" />
-        <button className="btn btn-small btn-primary" disabled={busy || op.conflicted.length > 0} onClick={() => act(`${name} 계속`, () => api.opControl(worktree, "continue"))}>
-          계속
-        </button>
-        {op.operation !== "merge" && (
+        {op.operation !== "bisect" && (
+          <button className="btn btn-small btn-primary" disabled={busy || op.conflicted.length > 0} onClick={() => act(`${name} 계속`, () => api.opControl(worktree, "continue"))}>
+            계속
+          </button>
+        )}
+        {op.operation !== "merge" && op.operation !== "bisect" && (
           <button className="btn btn-small" disabled={busy} onClick={() => act("건너뛰기", () => api.opControl(worktree, "skip"))}>
             건너뛰기
           </button>

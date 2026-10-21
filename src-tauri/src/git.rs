@@ -66,7 +66,7 @@ pub fn git_command(cwd: &Path) -> Command {
         // 화면 조회만으로 저장소 설정(.git/config)에 적힌 외부 명령이 자동 실행되지 않게 한다.
         .args(["-c", "core.fsmonitor=false"])
         // 사용자 전역 설정이 diff 헤더 형식(a/ b/ 접두사)을 바꾸지 못하게 고정한다.
-        .args(["-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false"])
+        .args(["-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "-c", "diff.suppressBlankEmpty=false"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -268,6 +268,33 @@ pub fn worktrees(any_path: &Path) -> Result<Vec<Worktree>> {
     Ok(parse_worktrees_porcelain_z(&raw))
 }
 
+/// git 을 띄우지 않고 워크트리의 HEAD 를 파일에서 직접 읽는다(세션 목록처럼 자주 부르는 곳용).
+/// 반환: (브랜치 이름, 커밋 sha, detached 여부). 읽을 수 없으면 None.
+pub fn read_head(git_dir: &Path, common_dir: &Path) -> Option<(Option<String>, Option<String>, bool)> {
+    let head = std::fs::read_to_string(git_dir.join("HEAD")).ok()?;
+    let head = head.trim();
+    if let Some(r) = head.strip_prefix("ref: ") {
+        let branch = r.strip_prefix("refs/heads/").map(str::to_string);
+        // 루즈 ref → packed-refs 순으로 찾는다. 아직 커밋이 없는 브랜치면 sha 없음.
+        let sha = std::fs::read_to_string(common_dir.join(r))
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| s.len() >= 40)
+            .or_else(|| {
+                let packed = std::fs::read_to_string(common_dir.join("packed-refs")).ok()?;
+                packed.lines().find_map(|l| {
+                    let (sha, name) = l.split_once(' ')?;
+                    (name == r && !l.starts_with('#') && !l.starts_with('^')).then(|| sha.to_string())
+                })
+            });
+        Some((branch, sha, false))
+    } else if head.len() >= 40 && head.chars().all(|c| c.is_ascii_hexdigit()) {
+        Some((None, Some(head.to_string()), true))
+    } else {
+        None
+    }
+}
+
 // ───────────────────────────── HEAD / 상태 ─────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Default, PartialEq)]
@@ -411,15 +438,23 @@ pub fn parse_status_v2_z(raw: &str) -> WorktreeStatus {
 }
 
 pub(crate) fn operation_in_progress(git_dir: &Path) -> Option<String> {
-    let checks = [
-        ("rebase-merge", "rebase"),
-        ("rebase-apply", "rebase"),
-        ("MERGE_HEAD", "merge"),
-        ("CHERRY_PICK_HEAD", "cherry-pick"),
-        ("REVERT_HEAD", "revert"),
-        ("BISECT_LOG", "bisect"),
-    ];
-    checks.iter().find(|(f, _)| git_dir.join(f).exists()).map(|(_, n)| n.to_string())
+    if git_dir.join("rebase-merge").exists() {
+        return Some("rebase".into());
+    }
+    if git_dir.join("rebase-apply").exists() {
+        // rebase-apply 는 git am 때도 생긴다
+        return Some(if git_dir.join("rebase-apply/applying").exists() { "am" } else { "rebase" }.into());
+    }
+    let checks = [("MERGE_HEAD", "merge"), ("CHERRY_PICK_HEAD", "cherry-pick"), ("REVERT_HEAD", "revert")];
+    if let Some((_, n)) = checks.iter().find(|(f, _)| git_dir.join(f).exists()) {
+        return Some(n.to_string());
+    }
+    // 여러 커밋 cherry-pick/revert 도중 충돌 없이 멈춘 상태(sequencer 만 남음)
+    if let Ok(todo) = std::fs::read_to_string(git_dir.join("sequencer/todo")) {
+        let first = todo.lines().find(|l| !l.trim().is_empty() && !l.starts_with('#')).unwrap_or("");
+        return Some(if first.starts_with("revert") { "revert" } else { "cherry-pick" }.into());
+    }
+    git_dir.join("BISECT_LOG").exists().then(|| "bisect".into())
 }
 
 pub fn status(worktree: &Path) -> Result<WorktreeStatus> {
@@ -807,6 +842,8 @@ pub fn safe_rel_path(rel: &str) -> Result<()> {
         || p.is_absolute()
         || p.components().any(|c| matches!(c, std::path::Component::ParentDir))
         || rel.contains('\0')
+        // "." / "./" 처럼 워크트리 전체를 가리키는 경로는 파일 작업에 쓰지 않는다
+        || p.components().all(|c| matches!(c, std::path::Component::CurDir))
     {
         bail!("올바르지 않은 경로: {rel}");
     }
@@ -1128,6 +1165,38 @@ u UU N... 100644 100644 100644 100644 d e f conflict.txt\0\
         assert_eq!(unquote_c_path(r#""a/\355\225\234.txt""#), "a/한.txt");
         let d = parse_unified_diff("diff --git \"a/q\\\"x\" \"b/q\\\"x\"\n--- \"a/q\\\"x\"\n+++ \"b/q\\\"x\"\n@@ -1 +1 @@\n-a\n+b\n");
         assert_eq!(d[0].new_path.as_deref(), Some("q\"x"));
+    }
+
+    #[test]
+    fn read_head_matches_git_cli() {
+        let d = temp_repo();
+        let p = d.path();
+        let g = |dir: &Path, a: &[&str]| {
+            let o = std::process::Command::new("git").args(["-c", "user.name=t", "-c", "user.email=t@t"]).args(a).current_dir(dir).output().unwrap();
+            assert!(o.status.success(), "{a:?} {}", String::from_utf8_lossy(&o.stderr));
+            String::from_utf8_lossy(&o.stdout).trim().to_string()
+        };
+        let loc = |dir: &Path| locate(dir).unwrap().unwrap();
+        // 커밋 없는 브랜치
+        let l = loc(p);
+        assert_eq!(read_head(Path::new(&l.git_dir), Path::new(&l.common_dir)), Some((Some(g(p, &["symbolic-ref", "--short", "HEAD"])), None, false)));
+        std::fs::write(p.join("a"), "1").unwrap();
+        g(p, &["add", "."]);
+        g(p, &["commit", "-qm", "c"]);
+        let sha = g(p, &["rev-parse", "HEAD"]);
+        let (b, s, det) = read_head(Path::new(&l.git_dir), Path::new(&l.common_dir)).unwrap();
+        assert_eq!((b.as_deref(), s.as_deref(), det), (Some(g(p, &["symbolic-ref", "--short", "HEAD"]).as_str()), Some(sha.as_str()), false));
+        // packed-refs 로 옮겨도 같은 값
+        g(p, &["pack-refs", "--all"]);
+        assert_eq!(read_head(Path::new(&l.git_dir), Path::new(&l.common_dir)).unwrap().1.as_deref(), Some(sha.as_str()));
+        // 링크 워크트리(detached)
+        let wt = d.path().parent().unwrap().join(format!("{}-wt", d.path().file_name().unwrap().to_string_lossy()));
+        g(p, &["worktree", "add", "-q", "--detach", wt.to_str().unwrap()]);
+        let lw = loc(&wt);
+        assert_eq!(read_head(Path::new(&lw.git_dir), Path::new(&lw.common_dir)), Some((None, Some(sha.clone()), true)));
+        g(&wt, &["switch", "-q", "-c", "side"]);
+        assert_eq!(read_head(Path::new(&lw.git_dir), Path::new(&lw.common_dir)).unwrap().0.as_deref(), Some("side"));
+        g(p, &["worktree", "remove", "--force", wt.to_str().unwrap()]);
     }
 
     #[test]

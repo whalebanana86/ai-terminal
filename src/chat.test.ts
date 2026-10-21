@@ -7,7 +7,7 @@ describe("foldChatEvents", () => {
     const ev: ChatEvent[] = [
       { kind: "user", text: "만들어 줘" },
       { kind: "tool", id: "t1", name: "Write", summary: "/r/a.txt", status: "running", output: null },
-      { kind: "permission", requestId: "p1", tool: "Write", summary: "a.txt", input: {} },
+      { kind: "permission", requestId: "p1", tool: "Write", summary: "a.txt", description: null, input: {} },
       { kind: "permissionResolved", requestId: "p1", allowed: true },
       { kind: "tool", id: "t1", name: "", summary: "", status: "ok", output: "created" },
       { kind: "assistant", text: "완료" },
