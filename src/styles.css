@@ -2403,3 +2403,24 @@ li:hover .hover-only,
 [data-theme="light"] .stick-pop,
 [data-theme="light"] .settings-pop { box-shadow: 0 12px 32px #0002; }
 [data-theme="light"] .stick-count b.bump { color: var(--accent); }
+
+/* 오늘 요청 목록: 줄을 누르면 그 동작을 다시 본다 */
+.stick-pop-item {
+  cursor: pointer;
+  border-radius: 6px;
+  margin: 0 4px;
+}
+.stick-pop-item:hover,
+.stick-pop-item:focus-visible {
+  background: var(--bg-3);
+  outline: none;
+}
+.stick-pop-play {
+  flex: none;
+  color: var(--accent);
+  opacity: 0;
+}
+.stick-pop-item:hover .stick-pop-play,
+.stick-pop-item:focus-visible .stick-pop-play {
+  opacity: 1;
+}

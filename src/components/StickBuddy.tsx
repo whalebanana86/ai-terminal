@@ -1,4 +1,4 @@
-import { Bug, MessageCircleQuestion, Plus, Trash2, Wrench, type LucideIcon } from "lucide-react";
+import { Bug, MessageCircleQuestion, Play, Plus, Trash2, Wrench, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { t } from "../i18n";
 import { relativeTime } from "../logic";
@@ -51,7 +51,8 @@ export function StickBuddy() {
   const [act, setAct] = useState<{ kind: Act; n: number } | null>(null);
   const [bump, setBump] = useState<{ kind: RequestKind; n: number } | null>(null);
   const [open, setOpen] = useState(false);
-  const queue = useRef<SeenRequest[]>([]);
+  /** replay = 목록에서 눌러 다시 보는 것(개수는 올리지 않음) */
+  const queue = useRef<(SeenRequest & { replay?: boolean })[]>([]);
   const playing = useRef(false);
   const seen = useRef(new Map<string, number>());
   const startedAt = useRef(Date.now());
@@ -87,24 +88,24 @@ export function StickBuddy() {
     }
     playing.current = true;
     if (reduced) {
-      count(r);
+      if (!r.replay) count(r);
       window.setTimeout(playNext, 50);
       return;
     }
     setAct({ kind: r.kind ?? "none", n: Date.now() });
     window.setTimeout(() => {
-      count(r);
+      if (!r.replay) count(r);
       playNext();
     }, ACT_MS);
   }, [count, reduced]);
 
   const push = useCallback(
-    (list: SeenRequest[]) => {
+    (list: (SeenRequest & { replay?: boolean })[]) => {
       if (!list.length) return;
-      // 한꺼번에 많이 오면 마지막 몇 개만 움직이고 나머지는 바로 센다
+      // 한꺼번에 많이 오면 마지막 몇 개만 움직이고 나머지는 바로 센다(다시 보기는 세지 않고 버림)
       const extra = queue.current.length + list.length - 4;
       const items = [...queue.current, ...list];
-      if (extra > 0) items.splice(0, extra).forEach(count);
+      if (extra > 0) items.splice(0, extra).forEach((x) => !x.replay && count(x));
       queue.current = items;
       if (!playing.current) playNext();
     },
@@ -270,20 +271,30 @@ export function StickBuddy() {
               const k = KINDS.find((x) => x.kind === r.kind);
               const Icon = k?.icon;
               return (
-                <li key={`${r.sessionId}:${r.at}:${i}`}>
+                // 누르면 그 요청에 맞는 동작을 한 번 더 보여 준다(못 보고 지나간 동작 다시 보기)
+                <li
+                  key={`${r.sessionId}:${r.at}:${i}`}
+                  className="stick-pop-item"
+                  role="button"
+                  tabIndex={0}
+                  title={`${r.text}\n${t("눌러서 스틱맨 동작 다시 보기")}`}
+                  onClick={() => push([{ ...r, replay: true }])}
+                  onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), push([{ ...r, replay: true }]))}
+                  data-kind={r.kind ?? "none"}
+                >
                   <span className="stick-pop-kind" style={{ color: k?.color ?? "var(--fg-faint)" }}>
                     {Icon ? <Icon size={12} aria-hidden /> : "·"}
                   </span>
-                  <span className="stick-pop-text" title={r.text}>
-                    {r.text}
-                  </span>
-                  <span className="muted small">{relativeTime(r.at, now)}</span>
+                  <span className="stick-pop-text">{r.text}</span>
+                  <span className="muted small stick-pop-time">{relativeTime(r.at, now)}</span>
+                  <Play size={11} className="stick-pop-play" aria-hidden />
                 </li>
               );
             })}
             {!saved.recent.length && <li className="muted small">{t("아직 없어요. AI 에게 요청을 보내면 여기에 쌓여요.")}</li>}
           </ul>
           <div className="muted small stick-pop-foot">
+            {t("줄을 누르면 스틱맨이 그 동작을 다시 해요.")}{" "}
             {t("요청 글자로 추가·수정·삭제·버그·질문을 나눠요(앱 안에서만, 어디에도 보내지 않음). \"진행해\"처럼 어디에도 안 맞는 말(·)은 세지 않아요. 하루가 지나면 0 부터.")}
           </div>
         </div>

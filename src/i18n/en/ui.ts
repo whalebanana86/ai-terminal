@@ -89,4 +89,6 @@ export default {
   "에이전트 프로세스가 종료되었습니다 (코드 {code})": "Agent process exited (code {code})",
   "터미널이나 입력칸 위에 놓으면 파일 경로가 들어가요": "Drop onto a terminal or text field to insert the file path",
   "세션과 저장소를 읽는 중…": "Loading sessions and repositories…",
+  "눌러서 스틱맨 동작 다시 보기": "Click to replay the stick figure's action",
+  "줄을 누르면 스틱맨이 그 동작을 다시 해요.": "Click a row to replay its action.",
 } satisfies Record<string, string>;
