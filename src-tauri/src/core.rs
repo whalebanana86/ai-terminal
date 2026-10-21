@@ -282,11 +282,12 @@ impl AppCore {
             let cwd_moved = start_loc.as_ref().map(|l| &l.toplevel) != loc.as_ref().map(|l| &l.toplevel);
             let (repo_id, worktree_path) = match &loc {
                 Some(l) => (Some(l.common_dir.clone()), Some(l.toplevel.clone())),
-                None => {
-                    // 폴더가 사라졌으면 예전에 저장해 둔 연결을 쓴다.
+                // 폴더가 사라졌을 때만 예전에 저장해 둔 연결을 쓴다. 폴더가 있는데 저장소가 아니면 "Git 아님".
+                None if !Path::new(&work_cwd).is_dir() => {
                     let l = links.get(&m.id);
                     (l.and_then(|l| l.repo_id.clone()), l.and_then(|l| l.worktree_path.clone()))
                 }
+                None => (None, None),
             };
             if let Some(l) = &loc
                 && !repos.contains_key(&l.common_dir)
@@ -920,6 +921,35 @@ mod tests {
         assert_eq!(s.worktree_path.as_deref(), Some(wt.to_str().unwrap()), "links to where it works now");
         assert!(s.cwd_moved);
         assert_eq!(s.meta.cwd.as_deref(), Some(main.to_str().unwrap()), "resume still uses the first cwd");
+        unsafe { std::env::remove_var("AITERM_HOME") };
+    }
+
+    #[test]
+    fn session_now_outside_any_repo_is_not_shown_with_old_link() {
+        let _g = HOME_LOCK.lock();
+        let (tmp, main, _wt) = fixture();
+        let home = tmp.path().join("home4");
+        unsafe { std::env::set_var("AITERM_HOME", &home) };
+        let outside = tmp.path().join("plain");
+        std::fs::create_dir_all(&outside).unwrap();
+        let dir = home.join(".claude/projects/x");
+        std::fs::create_dir_all(&dir).unwrap();
+        let write = |last: &Path| {
+            let lines = [
+                json!({"type":"user","cwd":outside,"gitBranch":"HEAD","timestamp":"2026-10-01T00:00:00Z","message":{"content":"시작"}}),
+                json!({"type":"assistant","cwd":last,"gitBranch":"HEAD","timestamp":"2026-10-01T00:01:00Z","message":{"content":[{"type":"text","text":"ok"}]}}),
+            ];
+            std::fs::write(dir.join("out1.jsonl"), lines.iter().map(|l| l.to_string() + "\n").collect::<String>()).unwrap();
+        };
+        let core = AppCore::new(Db::open_in_memory().unwrap(), Arc::new(|_, _| {}));
+        write(&main); // 마지막에 저장소 안 → 연결이 저장된다
+        let s = core.list_sessions().unwrap().into_iter().find(|s| s.meta.id == "claude:out1").unwrap();
+        assert!(s.worktree_path.is_some());
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        write(&outside); // 다시 저장소 밖으로
+        let s = core.list_sessions().unwrap().into_iter().find(|s| s.meta.id == "claude:out1").unwrap();
+        assert!(s.worktree_path.is_none(), "folder exists but is not a repo → no stale link");
+        assert!(s.meta.start_branch.is_none() && s.meta.last_branch.is_none(), "HEAD placeholder cleared");
         unsafe { std::env::remove_var("AITERM_HOME") };
     }
 
