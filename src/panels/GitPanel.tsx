@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText, type CommitDetail, type GraphData, type WorktreeStatus } from "../api";
 import { AgentBadge, Empty } from "../components/Overlays";
 import { baseName, branchLabel, branchState, checkoutWarning, kindLabel, kindLetter, relativeTime } from "../logic";
@@ -22,15 +22,19 @@ export function GitPanel() {
   const [toHead, setToHead] = useState(0);
   const wtPath = focus?.worktreePath ?? null;
 
+  // 응답이 늦게 와도 지금 보는 워크트리가 아니면 버린다(빠르게 세션을 바꿀 때 덮어쓰기 방지).
+  const current = useRef(wtPath);
+  current.current = wtPath;
   const load = useCallback(async () => {
     if (!wtPath) return;
     try {
       const [g, st] = await Promise.all([api.graph(wtPath, 1500), api.status(wtPath)]);
+      if (current.current !== wtPath) return;
       setGraph(g);
       setStatus(st);
       setError(null);
     } catch (e) {
-      setError(errorText(e));
+      if (current.current === wtPath) setError(errorText(e));
     }
   }, [wtPath]);
 

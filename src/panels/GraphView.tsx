@@ -155,11 +155,13 @@ function Row(props: {
         />
       </svg>
       <div className="gmsg">
-        {badges(props).map((b) => (
-          <span key={b.key} className={b.cls} title={b.title}>
-            {b.label}
-          </span>
-        ))}
+        <span className="grefs">
+          {badges(props).map((b) => (
+            <span key={b.key} className={b.cls} title={b.title}>
+              {b.label}
+            </span>
+          ))}
+        </span>
         <span className="gsubject">{row.subject}</span>
       </div>
       <div className="gauthor">{row.author}</div>

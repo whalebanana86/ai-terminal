@@ -445,10 +445,26 @@ code,
 .gmsg {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: center;
   overflow: hidden;
+}
+/* 배지가 많아도 제목이 보이도록 배지 영역은 최대 60% 까지만 */
+.grefs {
+  flex: 0 1 auto;
+  max-width: 60%;
+  overflow: hidden;
+  white-space: nowrap;
   text-overflow: ellipsis;
 }
+.grefs:empty {
+  display: none;
+}
 .gsubject {
+  flex: 1 1 60px;
+  min-width: 60px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--fg);
 }
 .grow:not(.on-chain) .gsubject {

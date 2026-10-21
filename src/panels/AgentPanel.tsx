@@ -347,10 +347,18 @@ function TouchedFilesView({ s }: { s: LinkedSession }) {
   const focus = useStore((st) => st.focus);
   const pending = s.id.startsWith("exec:") || !s.sourcePath;
   useEffect(() => {
-    if (!pending) api.transcript(s.id).then(setT, () => setT(null));
+    let alive = true;
+    if (!pending) api.transcript(s.id).then((x) => alive && setT(x), () => alive && setT(null));
+    return () => {
+      alive = false;
+    };
   }, [s.id, s.updatedAt, pending]);
   useEffect(() => {
-    if (s.worktreePath && s.cwdExists) api.status(s.worktreePath).then(setStatus, () => setStatus(null));
+    let alive = true;
+    if (s.worktreePath && s.cwdExists) api.status(s.worktreePath).then((x) => alive && setStatus(x), () => alive && setStatus(null));
+    return () => {
+      alive = false;
+    };
   }, [s.worktreePath, s.cwdExists, gitTick]);
   const now = Date.now();
   if (pending) return <Empty title="아직 기록이 없습니다" />;
