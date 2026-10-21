@@ -1,0 +1,119 @@
+# v0.1.0 같은 태그를 올리면 Apple 실리콘·인텔 겸용 맥 앱을 만들어 GitHub Releases 에 올린다.
+# 저장소 Secrets 에 아래 값이 있으면 Developer ID 로 서명하고 Apple 공증까지 한다 (없으면 임시 서명).
+#   MACOS_CERT_P12        Developer ID Application 인증서(.p12)를 base64 로 바꾼 글
+#   MACOS_CERT_PASSWORD   그 .p12 의 암호
+#   MACOS_SIGN_IDENTITY   예) Developer ID Application: Your Name (TEAMID)
+#   APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD   공증용 (앱 암호는 appleid.apple.com 에서 만든다)
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "버전 (예: 0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      HAS_CERT: ${{ secrets.MACOS_CERT_P12 != '' }}
+    steps:
+      # 남의 액션은 태그가 아니라 커밋으로 고정한다 (태그는 나중에 다른 코드로 옮길 수 있다).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Tools
+        run: |
+          npm install -g pnpm@9.15.4
+          rustup toolchain install stable --profile minimal
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          # 테스트가 만드는 임시 저장소용
+          git config --global init.defaultBranch main
+          git config --global user.name ci
+          git config --global user.email ci@example.com
+          echo "::notice::node $(node --version) · pnpm $(pnpm --version) · $(rustc --version)"
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Test
+        # 실패하면 오류 줄을 주석(annotation)으로 남겨 로그 없이도 원인을 볼 수 있게.
+        run: |
+          set +e
+          pnpm check 2>&1 | tee test.log
+          STATUS=${PIPESTATUS[0]}
+          if [ "$STATUS" -ne 0 ]; then
+            grep -E "error|FAIL|panicked|failed" test.log | sort -u | head -20 | while IFS= read -r line; do echo "::error::$line"; done
+          fi
+          exit "$STATUS"
+
+      - name: Import signing certificate
+        if: env.HAS_CERT == 'true'
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+
+      - name: Package
+        env:
+          SIGN_IDENTITY: ${{ env.HAS_CERT == 'true' && secrets.MACOS_SIGN_IDENTITY || '' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          # 손으로 넣은 버전 글은 스크립트에 바로 끼우지 않고 환경 변수로 넘긴다 (끼우면 셸 명령으로 해석된다).
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          VERSION="$INPUT_VERSION"
+          [ -n "$VERSION" ] || VERSION="${GITHUB_REF_NAME#v}"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::버전 꼴이 아니에요: $VERSION (예: 1.2.3)"; exit 1; }
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          scripts/package_release.sh "$VERSION"
+
+      - name: Remove signing keychain
+        # 서명이 끝났으니 올리기(남의 액션) 전에 인증서를 러너에서 지운다.
+        if: always() && env.HAS_CERT == 'true'
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
+
+      - name: Release notes
+        run: |
+          if [ "$HAS_CERT" = "true" ]; then
+            SIGNED="Signed with a Developer ID and notarized by Apple. / Developer ID 로 서명하고 Apple 공증을 받았어요."
+          else
+            SIGNED="Not notarized yet: on first launch open **System Settings → Privacy & Security → Open Anyway**, or run \`xattr -dr com.apple.quarantine \"/Applications/AI Terminal.app\"\`. / 아직 공증 전이라 처음 열 때 **시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기**를 눌러 주세요."
+          fi
+          {
+            [ -f "docs/release-notes/$VERSION.md" ] && { cat "docs/release-notes/$VERSION.md"; echo; echo "---"; echo; }
+            echo "macOS 12+ · Apple silicon & Intel"
+            echo
+            echo "1. Download **AI-Terminal-$VERSION-macOS.dmg** and drag the app to Applications. / DMG 를 열어 앱을 응용 프로그램 폴더로 끌어다 놓아요."
+            echo "2. $SIGNED"
+            echo "3. Needs \`git\` and a logged-in [Claude Code](https://code.claude.com) or [Codex CLI](https://github.com/openai/codex). / \`git\` 과 로그인된 Claude Code 나 Codex CLI 가 필요해요."
+            echo
+            echo "See [README](https://github.com/${{ github.repository }}#readme) · [English README](https://github.com/${{ github.repository }}/blob/main/README.en.md)"
+          } > build/release/NOTES.md
+
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: AI Terminal ${{ env.VERSION }}
+          body_path: build/release/NOTES.md
+          files: |
+            build/release/*.dmg
+            build/release/*.zip
+            build/release/SHA256SUMS.txt

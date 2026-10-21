@@ -7,6 +7,10 @@
   <br><sub>30-second demo (<a href="docs/demo.mp4">MP4</a>) · recorded with made-up sample data · the UI is in Korean for now</sub>
 </p>
 
+<p align="center">
+  <a href="https://github.com/whalebanana86/ai-terminal/releases/latest"><b>⬇︎ Download (macOS 12+, Apple silicon & Intel)</b></a>
+</p>
+
 A macOS app for people who run **several Claude Code and Codex sessions at once**. It shows **which repository, worktree and branch** each AI session is working in, lets you continue any session, and keeps Git and the files on the same screen.
 
 ## What is it?
@@ -37,7 +41,9 @@ So AI Terminal
 
 ## Install
 
-There are no prebuilt downloads (Releases) yet, so you build it yourself. It takes about ten minutes the first time (Rust compiles a lot).
+**Easiest:** download `AI-Terminal-…-macOS.dmg` from [Releases](https://github.com/whalebanana86/ai-terminal/releases/latest), open it and drag **AI Terminal** to Applications. It is not notarized yet, so the first launch may need **System Settings → Privacy & Security → Open Anyway** (or `xattr -dr com.apple.quarantine "/Applications/AI Terminal.app"`).
+
+**Build it yourself:** about ten minutes the first time (Rust compiles a lot).
 
 ### Requirements
 
@@ -146,6 +152,7 @@ pnpm check                # tsc + vitest + cargo test
 AITERM_AUTOMATION_SOCKET=/tmp/aiterm-auto.sock pnpm tauri dev --features automation
 scripts/e2e/regression.sh; scripts/e2e/features.sh; scripts/e2e/hangul.sh
 scripts/make_screenshots.sh   # README images + demo video from sample data (needs ffmpeg)
+scripts/package_release.sh 0.1.0   # universal app → build/release/ DMG, zip, SHA256SUMS (a v* tag does this on GitHub Actions and publishes a Release)
 ```
 
 Not yet: notarized builds, Intel check, line-level staging, 3-way merge editor, interactive rebase, stash, English UI.

@@ -7,6 +7,10 @@
   <br><sub>30초 시연 (<a href="docs/demo.mp4">MP4 로 보기</a>) · 지어낸 예시 기록으로 찍었어요</sub>
 </p>
 
+<p align="center">
+  <a href="https://github.com/whalebanana86/ai-terminal/releases/latest"><b>⬇︎ 내려받기 (macOS 12+, Apple 실리콘·인텔)</b></a>
+</p>
+
 내 맥에서 **Claude Code·Codex 를 여러 개 돌릴 때**, AI 가 저마다 **어느 저장소·워크트리·브랜치에서** 일하고 있는지 보면서 대화를 이어 가고, Git 과 파일까지 한 화면에서 확인하는 맥 앱이에요.
 
 ## 이 앱은 뭐예요?
@@ -41,9 +45,22 @@ AI 에게 코드를 맡기다 보면 이런 일이 생겨요.
 
 ## 설치하는 방법
 
-아직 미리 만들어 둔 내려받기 파일(Releases)은 없어요. 코드로 직접 만들어 설치해요. 10분쯤 걸려요(처음 한 번 Rust 가 많이 컴파일해요).
+### 가장 쉬운 방법: 내려받기
 
-### 준비물
+1. [Releases 페이지](https://github.com/whalebanana86/ai-terminal/releases/latest)에서 `AI-Terminal-…-macOS.dmg` 를 내려받아요.
+2. 내려받은 파일을 열고, **AI Terminal** 아이콘을 옆의 **Applications(응용 프로그램)** 폴더로 끌어다 놓아요.
+3. 응용 프로그램 폴더에서 앱을 열어요.
+   - "확인할 수 없는 개발자" 같은 창이 뜨면 **시스템 설정 → 개인정보 보호 및 보안** 맨 아래의 **그래도 열기**를 눌러요. (Apple 공증을 받기 전 버전이라 처음 한 번만 그래요.)
+   - 터미널이 익숙하면 `xattr -dr com.apple.quarantine "/Applications/AI Terminal.app"` 한 줄로도 돼요.
+4. 위쪽 **＋ 저장소 추가**로 내 Git 저장소 폴더를 골라요. AI 와 일한 적 있는 저장소는 알아서 찾아 줘요.
+
+쓰려면 `git` 과, 이미 로그인된 [Claude Code](https://code.claude.com) (`claude`) 나 [Codex CLI](https://github.com/openai/codex) (`codex`) 가 있어야 해요.
+
+### 코드로 직접 만들어 설치하기
+
+10분쯤 걸려요(처음 한 번 Rust 가 많이 컴파일해요).
+
+#### 준비물
 
 - 맥 컴퓨터 (macOS 12 이상, Apple 실리콘 M1~). 인텔 맥은 아직 확인하지 않았어요
 - `git` — 없으면 터미널에서 `xcode-select --install` 을 한 번 실행해요
@@ -51,7 +68,7 @@ AI 에게 코드를 맡기다 보면 이런 일이 생겨요.
 - [Node.js](https://nodejs.org) 20 이상과 [pnpm](https://pnpm.io) — `npm install -g pnpm`
 - 쓰려는 AI 가 **이미 로그인된 상태**: [Claude Code](https://code.claude.com) (`claude`), [Codex CLI](https://github.com/openai/codex) (`codex`) 중 하나 이상
 
-### 따라 하기
+#### 따라 하기
 
 1. **터미널을 열어요.** `⌘ + 스페이스`를 누르고 "터미널"이라고 쓴 뒤 엔터를 쳐요.
 2. **코드를 내려받아요.**
@@ -76,7 +93,7 @@ AI 에게 코드를 맡기다 보면 이런 일이 생겨요.
 
 ### 새 버전으로 바꾸기 · 지우기
 
-- 새 버전: `ai-terminal` 폴더에서 `git pull && pnpm install && pnpm tauri build` 한 다음 4번을 다시 해요. 추가한 저장소 목록은 그대로 남아요.
+- 새 버전: 내려받아 쓰면 새 DMG 로 앱을 바꿔 끼워요. 코드로 설치했으면 `ai-terminal` 폴더에서 `git pull && pnpm install && pnpm tauri build` 한 다음 4번을 다시 해요. 추가한 저장소 목록은 그대로 남아요.
 - 지우기: `AI Terminal.app` 을 휴지통에 넣어요. 앱이 기억하던 저장소 목록까지 지우려면 `~/Library/Application Support/dev.aiterminal.app` 폴더도 지워요. AI 대화 기록(원본)은 이 앱이 만든 게 아니라서 그대로 있어요.
 
 ## 쓰는 방법
@@ -218,7 +235,10 @@ pnpm install
 pnpm tauri dev          # 개발 모드
 pnpm check              # tsc + vitest + cargo test
 pnpm tauri build        # src-tauri/target/release/bundle/{macos,dmg}
+scripts/package_release.sh 0.1.0   # 겸용(Apple 실리콘·인텔) 앱 → build/release/ 에 DMG·zip·SHA256SUMS
 ```
+
+`v0.1.0` 같은 태그를 올리면 GitHub Actions(`.github/workflows/release.yml`)가 테스트 → 겸용 앱 → DMG·zip 을 만들어 Releases 에 올린다. 저장소 Secrets 에 Developer ID 인증서(`MACOS_CERT_P12`·`MACOS_CERT_PASSWORD`·`MACOS_SIGN_IDENTITY`)와 공증 값(`APPLE_ID`·`APPLE_TEAM_ID`·`APPLE_APP_PASSWORD`)을 넣으면 서명·공증까지 하고, 없으면 임시 서명으로 올린다. 그 버전의 소개 글은 `docs/release-notes/<버전>.md`.
 
 실제 화면으로 검증하는 E2E (automation 빌드가 떠 있어야 한다):
 

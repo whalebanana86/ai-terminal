@@ -29,3 +29,6 @@ dist-ssr
 # macOS 스크린샷(개인 화면이 실수로 올라가지 않게)
 /스크린샷 *.png
 /Screenshot *.png
+
+# 배포 파일(scripts/package_release.sh)
+/build/
