@@ -45,6 +45,12 @@ pub fn start(app: AppHandle) {
             while reader.read_line(&mut line).map(|n| n > 0).unwrap_or(false) {
                 let req: serde_json::Value = serde_json::from_str(line.trim()).unwrap_or_default();
                 line.clear();
+                if req.get("quit").and_then(|v| v.as_bool()) == Some(true) {
+                    // ⌘Q 와 같은 정상 종료 경로(RunEvent::Exit)로 끝낸다.
+                    let _ = writeln!(writer, "{}", serde_json::json!({ "ok": true, "value": "\"quitting\"" }));
+                    app.exit(0);
+                    return;
+                }
                 let js = req.get("js").and_then(|v| v.as_str()).unwrap_or("null").to_string();
                 let timeout = req.get("timeoutMs").and_then(|v| v.as_u64()).unwrap_or(30_000);
                 let id = next;

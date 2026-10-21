@@ -9,14 +9,17 @@ import json, os, socket, sys
 
 def main():
     args = sys.argv[1:]
-    if args[:1] == ["-f"]:
+    quit_app = args[:1] == ["--quit"]
+    if quit_app:
+        js = ""
+    elif args[:1] == ["-f"]:
         js = open(args[1]).read()
     else:
         js = " ".join(args) if args else sys.stdin.read()
     path = os.environ.get("AITERM_AUTOMATION_SOCKET", "/tmp/aiterm-auto.sock")
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.connect(path)
-    s.sendall((json.dumps({"js": js, "timeoutMs": int(os.environ.get("AITERM_EVAL_TIMEOUT_MS", "60000"))}) + "\n").encode())
+    s.sendall((json.dumps({"quit": True} if quit_app else {"js": js, "timeoutMs": int(os.environ.get("AITERM_EVAL_TIMEOUT_MS", "60000"))}) + "\n").encode())
     buf = b""
     while not buf.endswith(b"\n"):
         chunk = s.recv(65536)

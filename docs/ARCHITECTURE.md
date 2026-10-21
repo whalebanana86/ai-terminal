@@ -147,3 +147,15 @@ UI 는 셋이 다르면 경고 배지를 띄운다. 어떤 값도 체크아웃�
 - **통합(Rust)**: 임시 저장소 + 워크트리 2개를 실제 git 으로 만들고 앱 함수 결과를 git CLI 결과와 대조.
   가짜 HOME 에 Claude/Codex 기록을 만들어 발견·연결·브랜치 구분을 검증.
 - **수동 E2E**: 실제 CLI 로 외부 세션 생성 → 앱에서 발견·재개·맥락 확인. 결과는 `docs/TEST_REPORT.md`.
+
+## 9. 구현하면서 바뀐 점 (변경 기록)
+
+- **세션 연결은 마지막 cwd 기준**: Claude 세션은 대화 도중 다른 폴더/워크트리로 옮겨 갈 수 있다. 워크트리 연결과 "현재 브랜치"는 마지막 기록의 cwd 로, 재개는 첫 cwd(Claude 가 기록을 저장한 프로젝트 폴더)에서 한다. 옮겨 갔으면(`cwdMoved`) 시작 브랜치는 다른 워크트리의 값이라 불일치 비교에서 뺀다.
+- **경로 별칭**: 기록의 경로가 `/tmp/x` 처럼 심볼릭 링크 형태이면 `worktreeAlias` 로 함께 내려 준다.
+- **명령 인자 범위 검증**: Git·파일·Finder 명령은 앱이 아는 워크트리(등록·발견된 저장소의 워크트리, 세션 워크트리)와 그 하위만 받는다. 웹뷰가 뚫려도 임의 경로를 읽지 못하게 하는 2차 방어선.
+- **부모 세션 환경변수 차단**: 에이전트 세션(Claude Code, Orca 등) 안에서 띄운 앱이 `CLAUDECODE`, `CLAUDE_CODE_*_SESSION*` 등을 물려주면 재개한 Claude 가 하위 세션으로 동작해 기록을 저장하지 않는다. 세션에 묶인 변수만 지운다.
+- **Codex 새 실행 연결 규칙**: 실행 중 + 같은 cwd(정규화) + 시작 5초 전~10분 후 생성 + 아직 다른 실행과 연결되지 않은 스레드 중 가장 이른 것. 실행은 시작 순서대로 처리.
+- **갱신 신호 분리**: `fsTick`(파일 내용·목록) / `statusTick`(git status) / `gitTick`(HEAD·refs → 그래프). 파일만 바뀌면 전체 log 를 다시 읽지 않는다. 세션·저장소 갱신은 합치고 최신 응답만 반영한다.
+- **PTY 수명**: 종료 즉시 PTY 장치 반납, 끝난 실행은 최근 8개만 출력 재생용으로 보관. 중지·앱 종료는 프로세스 그룹 단위(SIGHUP → SIGKILL).
+- **파일 감시**: 파일 id 캐시 없는 디바운서(감시 등록 때 하위 전체를 훑지 않음), 무시 폴더 목록 20초마다 갱신, 감시 루트의 inode 가 바뀌면 다시 등록.
+- **Git 실행 고정 옵션**: `GIT_OPTIONAL_LOCKS=0`, `GIT_LITERAL_PATHSPECS=1`(check-ignore 제외), `core.fsmonitor=false`, `diff.noprefix=false`, `diff.mnemonicPrefix=false`, `core.quotepath=false`, diff 는 `--no-ext-diff --no-textconv`.

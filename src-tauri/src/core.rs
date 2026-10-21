@@ -753,8 +753,15 @@ mod tests {
             .unwrap();
         assert_eq!(info.branch_at_start.as_deref(), Some("feature"));
         assert_eq!(info.worktree_path.as_deref(), Some(wt.to_str().unwrap()));
-        std::thread::sleep(std::time::Duration::from_millis(500));
-        let out = core.pty.output_text(&info.id).unwrap();
+        // 부하가 클 때도 흔들리지 않게 고정 대기 대신 출력이 나올 때까지 최대 5초 기다린다.
+        let mut out = String::new();
+        for _ in 0..100 {
+            out = core.pty.output_text(&info.id).unwrap();
+            if out.contains("PWD:") {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
         assert!(out.contains("ARGS:--resume c9"), "{out}");
         assert!(out.contains(&format!("PWD:{}", wt.display())), "{out}");
 
