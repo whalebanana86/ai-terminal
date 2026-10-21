@@ -50,6 +50,8 @@ pub struct LinkedSession {
     pub current_detached: bool,
     /// 앱에서 실행 중인 실행 id
     pub running_exec_id: Option<String>,
+    /// 최근에 함께 일한 다른 워크트리(그 워크트리 목록에도 보인다)
+    pub other_worktrees: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -277,9 +279,37 @@ impl AppCore {
         for m in metas {
             let cwd = m.cwd.clone().unwrap_or_default();
             // 대화 도중 다른 폴더/워크트리로 옮겼으면 "지금 일하는 곳"은 마지막 cwd 다(재개는 첫 cwd 에서).
-            let work_cwd = m.last_cwd.clone().filter(|c| Path::new(c).is_dir()).unwrap_or_else(|| cwd.clone());
+            let mut work_cwd = m.last_cwd.clone().filter(|c| Path::new(c).is_dir()).unwrap_or_else(|| cwd.clone());
+            let mut loc = if Path::new(&work_cwd).is_dir() { self.locate_cached(&work_cwd) } else { None };
+            // 상위 폴더(저장소 아님)에서 시작해 cd 로 저장소 안에서 일한 세션: 마지막 기록이 다시 상위 폴더여도
+            // 최근에 일한 폴더 중 저장소 안인 곳에 붙인다(재개는 여전히 첫 cwd 에서).
+            let mut via_recent = false;
+            if loc.is_none() {
+                for (c, _) in m.recent_cwds.iter().filter(|(c, _)| Path::new(c).is_dir()) {
+                    if let Some(l) = self.locate_cached(c) {
+                        work_cwd = c.clone();
+                        loc = Some(l);
+                        via_recent = true;
+                        break;
+                    }
+                }
+            }
+            // 최근에 일한 다른 워크트리들: 그 워크트리 목록에도 보여 준다. 잠깐 들여다본 곳은 빼려고
+            // 워크트리별(하위 폴더 합산) 기록 수가 최근 기록의 10% 이상이고 5줄 이상인 곳만.
+            let total: u32 = m.recent_cwds.iter().map(|(_, n)| n).sum();
+            let mut per_wt: Vec<(String, u32)> = Vec::new();
+            for (c, n) in m.recent_cwds.iter().filter(|(c, _)| Path::new(c).is_dir()) {
+                let Some(l) = self.locate_cached(c) else { continue };
+                if Some(&l.toplevel) == loc.as_ref().map(|x| &x.toplevel) {
+                    continue;
+                }
+                match per_wt.iter_mut().find(|(w, _)| *w == l.toplevel) {
+                    Some((_, k)) => *k += n,
+                    None => per_wt.push((l.toplevel.clone(), *n)),
+                }
+            }
+            let other_worktrees: Vec<String> = per_wt.into_iter().filter(|(_, n)| *n >= 5 && *n * 10 >= total).map(|(w, _)| w).collect();
             let cwd_exists = Path::new(&work_cwd).is_dir() && Path::new(&cwd).is_dir();
-            let loc = if Path::new(&work_cwd).is_dir() { self.locate_cached(&work_cwd) } else { None };
             let start_loc = if work_cwd != cwd && Path::new(&cwd).is_dir() { self.locate_cached(&cwd) } else { loc.clone() };
             let cwd_moved = start_loc.as_ref().map(|l| &l.toplevel) != loc.as_ref().map(|l| &l.toplevel);
             let (repo_id, worktree_path) = match &loc {
@@ -336,6 +366,15 @@ impl AppCore {
                 })
             });
             let mut m = m;
+            if via_recent {
+                // 마지막 기록은 저장소 밖(상위 폴더)이라 브랜치가 "HEAD" 자리표시로 적혀 있다.
+                if m.last_branch.as_deref() == Some("HEAD") {
+                    m.last_branch = None;
+                }
+                if start_loc.is_none() && m.start_branch.as_deref() == Some("HEAD") {
+                    m.start_branch = None;
+                }
+            }
             if worktree_path.is_none() {
                 // 저장소가 아닌 폴더에서 Claude 는 gitBranch 를 "HEAD" 로 적는다. 브랜치로 보이지 않게 지운다.
                 for b in [&mut m.start_branch, &mut m.last_branch] {
@@ -357,6 +396,7 @@ impl AppCore {
                 current_branch: cb,
                 current_head: ch,
                 current_detached: cd,
+                other_worktrees,
             });
         }
         {
@@ -974,6 +1014,39 @@ mod tests {
         let s = core.list_sessions().unwrap().into_iter().find(|s| s.meta.id == "claude:out1").unwrap();
         assert!(s.worktree_path.is_none(), "folder exists but is not a repo → no stale link");
         assert!(s.meta.start_branch.is_none() && s.meta.last_branch.is_none(), "HEAD placeholder cleared");
+        unsafe { std::env::remove_var("AITERM_HOME") };
+    }
+
+    #[test]
+    fn session_started_above_repo_links_to_where_it_worked() {
+        // 상위 폴더(저장소 아님)에서 claude 를 열고 cd 로 저장소 안에서 일한 뒤, 마지막 기록이 다시 상위 폴더인 세션
+        let _g = HOME_LOCK.lock();
+        let (tmp, main, wt) = fixture();
+        let home = tmp.path().join("home5");
+        unsafe { std::env::set_var("AITERM_HOME", &home) };
+        let parent = tmp.path().join("apps");
+        std::fs::create_dir_all(&parent).unwrap();
+        let dir = home.join(".claude/projects/x");
+        std::fs::create_dir_all(&dir).unwrap();
+        let lines = [
+            json!({"type":"user","cwd":parent,"gitBranch":"HEAD","timestamp":"2026-10-01T00:00:00Z","message":{"content":"시작"}}),
+            json!({"type":"assistant","cwd":wt,"gitBranch":"feature","timestamp":"2026-10-01T00:01:00Z","message":{"content":[{"type":"text","text":"a"}]}}),
+            json!({"type":"assistant","cwd":wt,"gitBranch":"feature","timestamp":"2026-10-01T00:01:00Z","message":{"content":[{"type":"text","text":"a"}]}}),
+            json!({"type":"assistant","cwd":wt,"gitBranch":"feature","timestamp":"2026-10-01T00:01:00Z","message":{"content":[{"type":"text","text":"a"}]}}),
+            json!({"type":"assistant","cwd":wt,"gitBranch":"feature","timestamp":"2026-10-01T00:01:00Z","message":{"content":[{"type":"text","text":"a"}]}}),
+            json!({"type":"assistant","cwd":wt,"gitBranch":"feature","timestamp":"2026-10-01T00:01:00Z","message":{"content":[{"type":"text","text":"a"}]}}),
+            json!({"type":"assistant","cwd":tmp.path().join("peek"),"gitBranch":"HEAD","timestamp":"2026-10-01T00:01:30Z","message":{"content":[{"type":"text","text":"잠깐"}]}}),
+            json!({"type":"assistant","cwd":main,"gitBranch":"main","timestamp":"2026-10-01T00:02:00Z","message":{"content":[{"type":"text","text":"b"}]}}),
+            json!({"type":"assistant","cwd":parent,"gitBranch":"HEAD","timestamp":"2026-10-01T00:03:00Z","message":{"content":[{"type":"text","text":"c"}]}}),
+        ];
+        std::fs::write(dir.join("up1.jsonl"), lines.iter().map(|l| l.to_string() + "\n").collect::<String>()).unwrap();
+        let core = AppCore::new(Db::open_in_memory().unwrap(), Arc::new(|_, _| {}));
+        let s = core.list_sessions().unwrap().into_iter().find(|s| s.meta.id == "claude:up1").unwrap();
+        assert_eq!(s.worktree_path.as_deref(), Some(main.to_str().unwrap()), "가장 최근에 일한 저장소 폴더");
+        assert_eq!(s.other_worktrees, vec![wt.to_string_lossy().into_owned()], "앞서 일한 다른 워크트리에도 보임");
+        assert_eq!(s.meta.last_branch, None, "상위 폴더의 HEAD 자리표시는 브랜치로 보이지 않게");
+        assert_eq!(s.meta.cwd.as_deref(), Some(parent.to_str().unwrap()), "재개는 시작한 상위 폴더에서");
+        assert!(s.cwd_exists);
         unsafe { std::env::remove_var("AITERM_HOME") };
     }
 

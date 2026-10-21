@@ -68,6 +68,8 @@ export interface LinkedSession extends SessionMeta {
   currentHead: string | null;
   currentDetached: boolean;
   runningExecId: string | null;
+  /** 최근에 함께 일한 다른 워크트리(그 워크트리 목록에도 보인다) */
+  otherWorktrees: string[];
 }
 
 export interface Segment {

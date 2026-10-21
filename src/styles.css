@@ -1916,3 +1916,15 @@ li:hover .hover-only,
   white-space: pre;
   pointer-events: none;
 }
+
+.s-elsewhere {
+  font-size: 11px;
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
+.s-elsewhere .wt-dot {
+  width: 7px;
+  height: 7px;
+  border-width: 2px;
+  margin-right: 3px;
+}

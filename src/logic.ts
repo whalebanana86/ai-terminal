@@ -69,6 +69,7 @@ export function pendingSessionFromExec(e: ExecInfo): LinkedSession {
     currentHead: e.headAtStart,
     currentDetached: false,
     runningExecId: e.exited ? null : e.id,
+    otherWorktrees: [],
   };
 }
 
@@ -112,6 +113,7 @@ export function pendingSessionFromChat(c: ChatInfo): LinkedSession {
     title: c.agent === "claude" ? "새 Claude 채팅" : "새 Codex 채팅",
     worktreePath: c.cwd,
     runningExecId: null,
+    otherWorktrees: [],
   };
 }
 

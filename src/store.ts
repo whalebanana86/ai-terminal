@@ -150,7 +150,8 @@ export const useStore = create<State>((set, get) => ({
     // 선택된 세션이 있으면 그 세션 워크트리로 포커스를 다시 맞춘다(저장 이후 워크트리가 바뀌었을 수 있음).
     const sel = get().selectedSessionId;
     const s = sel ? get().sessions.find((x) => x.id === sel) : null;
-    if (s?.worktreePath && s.cwdExists) set({ focus: { worktreePath: s.worktreePath, source: "session" } });
+    const keep = s && get().focus && s.otherWorktrees?.includes(get().focus!.worktreePath);
+    if (s?.worktreePath && s.cwdExists && !keep) set({ focus: { worktreePath: s.worktreePath, source: "session" } });
     if (!get().focus) {
       const first = get().repos.find((r) => r.exists && r.worktrees.length);
       if (first) set({ focus: { worktreePath: first.worktrees[0].path, source: "manual" } });
@@ -186,7 +187,9 @@ export const useStore = create<State>((set, get) => ({
     const s = id ? get().sessions.find((x) => x.id === id) : null;
     const patch: Partial<State> = { selectedSessionId: id };
     // 세션의 워크트리로 포커스만 옮긴다. 체크아웃은 하지 않는다.
-    if (s?.worktreePath && s.cwdExists) {
+    // 지금 보는 워크트리에서도 일한 세션이면(최근엔 다른 곳) 보던 곳을 유지한다.
+    const keep = !!s && !!get().focus && !!s.otherWorktrees?.includes(get().focus!.worktreePath);
+    if (s?.worktreePath && s.cwdExists && !keep) {
       if (get().focus?.worktreePath !== s.worktreePath) patch.viewer = null;
       patch.focus = { worktreePath: s.worktreePath, source: "session" };
     }

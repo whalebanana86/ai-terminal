@@ -88,7 +88,10 @@ function SessionList() {
 
   const folder = focus?.worktreePath ?? null;
   // 지금 보는 폴더(워크트리)에서 작업한 세션만 보여 준다.
-  const inFolder = useMemo(() => sessions.filter((s) => folder !== null && s.worktreePath === folder), [sessions, folder]);
+  const inFolder = useMemo(
+    () => sessions.filter((s) => folder !== null && (s.worktreePath === folder || s.otherWorktrees?.includes(folder))),
+    [sessions, folder],
+  );
   const list = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return inFolder.filter((s) => {
@@ -135,6 +138,7 @@ function SessionList() {
           )}
           <SessionItem
             key={s.id}
+            elsewhere={s.worktreePath !== folder ? s.worktreePath : null}
             dupHint={(titleCount.get(s.title) ?? 0) > 1 ? (s.externalId || s.id).replace(/^.*:/, "").slice(-6) : null}
             s={s}
             selected={s.id === selected}
@@ -168,6 +172,8 @@ type ItemProps = {
   chat: ChatInfo | null;
   /** 같은 제목이 여러 개일 때 구분용 짧은 id */
   dupHint: string | null;
+  /** 이 워크트리에서도 일했지만 마지막으로 일한 곳은 다른 워크트리일 때 그 경로 */
+  elsewhere: string | null;
 };
 
 /** 목록이 갱신돼도 바뀐 항목만 다시 그린다(에이전트 작업 중 매초 갱신되므로). */
@@ -176,6 +182,7 @@ const SessionItem = memo(SessionItemView, (a, b) =>
   a.now === b.now &&
   a.onSelect === b.onSelect &&
   a.dupHint === b.dupHint &&
+  a.elsewhere === b.elsewhere &&
   JSON.stringify(a.s) === JSON.stringify(b.s) &&
   JSON.stringify(a.ext) === JSON.stringify(b.ext) &&
   JSON.stringify(a.chat) === JSON.stringify(b.chat),
@@ -189,7 +196,7 @@ export function sessionStatus(s: LinkedSession, ext: LiveRun | null, chat: ChatI
   return null;
 }
 
-function SessionItemView({ s, selected, onSelect, now, ext, chat, dupHint }: ItemProps) {
+function SessionItemView({ s, selected, onSelect, now, ext, chat, dupHint, elsewhere }: ItemProps) {
   const bs = branchState(s);
   const status = sessionStatus(s, ext, chat);
   const snippet = s.firstPrompt && !s.title.startsWith(s.firstPrompt.slice(0, 20)) ? s.firstPrompt : null;
@@ -207,7 +214,13 @@ function SessionItemView({ s, selected, onSelect, now, ext, chat, dupHint }: Ite
             {status.label}
           </span>
         )}
-        {s.worktreePath && (bs.changedSinceLast || (bs.current ?? bs.last)) && (
+        {elsewhere && (
+          <span className="s-elsewhere wt-name" title={`이 워크트리에서도 일했고, 마지막으로 일한 곳은 ${elsewhere}`}>
+            <WtDot path={elsewhere} />
+            최근엔 {baseName(elsewhere)}
+          </span>
+        )}
+        {!elsewhere && s.worktreePath && (bs.changedSinceLast || (bs.current ?? bs.last)) && (
           <span
             className={`branch-chip small${bs.changedSinceLast ? " warn" : ""}`}
             title={`세션 시작: ${branchLabel(bs.start)} · 마지막 작업: ${branchLabel(bs.last)} · 지금 워크트리: ${bs.unknownCurrent ? "알 수 없음" : branchLabel(bs.current)}`}

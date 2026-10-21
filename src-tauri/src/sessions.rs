@@ -35,6 +35,9 @@ pub struct SessionMeta {
     pub archived: bool,
     /// cli / sdk-cli / vscode 등 세션을 만든 곳
     pub origin: Option<String>,
+    /// 기록 끝부분에서 본 작업 폴더와 그 기록 수(최근 것부터). 마지막 cwd 가 저장소 밖일 때 어디서 일했는지 찾는 데 쓴다.
+    #[serde(default, skip_serializing)]
+    pub recent_cwds: Vec<(String, u32)>,
 }
 
 // ───────────────────────────── 공통 도구 ─────────────────────────────
@@ -142,6 +145,43 @@ fn tail_lines(path: &Path, max_bytes: u64) -> Vec<String> {
         lines.remove(0); // 잘린 첫 줄
     }
     lines.into_iter().rev().filter(|l| !l.is_empty()).map(str::to_string).collect()
+}
+
+/// 파일 끝 `max_bytes` 안의 `"cwd":"…"` 값을 최근 것부터 중복 없이(최대 12개) 기록 수와 함께. JSON 을 통째로 파싱하지 않고 바이트로 찾는다.
+fn recent_cwds(path: &Path, max_bytes: u64) -> Vec<(String, u32)> {
+    let Ok(mut f) = File::open(path) else { return Vec::new() };
+    let Ok(len) = f.seek(SeekFrom::End(0)) else { return Vec::new() };
+    let start = len.saturating_sub(max_bytes);
+    let mut buf = Vec::new();
+    if f.seek(SeekFrom::Start(start)).is_err() || f.read_to_end(&mut buf).is_err() {
+        return Vec::new();
+    }
+    const KEY: &[u8] = b"\"cwd\":\"";
+    let mut out: Vec<(String, u32)> = Vec::new();
+    let mut end = buf.len();
+    loop {
+        let Some(i) = buf[..end].windows(KEY.len()).rposition(|w| w == KEY) else { break };
+        end = i;
+        // 값 끝(이스케이프되지 않은 따옴표)까지
+        let v0 = i + KEY.len() - 1;
+        let mut j = v0 + 1;
+        while j < buf.len() && buf[j] != b'"' {
+            j += if buf[j] == b'\\' { 2 } else { 1 };
+        }
+        if j >= buf.len() {
+            continue;
+        }
+        if let Ok(v) = serde_json::from_slice::<String>(&buf[v0..=j])
+            && !v.is_empty()
+        {
+            if let Some(i) = out.iter().position(|(c, _)| *c == v) {
+                out[i].1 += 1;
+            } else if out.len() < 12 {
+                out.push((v, 1));
+            }
+        }
+    }
+    out
 }
 
 // ───────────────────────────── Claude ─────────────────────────────
@@ -270,6 +310,7 @@ pub fn parse_claude_session(path: &Path) -> Option<SessionMeta> {
         }
     }
     meta.cwd.as_ref()?;
+    meta.recent_cwds = recent_cwds(path, 2 * 1024 * 1024);
     if meta.created_at == 0 {
         meta.created_at = meta.updated_at;
     }
@@ -551,6 +592,7 @@ impl SessionIndex {
                                 source_path: path.map(|p| p.to_string_lossy().into_owned()).unwrap_or(t.rollout_path),
                                 archived: t.archived,
                                 origin: t.source.clone(),
+                                recent_cwds: Vec::new(),
                             },
                         );
                     }
@@ -583,6 +625,7 @@ impl SessionIndex {
                     source_path: p.to_string_lossy().into_owned(),
                     archived: false,
                     origin: h.origin.clone(),
+                    recent_cwds: Vec::new(),
                 },
             );
         }

@@ -27,6 +27,7 @@ const base: LinkedSession = {
   currentHead: "abc",
   currentDetached: false,
   runningExecId: null,
+  otherWorktrees: [],
 };
 
 const exec = (over: Partial<ExecInfo>): ExecInfo => ({
