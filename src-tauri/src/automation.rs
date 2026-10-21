@@ -51,6 +51,18 @@ pub fn start(app: AppHandle) {
                     app.exit(0);
                     return;
                 }
+                if let Some(keys) = req.get("keys").and_then(|v| v.as_array()) {
+                    // [[keyCode, "글자"], ...] 를 진짜 키 입력처럼 창에 보낸다(입력기를 거침).
+                    let delay = req.get("delayMs").and_then(|v| v.as_u64()).unwrap_or(60);
+                    let keys: Vec<(u16, String)> = keys
+                        .iter()
+                        .filter_map(|k| Some((k.get(0)?.as_u64()? as u16, k.get(1)?.as_str()?.to_string())))
+                        .collect();
+                    let source = req.get("inputSource").and_then(|v| v.as_str()).map(str::to_string);
+                    let ok = send_keys(&app, keys, delay, source);
+                    let _ = writeln!(writer, "{}", serde_json::json!({ "ok": ok, "value": "null" }));
+                    continue;
+                }
                 let js = req.get("js").and_then(|v| v.as_str()).unwrap_or("null").to_string();
                 let timeout = req.get("timeoutMs").and_then(|v| v.as_u64()).unwrap_or(30_000);
                 let id = next;
@@ -80,4 +92,73 @@ pub fn start(app: AppHandle) {
             }
         }
     });
+}
+
+/// 앱을 앞으로 가져와 키 이벤트를 NSApplication 으로 보낸다. 손쉬운 사용 권한 없이 자기 창에만 보낸다.
+fn send_keys(app: &AppHandle, keys: Vec<(u16, String)>, delay_ms: u64, source: Option<String>) -> bool {
+    let Some(win) = app.get_webview_window("main") else { return false };
+    let Ok(ptr) = win.ns_window() else { return false };
+    let ptr = ptr as usize;
+    let (tx, rx) = mpsc::channel();
+    let _ = app.run_on_main_thread(move || {
+        use objc2_app_kit::{NSApplication, NSWindow};
+        let mtm = objc2::MainThreadMarker::new().unwrap();
+        let ns = NSApplication::sharedApplication(mtm);
+        #[allow(deprecated)]
+        ns.activateIgnoringOtherApps(true);
+        let w: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
+        w.makeKeyAndOrderFront(None);
+        // 이 앱의 입력 문맥에만 입력기를 지정한다(사용자 전체 입력 설정은 그대로).
+        if let Some(src) = &source
+            && let Some(ctx) = objc2_app_kit::NSTextInputContext::currentInputContext(mtm)
+        {
+            ctx.setSelectedKeyboardInputSource(Some(&objc2_foundation::NSString::from_str(src)));
+            eprintln!("[automation] input source = {:?}", ctx.selectedKeyboardInputSource());
+        }
+        let _ = tx.send(());
+    });
+    let _ = rx.recv_timeout(Duration::from_secs(2));
+    std::thread::sleep(Duration::from_millis(300));
+    for (code, chars) in keys {
+        for down in [true, false] {
+            let chars = chars.clone();
+            let (tx, rx) = mpsc::channel();
+            let _ = app.run_on_main_thread(move || {
+                use objc2_app_kit::{NSApplication, NSEvent, NSEventModifierFlags, NSEventType, NSWindow};
+                use objc2_foundation::{NSPoint, NSString};
+                let mtm = objc2::MainThreadMarker::new().unwrap();
+                let w: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
+                let _ = (&chars, w, NSPoint::new(0.0, 0.0), NSEventModifierFlags::empty(), NSEventType::KeyDown);
+                // 실제 키보드와 같은 CGEvent 로 만든 뒤 NSEvent 로 감싸야 입력기(IMK)가 처리한다.
+                let ev: Option<objc2::rc::Retained<NSEvent>> = unsafe {
+                    let src = CGEventSourceCreate(1);
+                    let cg = CGEventCreateKeyboardEvent(src, code, down);
+                    let ev: Option<objc2::rc::Retained<NSEvent>> = objc2::msg_send![objc2::class!(NSEvent), eventWithCGEvent: cg];
+                    CFRelease(cg);
+                    if !src.is_null() {
+                        CFRelease(src);
+                    }
+                    ev
+                };
+                let _ = NSString::from_str("");
+                if let Some(ev) = ev {
+                    NSApplication::sharedApplication(mtm).sendEvent(&ev);
+                }
+                let _ = tx.send(());
+            });
+            let _ = rx.recv_timeout(Duration::from_secs(2));
+            std::thread::sleep(Duration::from_millis(if down { 15 } else { delay_ms }));
+        }
+    }
+    true
+}
+
+#[link(name = "CoreGraphics", kind = "framework")]
+unsafe extern "C" {
+    fn CGEventSourceCreate(state: i32) -> *mut std::ffi::c_void;
+    fn CGEventCreateKeyboardEvent(source: *mut std::ffi::c_void, keycode: u16, keydown: bool) -> *mut std::ffi::c_void;
+}
+#[link(name = "CoreFoundation", kind = "framework")]
+unsafe extern "C" {
+    fn CFRelease(cf: *mut std::ffi::c_void);
 }

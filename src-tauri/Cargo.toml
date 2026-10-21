@@ -33,13 +33,17 @@ uuid = { version = "1", features = ["v4"] }
 dirs = "6"
 parking_lot = "0.12"
 libc = "0.2"
+# 자동화 빌드에서만: 자기 창에 macOS 키 이벤트를 보내 실제 입력기(한글 조합)를 거치게 한다.
+objc2 = { version = "0.6", optional = true }
+objc2-foundation = { version = "0.3", optional = true, default-features = false, features = ["std", "NSString", "NSGeometry", "NSArray", "NSNotification"] }
+objc2-app-kit = { version = "0.3", optional = true, default-features = false, features = ["std", "NSEvent", "NSApplication", "NSWindow", "NSResponder", "NSGraphicsContext", "NSRunningApplication", "NSTextInputContext"] }
 
 [dev-dependencies]
 tempfile = "3"
 
 [features]
 # 테스트용 원격 조작 소켓. 배포 빌드에는 넣지 않는다.
-automation = []
+automation = ["dep:objc2", "dep:objc2-foundation", "dep:objc2-app-kit"]
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

@@ -6,6 +6,7 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef } from "react";
 import { api } from "../api";
+import { attachHangulInput } from "../hangulInput";
 
 /** 실행 id → 터미널. 테스트 자동화와 디버깅에서 화면 글자를 읽는 데 쓴다. */
 const registry = new Map<string, Terminal>();
@@ -81,6 +82,8 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
     } catch {
       /* WebGL 이 안 되면 기본 렌더러 */
     }
+    // macOS WebView 의 한글 입력기 바꿔치기 방식 처리(그대로 두면 첫 자모만 들어간다)
+    const detachHangul = attachHangulInput(term, el);
     termRef.current = term;
     fitRef.current = fit;
     registry.set(execId, term);
@@ -115,6 +118,7 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
     resize();
     return () => {
       disposed = true;
+      detachHangul();
       ro.disconnect();
       onData.dispose();
       if (sinkId !== null) void api.execDetach(execId, sinkId);

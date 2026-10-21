@@ -1903,3 +1903,16 @@ li:hover .hover-only,
   color: var(--wc);
   border-color: color-mix(in srgb, var(--wc) 60%, transparent);
 }
+
+/* 터미널에서 조합 중인 한글 미리보기(완성되면 터미널로 보냄) */
+.hangul-preview {
+  position: absolute;
+  display: none;
+  z-index: 5;
+  padding: 0 1px;
+  background: #0f1115;
+  color: #fff;
+  border-bottom: 2px solid var(--accent);
+  white-space: pre;
+  pointer-events: none;
+}
