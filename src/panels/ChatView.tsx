@@ -1,6 +1,6 @@
 import { Channel } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, errorText, type ChatEvent, type ChatInfo } from "../api";
+import { api, errorText, type ChatEvent, type ChatInfo, type Transcript } from "../api";
 import { useStore } from "../store";
 
 /** 도구 실행: 시작 이벤트와 결과 이벤트를 같은 id 로 합친 것 */
@@ -107,6 +107,15 @@ export function ChatView({ chat }: { chat: ChatInfo }) {
   }, [chat.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const items = useMemo(() => foldChatEvents(events), [events]);
+  // 이어가는 대화면 지난 기록을 위에 접어 둔다(한 흐름으로 보이게).
+  const [past, setPast] = useState<Transcript | null>(null);
+  const [showPast, setShowPast] = useState(false);
+  useEffect(() => {
+    setPast(null);
+    setShowPast(false);
+    if (chat.sessionId) api.transcript(chat.sessionId).then(setPast, () => setPast(null));
+  }, [chat.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pastItems = (past?.items ?? []).filter((i) => i.kind !== "tool");
   useEffect(() => {
     if (stick.current) bottom.current?.scrollIntoView({ block: "end" });
   }, [items]);
@@ -138,7 +147,7 @@ export function ChatView({ chat }: { chat: ChatInfo }) {
     <div className="chat" data-testid="chat-view">
       <div className="chat-bar">
         <span className="muted small">
-          {chat.agent === "claude" ? `권한 모드: ${modeLabel(chat.mode)}` : `샌드박스: ${chat.mode === "workspace-write" ? "작업 폴더 쓰기" : "읽기 전용"}`}
+          {chat.agent === "claude" ? `허락 범위: ${modeLabel(chat.mode)}` : `허락 범위: ${chat.mode === "workspace-write" ? "이 폴더 안에서 쓰기" : "읽기만"}`}
           {!chat.alive && " · 프로세스 종료됨"}
         </span>
         <span className="spacer" />
@@ -156,7 +165,23 @@ export function ChatView({ chat }: { chat: ChatInfo }) {
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
       >
-        {items.length === 0 && <div className="muted pad">메시지를 보내면 에이전트가 이 워크트리에서 작업합니다. 이전 대화를 이어갑니다.</div>}
+        {pastItems.length > 0 && (
+          <div className="past">
+            <button className="past-toggle" onClick={() => setShowPast(!showPast)} aria-expanded={showPast}>
+              {showPast ? "▾" : "▸"} 이전 대화 {pastItems.length}개
+            </button>
+            {showPast &&
+              pastItems.map((i, n) => (
+                <div key={n} className={`msg msg-${i.kind} past-msg`}>
+                  <div className="msg-text">{i.text}</div>
+                </div>
+              ))}
+            <div className="resume-divider">
+              <span>여기서부터 이어감</span>
+            </div>
+          </div>
+        )}
+        {items.length === 0 && <div className="muted pad">메시지를 보내면 에이전트가 이 폴더에서 이어서 작업해요.</div>}
         {items.map((it, i) => {
           switch (it.kind) {
             case "user":
@@ -270,12 +295,12 @@ export function ChatView({ chat }: { chat: ChatInfo }) {
 function modeLabel(m: string) {
   switch (m) {
     case "acceptEdits":
-      return "편집 자동 허용";
+      return "파일 편집은 자동 허락";
     case "plan":
-      return "계획만(수정 안 함)";
+      return "계획만 세우기 (수정 안 함)";
     case "bypassPermissions":
-      return "모두 허용(위험)";
+      return "모두 허락 (위험)";
     default:
-      return "매번 묻기";
+      return "도구마다 허락 묻기";
   }
 }

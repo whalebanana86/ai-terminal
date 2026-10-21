@@ -165,11 +165,6 @@ export function ChangesView({ worktree, status, onChanged }: { worktree: string;
             {busy ? "커밋 중…" : amend ? "커밋 고치기" : staged.length ? `커밋 (${staged.length}개 파일)` : "담은 파일 없음"}
           </button>
         </div>
-        {!staged.length && !amend && pathsOf(unstaged).length > 0 && (
-          <button className="link-btn" disabled={busy} onClick={() => act("모두 담기", () => api.stage(worktree, pathsOf(unstaged)))} data-testid="stage-all-link">
-            변경 {pathsOf(unstaged).length}개 모두 담기
-          </button>
-        )}
       </div>
     </div>
   );

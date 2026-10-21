@@ -2,7 +2,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { api, errorText, externalRunning, type Agent, type ChatInfo, type LinkedSession, type LiveRun, type Transcript, type WorktreeStatus } from "../api";
-import { ChevronDown, FolderGit2, GitBranch, Info, Play, Plus, RefreshCw, Square } from "lucide-react";
+import { ChevronDown, FolderGit2, GitBranch, Info, Play, Plus, RefreshCw, Square, X } from "lucide-react";
 import { AgentBadge, ContextMenu, Empty } from "../components/Overlays";
 import { baseName, branchLabel, branchState, clientLabel, externalRunOf, kindLabel, kindLetter, relativeTime, relativeTo } from "../logic";
 import { useSelectedSession, useStore } from "../store";
@@ -117,7 +117,7 @@ function SessionList() {
         {list.map((s) => (
           <SessionItem
             key={s.id}
-            dupHint={(titleCount.get(s.title) ?? 0) > 1 ? (s.externalId || s.id).replace(/^.*:/, "").slice(0, 6) : null}
+            dupHint={(titleCount.get(s.title) ?? 0) > 1 ? (s.externalId || s.id).replace(/^.*:/, "").slice(-6) : null}
             s={s}
             selected={s.id === selected}
             onSelect={select}
@@ -395,7 +395,7 @@ function SessionHeader({
         <span className="spacer" />
         {chatOpen ? (
           <button className="btn btn-small" onClick={onCloseChat} title="채팅을 닫습니다. 대화는 남아 나중에 이어갈 수 있어요.">
-            <Square size={12} aria-hidden /> 채팅 닫기
+            <X size={12} aria-hidden /> 채팅 닫기
           </button>
         ) : running ? (
           <button className="btn btn-small btn-danger" onClick={onStop}>
@@ -706,7 +706,7 @@ function NewSessionDialog({ onClose }: { onClose: () => void }) {
           {card(agent === "codex", () => setAgent("codex"), "Codex", "OpenAI", info && !info.codex ? "설치되지 않음" : null)}
         </div>
         <label className="form-row col">
-          <span className="muted">작업할 폴더 (체크아웃하지 않고 그 폴더에서 실행해요)</span>
+          <span className="muted">작업할 폴더 (지금 브랜치를 바꾸지 않고 그 폴더에서 바로 실행해요)</span>
           <select value={cwd} onChange={(e) => void pickFolder(e.target.value)} aria-label="작업 폴더">
             {cwd && !options.some((o) => o.w.path === cwd) && <option value={cwd}>{cwd}</option>}
             {options.map((o) => (

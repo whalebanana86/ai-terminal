@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FolderOpen } from "lucide-react";
+import { FolderOpen, Trash2 } from "lucide-react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { api, errorText, type ChangeKind, type DirEntry, type FileContent, type FileDiff, type WorktreeStatus } from "../api";
 import { Empty } from "../components/Overlays";
@@ -371,8 +371,9 @@ function StageView({ worktree, rel }: { worktree: string; rel: string }) {
                 {side === "unstaged" ? (
                   <>
                     <button className="btn btn-small btn-ghost danger-text" disabled={busy} onClick={() => apply("discard", hi, h.id)} title="이 부분 변경 버리기 (되돌릴 수 없음)">
-                      버리기
+                      <Trash2 size={12} aria-hidden /> 버리기
                     </button>
+                    <span className="gap" />
                     <button className="btn btn-small" disabled={busy} onClick={() => apply("stage", hi, h.id)} data-action="stage-hunk" title="이 부분만 커밋에 담기 (git add -p)">
                       담기
                     </button>

@@ -133,16 +133,17 @@ export function GitPanel() {
       const usedElsewhere = r.kind === "branch" && graph.worktrees.some((w) => w.branch === r.short);
       items.push({ header: true, label: r.kind === "remote" ? `원격 브랜치 ${r.short}` : `브랜치 ${r.short}` });
       items.push({
-        label: usedElsewhere ? "그 브랜치를 쓰는 폴더 열기" : "이 브랜치로 전환…",
+        label: usedElsewhere ? "그 폴더로 가기" : "이 브랜치로 전환…",
         hint: usedElsewhere ? "다른 워크트리가 이미 쓰고 있어요" : "지금 폴더를 체크아웃합니다",
         onClick: () => ga.checkout(wtPath, r.short, r.kind === "remote" ? "remote" : "branch", graph.worktrees),
       });
       if (r.kind === "branch" && !usedElsewhere) {
         items.push({ label: "새 워크트리에서 열기…", hint: "지금 폴더는 그대로 둡니다", onClick: () => ga.newWorktree(repo?.path ?? wtPath, { existingBranch: r.short }) });
       }
-      if (cur) {
-        items.push({ label: `${cur} 에 병합…`, hint: `${r.short} 의 커밋을 ${cur} 로 가져옵니다`, onClick: () => ga.merge(wtPath, cur, r.short) });
-        items.push({ label: `${cur} 를 이 위로 리베이스…`, hint: "⚠ 커밋 해시가 바뀝니다", onClick: () => ga.rebase(wtPath, cur, r.short, status?.upstream ?? null) });
+      // 지금 위치와 같은 커밋이면 병합·리베이스는 아무 변화가 없으므로 보여 주지 않는다.
+      if (cur && sha !== status?.head) {
+        items.push({ label: "지금 브랜치에 병합…", hint: `${r.short} → ${cur}`, onClick: () => ga.merge(wtPath, cur, r.short) });
+        items.push({ label: "지금 브랜치를 이 위로 리베이스…", hint: `⚠ ${cur} 의 커밋 해시가 바뀝니다`, onClick: () => ga.rebase(wtPath, cur, r.short, status?.upstream ?? null) });
       }
     }
     items.push(
@@ -406,14 +407,13 @@ function CommitDetailView(props: { worktree: string; sha: string; graph: GraphDa
             {d.author} · {new Date(d.time * 1000).toLocaleString()} · 부모 {d.parents.map((p) => p.slice(0, 7)).join(", ") || "없음"}
           </div>
           <div className="cd-actions">
-            {refsHere.map((r) => (
+            {refsHere.filter((r) => !(r.kind === "branch" && r.short === cur)).map((r) => (
               <button
                 key={r.name}
                 className="btn btn-small"
-                disabled={r.kind === "branch" && r.short === cur}
                 onClick={() => ga.checkout(props.worktree, r.short, r.kind === "remote" ? "remote" : "branch", props.graph.worktrees)}
               >
-                {r.short} 로 전환…
+                전환: {r.short}
               </button>
             ))}
             <button className="btn btn-small btn-ghost" onClick={() => ga.newWorktree(repo?.path ?? props.worktree, { base: props.sha })}>

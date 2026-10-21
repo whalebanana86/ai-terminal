@@ -160,10 +160,9 @@ code,
 }
 .panel-head h2 {
   margin: 0;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.8px;
-  text-transform: uppercase;
+  letter-spacing: 0.2px;
   color: var(--fg-dim);
 }
 .panel-actions {
@@ -1746,4 +1745,36 @@ li:hover .hover-only,
 .modal textarea.text-input {
   resize: vertical;
   font: inherit;
+}
+
+/* 채팅 위 이전 대화 */
+.past-toggle {
+  background: none;
+  border: none;
+  color: var(--fg-dim);
+  padding: 4px 0;
+}
+.past-toggle:hover {
+  color: var(--fg);
+}
+.past-msg {
+  opacity: 0.75;
+}
+.resume-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 6px;
+  color: var(--fg-faint);
+  font-size: 11px;
+}
+.resume-divider::before,
+.resume-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line-2);
+}
+.gap {
+  width: 10px;
 }

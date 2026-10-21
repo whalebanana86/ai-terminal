@@ -69,7 +69,7 @@ export function BranchSwitcher({ worktree, status, graph, repoPath }: { worktree
                   <button className={`switcher-item${cur ? " cur" : ""}`} disabled={cur} onClick={() => pick(r)}>
                     <span className={`ref ref-${r.kind}`}>{r.short}</span>
                     {cur && <span className="muted small">현재</span>}
-                    {other && <span className="muted small">📁 {baseName(other.path)}에서 사용 중</span>}
+                    {other && <span className="muted small">📁 {baseName(other.path)} 에서 사용 중 · 누르면 그 폴더로</span>}
                     {r.track && <span className="muted small">{r.track}</span>}
                   </button>
                 </li>
@@ -107,11 +107,11 @@ export function BranchesView({ worktree, repoPath, graph, status }: { worktree: 
     if (r.kind === "branch") {
       list.push({ label: "새 워크트리에서 열기…", disabled: !!usedBy, hint: usedBy ? `이미 ${usedBy.path} 에서 사용 중` : "지금 워크트리를 건드리지 않습니다", onClick: () => ga.newWorktree(repoPath, { existingBranch: r.short }) });
     }
-    if (usedBy && usedBy.path !== worktree) list.push({ label: `그 브랜치를 쓰는 폴더 열기 (${baseName(usedBy.path)})`, onClick: () => useStore.getState().setFocusWorktree(usedBy.path) });
+    if (usedBy && usedBy.path !== worktree) list.push({ label: `그 폴더로 가기 (${baseName(usedBy.path)})`, onClick: () => useStore.getState().setFocusWorktree(usedBy.path) });
     list.push(
       { separator: true, label: "" },
-      { label: `${cur ?? "?"} 에 병합…`, disabled: isCur || !cur, onClick: () => ga.merge(worktree, cur, r.short) },
-      { label: `${cur ?? "?"} 를 이 위로 리베이스…`, hint: "⚠ 커밋 해시가 바뀝니다", disabled: isCur || !cur, onClick: () => ga.rebase(worktree, cur, r.short, status.upstream) },
+      { label: "지금 브랜치에 병합…", hint: `${r.short} → ${cur ?? "?"}`, disabled: isCur || !cur, onClick: () => ga.merge(worktree, cur, r.short) },
+      { label: "지금 브랜치를 이 위로 리베이스…", hint: `⚠ ${cur ?? "?"} 의 커밋 해시가 바뀝니다`, disabled: isCur || !cur, onClick: () => ga.rebase(worktree, cur, r.short, status.upstream) },
       { separator: true, label: "" },
       { label: "여기서 새 브랜치…", onClick: () => ga.createBranch(worktree, r.short, r.short) },
     );
