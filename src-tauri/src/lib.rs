@@ -1,5 +1,6 @@
 #[macro_use]
 pub mod i18n;
+pub mod brand;
 pub mod chat;
 pub mod commands;
 pub mod core;
@@ -13,6 +14,7 @@ pub mod procs;
 pub mod pty;
 pub mod sessions;
 pub mod watch;
+pub mod updates;
 #[cfg(feature = "automation")]
 pub mod automation;
 
@@ -25,26 +27,26 @@ use commands::AppState;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updates::UpdateState::default())
         .setup(|app| {
             // 로그인 셸 환경을 미리 읽어 둔다(첫 git 호출이 느려지지 않게).
             std::thread::spawn(|| {
                 crate::env::shell_env();
             });
 
-            // 맥 메뉴 막대: 기본 메뉴의 "AI Terminal" 아래 "설정… ⌘," (언어·화면 모드). 누르면 화면에 설정 창을 띄운다.
+            // 앱 언어에 맞춘 이름·설정·업데이트 메뉴.
             #[cfg(target_os = "macos")]
             {
-                use tauri::menu::{Menu, MenuItem, MenuItemKind, PredefinedMenuItem};
-                let menu = Menu::default(app.handle())?;
-                let settings = MenuItem::with_id(app, "settings", "설정…", true, Some("CmdOrCtrl+,"))?;
-                if let Some(MenuItemKind::Submenu(app_menu)) = menu.items()?.into_iter().next() {
-                    // 0: 정보, 1: 구분선 다음
-                    app_menu.insert(&settings, 2)?;
-                    app_menu.insert(&PredefinedMenuItem::separator(app)?, 3)?;
-                }
-                app.set_menu(menu)?;
-                app.manage(commands::SettingsMenu(settings));
+                app.set_menu(brand::menu(app.handle())?)?;
                 app.on_menu_event(|app, e| {
+                    if e.id() == "check-updates" {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                        let _ = app.emit("check-updates", ());
+                    }
                     if e.id() == "settings" {
                         let _ = app.emit("open-settings", ());
                     }
@@ -106,6 +108,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
+            updates::check_update,
+            updates::install_update,
+            updates::open_update_download,
             commands::repo_list,
             commands::repo_add,
             commands::repo_set_pinned,
@@ -168,7 +173,7 @@ pub fn run() {
             commands::git_op_state,
         ])
         .build(tauri::generate_context!())
-        .expect("AI Terminal 을 시작하지 못했습니다")
+        .expect("코드행방을 시작하지 못했습니다")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 // 앱이 띄운 에이전트 프로세스를 남기지 않는다.

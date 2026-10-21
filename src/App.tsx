@@ -4,6 +4,8 @@ import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panel
 import type { ChangeBatch } from "./api";
 import { api } from "./api";
 import { ConfirmDialog, PromptDialog, Toasts } from "./components/Overlays";
+import { RepoTabs } from "./components/RepoTabs";
+import { UpdateDialog } from "./components/Updates";
 import { SettingsDialog } from "./components/Settings";
 import { StatusBar, TopBar } from "./components/TopBar";
 import { AgentPanel } from "./panels/AgentPanel";
@@ -96,6 +98,7 @@ export default function App() {
   return (
     <div className="app" style={{ "--wt": wtColor } as React.CSSProperties}>
       <TopBar />
+      <RepoTabs />
       {!restored ? (
         <div className="boot">{t("세션과 저장소를 읽는 중…")}</div>
       ) : (
@@ -116,6 +119,7 @@ export default function App() {
       <StatusBar />
       <Toasts />
       <SettingsDialog />
+      <UpdateDialog />
       <ConfirmDialog />
       <PromptDialog />
     </div>

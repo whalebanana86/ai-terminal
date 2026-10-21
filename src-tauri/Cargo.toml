@@ -1,7 +1,7 @@
 [package]
 name = "ai-terminal"
-version = "0.2.1"
-description = "AI coding agent workspace: sessions, worktrees and files side by side"
+version = "0.3.0"
+description = "Code Whereabouts - See where AI works and what it changes"
 authors = ["AI Terminal contributors"]
 license = "MIT"
 edition = "2024"
@@ -37,6 +37,10 @@ libc = "0.2"
 objc2 = { version = "0.6", optional = true }
 objc2-foundation = { version = "0.3", optional = true, default-features = false, features = ["std", "NSString", "NSGeometry", "NSArray", "NSNotification"] }
 objc2-app-kit = { version = "0.3", optional = true, default-features = false, features = ["std", "NSEvent", "NSApplication", "NSWindow", "NSResponder", "NSGraphicsContext", "NSRunningApplication", "NSTextInputContext"] }
+tauri-plugin-updater = "2"
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider"] }
+semver = "1"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 
 [dev-dependencies]
 tempfile = "3"

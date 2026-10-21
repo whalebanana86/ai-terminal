@@ -2258,7 +2258,7 @@ li:hover .hover-only,
   outline-offset: -3px;
 }
 
-/* 설정 창(언어·화면 모드) — 맥 메뉴 막대 AI Terminal → 설정… (⌘,) */
+/* 설정 창(언어·화면 모드) — 맥 메뉴 막대 코드행방 → 설정… (⌘,) */
 .settings-modal {
   width: min(380px, 92vw);
   display: flex;
@@ -2405,3 +2405,21 @@ li:hover .hover-only,
 .stick-pop-item:focus-visible .stick-pop-play {
   opacity: 1;
 }
+
+.update-modal { width: min(540px, calc(100vw - 48px)); }
+.update-modal p { margin: 12px 0; line-height: 1.6; }
+.update-notes { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.6; padding: 12px; background: var(--bg-1); border-radius: 8px; }
+.update-error { overflow-wrap: anywhere; color: var(--err); }
+.update-modal progress { width: 85%; }
+
+.repo-tabs { display: flex; flex: none; gap: 3px; min-height: 36px; padding: 4px 10px 0; overflow-x: auto; background: var(--bg-1); border-bottom: 1px solid var(--line); }
+.repo-tab { display: flex; flex: none; align-items: center; gap: 6px; max-width: 240px; min-height: 31px; padding: 5px 14px; border: 1px solid transparent; border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0; background: transparent; color: var(--fg-dim); cursor: pointer; }
+.repo-tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.repo-tab:hover:not(:disabled) { background: var(--bg-2); color: var(--fg); }
+.repo-tab.active { color: var(--fg); background: var(--bg-2); border-color: var(--line); border-bottom-color: var(--wt, var(--accent)); }
+.repo-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.repo-tab:disabled { opacity: .5; cursor: default; }
+
+.brand { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; max-width: 300px; flex-shrink: 0; }
+.brand-name { font-size: 13px; line-height: 17px; }
+.brand-tagline { overflow: hidden; text-overflow: ellipsis; font-size: 11px; line-height: 14px; font-weight: 400; letter-spacing: 0; color: var(--fg-dim); }

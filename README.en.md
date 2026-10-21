@@ -1,4 +1,8 @@
-# AI Terminal
+# Code Whereabouts
+
+**See where AI works and what it changes**
+
+Formerly AI Terminal. Existing repositories and session settings are preserved. Older releases may still use the `AI-Terminal-…` filename. The app bundle is `코드행방.app`; macOS uses the localized display name **Code Whereabouts** in English.
 
 [한국어](README.md) · **English**
 
@@ -17,7 +21,7 @@ A macOS app for people who run **several Claude Code and Codex sessions at once*
 
 You can now ask an AI to "build the login screen" or "fix this bug". Once you have two or three of them running in different folders and branches, it gets confusing fast.
 
-AI Terminal splits the window into three panes:
+Code Whereabouts splits the window into three panes:
 
 - the **middle** collects your AI conversations (sessions),
 - picking one moves the **left (Git)** and **right (files)** panes to the worktree that session was working in,
@@ -33,7 +37,7 @@ AI Terminal splits the window into three panes:
 2. **Conversations are scattered.** Several terminal tabs, other apps, yesterday's closed ones. Continuing means hunting for a session id and typing the command.
 3. **Seeing what the AI changed needs yet another app.** A Git client for the diff, an editor for the files.
 
-So AI Terminal
+So Code Whereabouts
 
 - lists your local Claude Code and Codex conversations **per repository and worktree**,
 - moves the Git and file panes to the session's worktree **without ever checking anything out** (only the view changes),
@@ -41,7 +45,7 @@ So AI Terminal
 
 ## Install
 
-**Easiest:** download `AI-Terminal-…-macOS.dmg` from [Releases](https://github.com/whalebanana86/ai-terminal/releases/latest), open it and drag **AI Terminal** to Applications. It is not notarized yet, so the first launch may need **System Settings → Privacy & Security → Open Anyway** (or `xattr -dr com.apple.quarantine "/Applications/AI Terminal.app"`).
+**Easiest:** download `Code-Whereabouts-…-macOS.dmg` from [Releases](https://github.com/whalebanana86/ai-terminal/releases/latest), open it and drag **Code Whereabouts** to Applications. It is not notarized yet, so the first launch may need **System Settings → Privacy & Security → Open Anyway** (or `xattr -dr com.apple.quarantine "/Applications/코드행방.app"`).
 
 **Build it yourself:** about ten minutes the first time (Rust compiles a lot).
 
@@ -58,14 +62,14 @@ So AI Terminal
 git clone https://github.com/whalebanana86/ai-terminal.git
 cd ai-terminal
 pnpm install          # also builds the app and puts it in /Applications
-open "/Applications/AI Terminal.app"
+open "/Applications/코드행방.app"
 ```
 
 `pnpm install-app` rebuilds just the app; `AITERM_SKIP_APP=1 pnpm install` skips it.
 
 Then use **＋ 저장소 추가** (Add repository) at the top to pick a Git repository. Repositories you have used with an AI are found automatically.
 
-> A `dmg` built by someone else is not notarized yet. If macOS blocks it, use **System Settings → Privacy & Security → Open Anyway**, or run `xattr -dr com.apple.quarantine "/Applications/AI Terminal.app"`. Apps you build yourself are fine.
+> A `dmg` built by someone else is not notarized yet. If macOS blocks it, use **System Settings → Privacy & Security → Open Anyway**, or run `xattr -dr com.apple.quarantine "/Applications/코드행방.app"`. Apps you build yourself are fine.
 
 **Update:** `git pull && pnpm install` replaces the app (quit and reopen it if it was running). **Uninstall:** delete the app, and `~/Library/Application Support/dev.aiterminal.app` if you also want to forget the repository list. Your AI conversation logs are not created by this app and stay where they are.
 
@@ -130,7 +134,7 @@ The coloured line under the title bar is the colour of the worktree you are look
 
 ## Privacy
 
-- No account. The app itself sends nothing over the network (the UI is locked down by CSP).
+- No account. Choosing Check for Updates contacts GitHub for release metadata and update files. No repository paths or conversation contents are sent (the UI remains locked down by CSP).
 - Claude Code and Codex logs are **read only**.
 - The only traffic is what you start: Git remote actions, and the Claude Code / Codex CLIs you launch.
 - Hard-to-undo actions (checkout, pull, push, discard) always confirm, and warn about uncommitted changes or agents running in that worktree.
@@ -156,10 +160,14 @@ scripts/make_screenshots.sh   # README images + demo video from sample data (nee
 scripts/package_release.sh 0.1.0   # universal app → build/release/ DMG, zip, SHA256SUMS (a v* tag does this on GitHub Actions and publishes a Release)
 ```
 
-**Settings** (menu bar **AI Terminal → Settings…**, `⌘,`): language (한국어 / English, follows macOS at first) and appearance (system / light / dark; the terminal and code colours follow).
+**Settings** (menu bar **Code Whereabouts → Settings…**, `⌘,`): language (한국어 / English, follows macOS at first) and appearance (system / light / dark; the terminal and code colours follow).
 
 Not yet: notarized builds, Intel check, line-level staging, 3-way merge editor, interactive rebase, stash.
 
 ## License
 
 MIT. Inspired by GitKraken's information layout; no GitKraken code or proprietary design is used. The commit-graph lane layout is our own implementation (vscode-git-graph and gitamine code is not used because of their licenses).
+
+### Updates from the app menu
+
+Choose **Code Whereabouts → Check for Updates…**. Signed releases can be downloaded, verified and installed in the app, then restarted. Stop terminal agents and wait for chat responses before installing. Older releases open the download page. GitHub is contacted only when you request an update; no repository paths or conversations are sent. See [docs/UPDATES.md](docs/UPDATES.md) for signing setup.

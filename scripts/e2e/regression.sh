@@ -1,5 +1,5 @@
 #!/bin/bash
-# 실행 중인 AI Terminal(automation 빌드)에 대해 CLI 토큰 없이 도는 회귀 검증.
+# 실행 중인 코드행방(automation 빌드)에 대해 CLI 토큰 없이 도는 회귀 검증.
 #   1) 앱을 띄운다: AITERM_AUTOMATION_SOCKET=/tmp/aiterm-auto.sock pnpm tauri dev --features automation
 #   2) scripts/e2e/regression.sh
 # 독립 테스트 저장소를 /private/tmp/aiterm-e2e-reg 에 새로 만든다(사용자 데이터는 건드리지 않음).

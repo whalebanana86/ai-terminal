@@ -595,7 +595,7 @@ impl ChatManager {
         let response = if allow {
             json!({"behavior":"allow","updatedInput": original})
         } else {
-            json!({"behavior":"deny","message": tr!("사용자가 AI Terminal 에서 거부했습니다", "Denied by the user in AI Terminal")})
+            json!({"behavior":"deny","message": tr!("사용자가 코드행방에서 거부했습니다", "Denied by the user in Code Whereabouts")})
         };
         chat.write_line(&json!({"type":"control_response","response":{"subtype":"success","request_id":request_id,"response":response}}))?;
         chat.push(ChatEvent::PermissionResolved { request_id: request_id.to_string(), allowed: allow });

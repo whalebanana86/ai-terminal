@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""테스트용: 실행 중인 AI Terminal(automation 빌드)의 화면에서 JS 를 실행하고 결과를 출력한다.
+"""테스트용: 실행 중인 코드행방(automation 빌드)의 화면에서 JS 를 실행하고 결과를 출력한다.
 
 사용: scripts/aiterm-eval.py 'return document.title'
       scripts/aiterm-eval.py -f script.js

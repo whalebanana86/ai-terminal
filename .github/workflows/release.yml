@@ -39,6 +39,12 @@ jobs:
           git config --global user.email ci@example.com
           echo "::notice::node $(node --version) · pnpm $(pnpm --version) · $(rustc --version)"
 
+      - name: Require update signing key
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || { echo "::error::TAURI_SIGNING_PRIVATE_KEY is required for signed updates"; exit 1; }
+
       - name: Install
         run: pnpm install --frozen-lockfile
 
@@ -72,6 +78,8 @@ jobs:
 
       - name: Package
         env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           SIGN_IDENTITY: ${{ env.HAS_CERT == 'true' && secrets.MACOS_SIGN_IDENTITY || '' }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -95,13 +103,13 @@ jobs:
           if [ "$HAS_CERT" = "true" ]; then
             SIGNED="Signed with a Developer ID and notarized by Apple. / Developer ID 로 서명하고 Apple 공증을 받았어요."
           else
-            SIGNED="Not notarized yet: on first launch open **System Settings → Privacy & Security → Open Anyway**, or run \`xattr -dr com.apple.quarantine \"/Applications/AI Terminal.app\"\`. / 아직 공증 전이라 처음 열 때 **시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기**를 눌러 주세요."
+            SIGNED="Not notarized yet: on first launch open **System Settings → Privacy & Security → Open Anyway**, or run \`xattr -dr com.apple.quarantine \"/Applications/코드행방.app\"\`. / 아직 공증 전이라 처음 열 때 **시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기**를 눌러 주세요."
           fi
           {
             [ -f "docs/release-notes/$VERSION.md" ] && { cat "docs/release-notes/$VERSION.md"; echo; echo "---"; echo; }
             echo "macOS 12+ · Apple silicon & Intel"
             echo
-            echo "1. Download **AI-Terminal-$VERSION-macOS.dmg** and drag the app to Applications. / DMG 를 열어 앱을 응용 프로그램 폴더로 끌어다 놓아요."
+            echo "1. Download **Code-Whereabouts-$VERSION-macOS.dmg** and drag the app to Applications. / DMG 를 열어 앱을 응용 프로그램 폴더로 끌어다 놓아요."
             echo "2. $SIGNED"
             echo "3. Needs \`git\` and a logged-in [Claude Code](https://code.claude.com) or [Codex CLI](https://github.com/openai/codex). / \`git\` 과 로그인된 Claude Code 나 Codex CLI 가 필요해요."
             echo
@@ -111,9 +119,20 @@ jobs:
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: v${{ env.VERSION }}
-          name: AI Terminal ${{ env.VERSION }}
+          name: Code Whereabouts ${{ env.VERSION }}
           body_path: build/release/NOTES.md
+          draft: true
+          fail_on_unmatched_files: true
           files: |
             build/release/*.dmg
             build/release/*.zip
+            build/release/*.app.tar.gz
+            build/release/*.app.tar.gz.sig
+            build/release/latest.json
             build/release/SHA256SUMS.txt
+
+      - name: Publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release edit "v$VERSION" --draft=false --latest

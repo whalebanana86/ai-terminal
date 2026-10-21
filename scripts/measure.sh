@@ -3,7 +3,7 @@
 # 사용: scripts/measure.sh [측정초=60] [앱경로]
 set -euo pipefail
 SECS=${1:-60}
-APP=${2:-"$(cd "$(dirname "$0")/.." && pwd)/src-tauri/target/release/bundle/macos/AI Terminal.app"}
+APP=${2:-"$(cd "$(dirname "$0")/.." && pwd)/src-tauri/target/release/bundle/macos/코드행방.app"}
 
 pkill -x ai-terminal 2>/dev/null || true
 sleep 1

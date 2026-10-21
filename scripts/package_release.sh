@@ -12,7 +12,7 @@ VERSION=${1:?버전을 주세요 (예: 0.1.0)}
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "버전 꼴이 아니에요: $VERSION"; exit 1; }
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 OUT="$ROOT/build/release"
-NAME="AI-Terminal-$VERSION-macOS"
+NAME="Code-Whereabouts-$VERSION-macOS"
 TARGET=universal-apple-darwin
 cd "$ROOT"
 
@@ -23,7 +23,7 @@ if [ -n "${SIGN_IDENTITY:-}" ]; then
 fi
 pnpm tauri build --target "$TARGET" --bundles app --config "$CONFIG"
 
-APP="$ROOT/src-tauri/target/$TARGET/release/bundle/macos/AI Terminal.app"
+APP="$ROOT/src-tauri/target/$TARGET/release/bundle/macos/코드행방.app"
 [ -d "$APP" ] || { echo "앱이 만들어지지 않았어요: $APP"; exit 1; }
 lipo -archs "$APP/Contents/MacOS/ai-terminal"
 # 겸용(universal) 실행 파일은 링커의 자동 서명이 빠져 있다. 서명 없는 앱은 Apple 실리콘에서 실행되지 않으므로
@@ -35,9 +35,9 @@ codesign --verify --deep --strict "$APP"
 
 rm -rf "$OUT"
 mkdir -p "$OUT/dmg"
-ditto "$APP" "$OUT/dmg/AI Terminal.app"
+ditto "$APP" "$OUT/dmg/코드행방.app"
 ln -s /Applications "$OUT/dmg/Applications"
-hdiutil create -quiet -volname "AI Terminal" -srcfolder "$OUT/dmg" -fs HFS+ -format UDZO -ov "$OUT/$NAME.dmg"
+hdiutil create -quiet -volname "코드행방" -srcfolder "$OUT/dmg" -fs HFS+ -format UDZO -ov "$OUT/$NAME.dmg"
 rm -rf "$OUT/dmg"
 ditto -c -k --keepParent "$APP" "$OUT/$NAME.zip"
 
@@ -49,5 +49,20 @@ if [ -n "${SIGN_IDENTITY:-}" ]; then
   fi
 fi
 
-(cd "$OUT" && shasum -a 256 "$NAME.dmg" "$NAME.zip" > SHA256SUMS.txt)
+# Updater tarball is created after all app signing. Its signature also binds the version.
+if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}${TAURI_SIGNING_PRIVATE_KEY_PATH:-}" ]; then
+  tar -czf "$OUT/$NAME.app.tar.gz" -C "$(dirname "$APP")" "코드행방.app"
+  pnpm tauri signer sign --app-version "$VERSION" "$OUT/$NAME.app.tar.gz"
+  node scripts/updater_manifest.mjs "$VERSION" "$OUT" "${GITHUB_REPOSITORY:-whalebanana86/ai-terminal}"
+else
+  echo "[release] 업데이트 서명 키 없음: DMG·zip 배포만 만듭니다. 자동 업데이트는 제공하지 않습니다."
+fi
+(
+  cd "$OUT"
+  files=("$NAME.dmg" "$NAME.zip")
+  if [ -f latest.json ]; then
+    files+=("$NAME.app.tar.gz" "$NAME.app.tar.gz.sig" latest.json)
+  fi
+  shasum -a 256 "${files[@]}" > SHA256SUMS.txt
+)
 ls -la "$OUT"

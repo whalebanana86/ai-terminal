@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { lang, setLang, t } from "../i18n";
 import { getThemePref, setThemePref, type ThemePref } from "../theme";
 
-/** 설정 창(언어·화면 모드). 맥 메뉴 막대의 "AI Terminal → 설정… (⌘,)" 이 open-settings 를 보내면 열린다. */
+/** 설정 창(언어·화면 모드). 맥 메뉴 막대의 "코드행방 → 설정… (⌘,)" 이 open-settings 를 보내면 열린다. */
 export function SettingsDialog() {
   const [open, setOpen] = useState(false);
   const [theme, setTheme] = useState<ThemePref>(getThemePref);

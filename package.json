@@ -1,7 +1,7 @@
 {
   "name": "ai-terminal",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -39,5 +39,5 @@
     "vitest": "^5.0.5"
   },
   "license": "MIT",
-  "description": "AI coding agent workspace for macOS: Claude Code / Codex sessions, git worktrees and files side by side"
+  "description": "Code Whereabouts — See where AI works and what it changes"
 }

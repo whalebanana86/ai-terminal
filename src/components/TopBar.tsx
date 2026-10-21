@@ -30,8 +30,9 @@ export function TopBar() {
 
   return (
     <header className="topbar" data-tauri-drag-region>
-      <div className="brand" data-tauri-drag-region>
-        AI Terminal
+      <div className="brand" data-tauri-drag-region title={`${t("코드행방")} - ${t("AI가 어디서 무엇을 바꾸는지")}`}>
+        <span className="brand-name" data-tauri-drag-region>{t("코드행방")}</span>
+        <span className="brand-tagline" data-tauri-drag-region>{t("AI가 어디서 무엇을 바꾸는지")}</span>
       </div>
       <label className="folder-select" title={t("볼 워크트리를 고릅니다(저장소마다 하나 이상). 체크아웃은 하지 않아요.")}>
         <FolderGit2 size={14} aria-hidden className="wt-icon" />
