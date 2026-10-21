@@ -28,7 +28,8 @@ DEST=/Applications
 [ -w "$DEST" ] || DEST="$HOME/Applications"
 mkdir -p "$DEST"
 running=""
-pgrep -f "$DEST/AI Terminal.app/Contents/MacOS/ai-terminal" >/dev/null 2>&1 && running=1
+# pgrep -f 는 이 앱의 인자를 못 읽는 경우가 있어 ps 의 실행 파일 경로로 찾는다
+ps -A -o comm= | grep -qF "$DEST/AI Terminal.app/Contents/MacOS/ai-terminal" && running=1
 # 켜져 있는 앱은 이미 메모리에 올라와 있어서 파일을 바꿔도 괜찮다
 rm -rf "$DEST/AI Terminal.app"
 ditto "$APP" "$DEST/AI Terminal.app"
