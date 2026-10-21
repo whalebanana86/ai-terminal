@@ -1,6 +1,6 @@
 [package]
 name = "ai-terminal"
-version = "0.1.0"
+version = "0.2.0"
 description = "AI coding agent workspace: sessions, worktrees and files side by side"
 authors = ["AI Terminal contributors"]
 license = "MIT"
