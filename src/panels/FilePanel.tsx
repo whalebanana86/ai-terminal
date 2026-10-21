@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FolderOpen, Trash2 } from "lucide-react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { api, errorText, type ChangeKind, type DirEntry, type FileContent, type FileDiff, type WorktreeStatus } from "../api";
-import { Empty } from "../components/Overlays";
+import { Empty, WtDot } from "../components/Overlays";
 import { escapeHtml, highlightLines } from "../highlight";
 import { baseName, decorationMap, kindLabel, kindLetter } from "../logic";
 import { useStore } from "../store";
@@ -171,6 +171,7 @@ function FileTree({ worktree }: { worktree: string }) {
   return (
     <div className="tree-wrap">
       <div className="filters">
+        <WtDot path={worktree} />
         <span className="muted path-text" title={worktree}>
           {baseName(worktree)}
         </span>

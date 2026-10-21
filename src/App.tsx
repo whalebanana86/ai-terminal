@@ -9,6 +9,7 @@ import { AgentPanel } from "./panels/AgentPanel";
 import { FilePanel } from "./panels/FilePanel";
 import { GitPanel } from "./panels/GitPanel";
 import { useStore } from "./store";
+import { useWtColor } from "./wtColors";
 import "./styles.css";
 
 export default function App() {
@@ -67,10 +68,12 @@ export default function App() {
 
   useShortcuts();
 
+  // 지금 보는 워크트리의 노선 색: 위쪽 선·점 등 화면 곳곳에서 같은 색으로 쓴다.
+  const wtColor = useWtColor(focus?.worktreePath);
   const layout = useDefaultLayout({ id: "main-3pane", storage: localStorage, panelIds: ["git", "agent", "files"] });
 
   return (
-    <div className="app">
+    <div className="app" style={{ "--wt": wtColor } as React.CSSProperties}>
       <TopBar />
       {!restored ? (
         <div className="boot">세션과 저장소를 읽는 중…</div>

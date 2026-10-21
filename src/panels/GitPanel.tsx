@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { api, errorText, type CommitDetail, type GitRef, type GraphData, type OpState, type WorktreeStatus } from "../api";
 import { ArrowDownToLine, ArrowUpFromLine, Crosshair, RefreshCw, X } from "lucide-react";
-import { ContextMenu, Empty, type MenuItem } from "../components/Overlays";
+import { ContextMenu, Empty, WtDot, type MenuItem } from "../components/Overlays";
 import * as ga from "../gitActions";
 import { baseName, branchLabel, branchState, kindLetter } from "../logic";
 import { useFocusRepo, useSelectedSession, useStore } from "../store";
@@ -24,6 +25,7 @@ export function GitPanel() {
   const [op, setOp] = useState<OpState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedSha, setSelectedSha] = useState<string | null>(null);
+  const detailLayout = useDefaultLayout({ id: "graph-detail", storage: localStorage, panelIds: selectedSha ? ["graph", "detail"] : ["graph"] });
   const [busy, setBusy] = useState<string | null>(null);
   const [toHead, setToHead] = useState(0);
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
@@ -193,7 +195,10 @@ export function GitPanel() {
         <div className="git-focus-line">
           <span className="repo-name">{repo?.name ?? baseName(wtPath)}</span>
           <span className="muted">/</span>
-          <span title={wtPath}>{baseName(wtPath)}</span>
+          <span title={wtPath} className="wt-name">
+            <WtDot path={wtPath} />
+            {baseName(wtPath)}
+          </span>
           {wt?.isMain === false && <span className="tag" title="같은 저장소를 다른 브랜치로 연 작업 폴더">추가 워크트리</span>}
         </div>
         <div className="git-focus-line">
@@ -258,7 +263,8 @@ export function GitPanel() {
         {tab === "graph" &&
           (graph ? (
             graph.rows.length ? (
-              <div className="graph-split">
+              <Group orientation="vertical" className="graph-split" defaultLayout={detailLayout.defaultLayout} onLayoutChanged={detailLayout.onLayoutChanged}>
+                <Panel id="graph" minSize="20">
                 <GraphView
                   data={graph}
                   focusWorktree={wtPath}
@@ -268,10 +274,17 @@ export function GitPanel() {
                   onContextMenu={onGraphMenu}
                   scrollToHeadSignal={toHead}
                 />
+                </Panel>
                 {selectedSha && (
-                  <CommitDetailView key={selectedSha} worktree={wtPath} sha={selectedSha} graph={graph} status={status} onClose={() => setSelectedSha(null)} />
+                  <>
+                    {/* 커밋 상세: 경계를 끌어 높이 조절(크기는 기억) */}
+                    <Separator className="sep sep-h" />
+                    <Panel id="detail" defaultSize="35" minSize="12">
+                      <CommitDetailView key={selectedSha} worktree={wtPath} sha={selectedSha} graph={graph} status={status} onClose={() => setSelectedSha(null)} />
+                    </Panel>
+                  </>
                 )}
-              </div>
+              </Group>
             ) : (
               <Empty title="아직 커밋이 없습니다" />
             )

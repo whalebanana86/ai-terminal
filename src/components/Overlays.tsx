@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
+import { useWtColor } from "../wtColors";
 
 export function Toasts() {
   const toasts = useStore((s) => s.toasts);
@@ -262,4 +263,10 @@ function MenuList(props: {
       )}
     </div>
   );
+}
+
+/** 워크트리 노선 색 점(지하철 역 모양) */
+export function WtDot({ path }: { path: string | null | undefined }) {
+  const c = useWtColor(path);
+  return <i className="wt-dot" style={{ "--wc": c } as React.CSSProperties} aria-hidden />;
 }

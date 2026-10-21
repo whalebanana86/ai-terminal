@@ -527,8 +527,7 @@ code,
   font-size: 11px;
 }
 .commit-detail {
-  flex: 0 0 auto;
-  max-height: 45%;
+  height: 100%;
   overflow: auto;
   border-top: 1px solid var(--line-2);
   background: var(--bg-2);
@@ -1850,4 +1849,57 @@ li:hover .hover-only,
   flex: 1;
   min-height: 0;
   overflow: auto;
+}
+
+/* ── 워크트리 노선 색 ── */
+.wt-dot {
+  display: inline-block;
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2.5px solid var(--wc, var(--fg-faint));
+  background: var(--bg-1);
+  vertical-align: -1px;
+  margin-right: 5px;
+}
+.wt-name {
+  display: inline-flex;
+  align-items: center;
+}
+.topbar {
+  box-shadow: inset 0 -2px 0 var(--wt, var(--line));
+}
+.wt-icon {
+  color: var(--wt, var(--fg-dim));
+}
+.ref-wt {
+  display: inline-flex;
+  align-items: center;
+  background: color-mix(in srgb, var(--wc, #c6b4ff) 15%, transparent);
+  color: var(--wc, #c6b4ff);
+}
+.ref-wt .wt-dot {
+  width: 7px;
+  height: 7px;
+  border-width: 2px;
+  margin-right: 4px;
+  background: transparent;
+}
+.ref-wt-focus {
+  outline: 1.5px solid var(--wc);
+  background: color-mix(in srgb, var(--wc) 28%, transparent);
+  color: #fff;
+  font-weight: 700;
+}
+.wt-list li {
+  border-left: 3px solid var(--wc, transparent);
+}
+.wt-list li.on {
+  border-color: color-mix(in srgb, var(--wc) 60%, transparent);
+  border-left-color: var(--wc);
+}
+.wt-list li.on .tag-on {
+  color: var(--wc);
+  border-color: color-mix(in srgb, var(--wc) 60%, transparent);
 }

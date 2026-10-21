@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GitRef, GraphData, GraphRow, Worktree } from "../api";
 import { baseName, laneColor, relativeTime } from "../logic";
+import { colorOf, metroColors, useWtColors } from "../wtColors";
 
 const ROW_H = 26;
 const LANE_W = 13;
@@ -58,6 +59,11 @@ export function GraphView({ data, focusWorktree, sessionStartBranch, selectedSha
     return set;
   }, [data.rows, data.head]);
 
+  // 워크트리마다 노선 색: HEAD 에서 갈라진 곳까지의 선과 커밋을 그 색으로
+  const wtColors = useWtColors();
+  const metro = useMemo(() => metroColors(data.rows, data.worktrees, (p) => colorOf(wtColors, p)), [data.rows, data.worktrees, wtColors]);
+  const colorFor = (p: string) => colorOf(wtColors, p);
+
   const maxWidth = useMemo(() => Math.min(MAX_LANES_SHOWN, Math.max(1, ...data.rows.map((r) => r.width))), [data.rows]);
   const graphW = maxWidth * LANE_W + 10;
 
@@ -90,6 +96,9 @@ export function GraphView({ data, focusWorktree, sessionStartBranch, selectedSha
             graphW={graphW}
             refs={refsBySha.get(row.sha) ?? []}
             worktrees={wtBySha.get(row.sha) ?? []}
+            segColors={metro.seg.get(row.sha)}
+            nodeColor={metro.node.get(row.sha)}
+            colorFor={colorFor}
             focusWorktree={focusWorktree}
             headBranch={data.headBranch}
             isHead={row.sha === data.head}
@@ -118,6 +127,9 @@ function Row(props: {
   graphW: number;
   refs: GitRef[];
   worktrees: Worktree[];
+  segColors: (string | undefined)[] | undefined;
+  nodeColor: string | undefined;
+  colorFor: (path: string) => string;
   focusWorktree: string;
   headBranch: string | null;
   isHead: boolean;
@@ -130,6 +142,8 @@ function Row(props: {
 }) {
   const { row, isHead } = props;
   const color = laneColor(row.color);
+  // 지금 보는 워크트리를 맨 앞(안쪽 고리)에
+  const stations = [...props.worktrees.filter((w) => w.path === props.focusWorktree), ...props.worktrees.filter((w) => w.path !== props.focusWorktree)];
   // 표시 폭을 넘는 레인은 그리지 않는다(마지막 레인에 겹쳐 그리면 다른 브랜치가 한 줄기처럼 보인다).
   const fits = (l: number) => l < MAX_LANES_SHOWN;
   const clip = (l: number) => l;
@@ -146,33 +160,59 @@ function Row(props: {
       title={`${row.sha.slice(0, 10)} · ${row.author}`}
     >
       <svg width={props.graphW} height={ROW_H} className="glanes" aria-hidden>
-        {row.segments.filter((s) => fits(s.fromLane) && fits(s.toLane)).map((s, i) => {
+        {row.segments.map((s, i) => {
+          if (!fits(s.fromLane) || !fits(s.toLane)) return null;
           const x1 = x(clip(s.fromLane));
           const x2 = x(clip(s.toLane));
           const y1 = Y[s.fromY];
           const y2 = Y[s.toY];
           const d = x1 === x2 ? `M${x1} ${y1}L${x2} ${y2}` : `M${x1} ${y1}C${x1} ${(y1 + y2) / 2} ${x2} ${(y1 + y2) / 2} ${x2} ${y2}`;
-          return <path key={i} d={d} stroke={laneColor(s.color)} strokeWidth={2} fill="none" />;
+          // 워크트리 노선은 굵고 선명하게, 워크트리가 없는 갈래는 가늘고 흐리게
+          const metro = props.segColors?.[i];
+          return metro ? (
+            <path key={i} d={d} stroke={metro} strokeWidth={3} fill="none" strokeLinecap="round" />
+          ) : (
+            <path key={i} d={d} stroke={laneColor(s.color)} strokeWidth={1.5} strokeOpacity={0.45} fill="none" />
+          );
         })}
         {!fits(row.lane) && (
           <text x={x(MAX_LANES_SHOWN - 1)} y={ROW_H / 2 + 4} fontSize={10} fill="var(--fg-faint)" textAnchor="middle">
             ›
           </text>
         )}
-        {fits(row.lane) && isHead && <circle cx={x(clip(row.lane))} cy={ROW_H / 2} r={7.5} fill="none" stroke="#fff" strokeWidth={1.5} />}
-        {fits(row.lane) && <circle
-          cx={x(clip(row.lane))}
-          cy={ROW_H / 2}
-          r={row.parents.length > 1 ? 3.5 : 4.5}
-          fill={row.parents.length > 1 ? "var(--bg-1)" : color}
-          stroke={color}
-          strokeWidth={2}
-        />}
+        {fits(row.lane) &&
+          (stations.length ? (
+            // 역: 워크트리가 가리키는 커밋. 여러 워크트리가 같은 커밋이면 환승역처럼 고리를 겹친다.
+            <g data-station={stations.map((w) => w.path).join("|")}>
+              {isHead && <circle cx={x(clip(row.lane))} cy={ROW_H / 2} r={6 + 3 * stations.length} fill="none" stroke="#fff" strokeWidth={1.5} />}
+              {stations
+                .slice(0, 2)
+                .reverse()
+                .map((w, k, arr) => (
+                  <circle key={w.path} cx={x(clip(row.lane))} cy={ROW_H / 2} r={5.5 + 3 * (arr.length - 1 - k)} fill="var(--bg-1)" stroke={props.colorFor(w.path)} strokeWidth={3} />
+                ))}
+            </g>
+          ) : (
+            <>
+              {isHead && <circle cx={x(clip(row.lane))} cy={ROW_H / 2} r={7.5} fill="none" stroke="#fff" strokeWidth={1.5} />}
+              <circle
+                cx={x(clip(row.lane))}
+                cy={ROW_H / 2}
+                r={row.parents.length > 1 ? 3.5 : props.nodeColor ? 4 : 3.5}
+                fill={row.parents.length > 1 ? "var(--bg-1)" : (props.nodeColor ?? color)}
+                stroke={props.nodeColor ?? color}
+                strokeOpacity={props.nodeColor ? 1 : 0.6}
+                fillOpacity={props.nodeColor ? 1 : 0.6}
+                strokeWidth={2}
+              />
+            </>
+          ))}
       </svg>
       <div className="gmsg">
         <span className="grefs">
           {badges(props).map((b) => (
-            <span key={b.key} className={b.cls} title={b.title}>
+            <span key={b.key} className={b.cls} title={b.title} style={b.color ? ({ "--wc": b.color } as React.CSSProperties) : undefined}>
+              {b.color && <i className="wt-dot" aria-hidden />}
               {b.label}
             </span>
           ))}
@@ -191,21 +231,24 @@ interface Badge {
   title: string;
   label: string;
   rank: number;
+  /** 워크트리 역 표시면 그 노선 색 */
+  color?: string;
 }
 
 const MAX_BADGES = 3;
 
 /** 보고 있는 HEAD·브랜치를 맨 앞에, 나머지는 개수가 많으면 "+N" 으로 접는다(제목이 가려지지 않게). */
-function badges(p: { refs: GitRef[]; worktrees: Worktree[]; focusWorktree: string; headBranch: string | null; sessionStartBranch: string | null }): Badge[] {
+function badges(p: { refs: GitRef[]; worktrees: Worktree[]; colorFor: (path: string) => string; focusWorktree: string; headBranch: string | null; sessionStartBranch: string | null }): Badge[] {
   const out: Badge[] = [];
   for (const w of p.worktrees) {
     const mine = w.path === p.focusWorktree;
     out.push({
       key: `wt:${w.path}`,
-      cls: `ref ref-wt${mine ? " ref-focus" : ""}`,
+      cls: `ref ref-wt${mine ? " ref-wt-focus" : ""}`,
       title: mine ? "지금 보는 워크트리가 가리키는 커밋" : `다른 워크트리 ${w.path} 가 가리키는 커밋`,
-      label: mine ? "현재" : `📁 ${baseName(w.path)}`,
+      label: mine ? "현재" : baseName(w.path),
       rank: mine ? 0 : 3,
+      color: p.colorFor(w.path),
     });
   }
   for (const r of p.refs) {

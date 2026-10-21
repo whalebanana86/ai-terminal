@@ -1,7 +1,8 @@
 import { FolderOpen, MoreHorizontal } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText, type GitRef, type GraphData, type Worktree, type WorktreeStatus } from "../api";
-import { ContextMenu, type MenuItem } from "../components/Overlays";
+import { ContextMenu, WtDot, type MenuItem } from "../components/Overlays";
+import { useWtColors, colorOf } from "../wtColors";
 import * as ga from "../gitActions";
 import { baseName, branchLabel, relativeTime } from "../logic";
 import { useStore } from "../store";
@@ -49,7 +50,12 @@ export function BranchSwitcher({ worktree, status, graph, onManage }: { worktree
                   <button className={`switcher-item${cur ? " cur" : ""}`} disabled={cur} onClick={() => pick(r)}>
                     <span className={`ref ref-${r.kind}`}>{r.short}</span>
                     {cur && <span className="muted small">현재</span>}
-                    {other && <span className="muted small">→ {baseName(other.path)} 워크트리 보기</span>}
+                    {other && (
+                      <span className="muted small wt-name">
+                        → <WtDot path={other.path} />
+                        {baseName(other.path)} 워크트리 보기
+                      </span>
+                    )}
                     {r.track && <span className="muted small">{r.track}</span>}
                   </button>
                 </li>
@@ -145,7 +151,12 @@ export function BranchesView({ worktree, repoPath, graph, status }: { worktree: 
                       title="더블클릭: 이 브랜치로 전환 · 우클릭/⋯: 메뉴"
                     >
                       <span className={`ref ref-${r.kind}${isCur ? " ref-focus" : ""}`}>{r.short}</span>
-                      {usedBy && <span className="muted small" title={usedBy.path}>📁 {baseName(usedBy.path)}</span>}
+                      {usedBy && (
+                        <span className="muted small wt-name" title={`${usedBy.path} 워크트리가 쓰는 중`}>
+                          <WtDot path={usedBy.path} />
+                          {baseName(usedBy.path)}
+                        </span>
+                      )}
                       {r.track && <span className="muted small">{r.track}</span>}
                       <span className="spacer" />
                       {t ? <span className="muted small">{relativeTime(t * 1000, now)}</span> : null}
@@ -171,6 +182,7 @@ export function BranchesView({ worktree, repoPath, graph, status }: { worktree: 
 
 export function WorktreesView({ graph, repoPath }: { graph: GraphData | null; repoPath: string }) {
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  const wtColors = useWtColors();
   const focus = useStore((s) => s.focus);
   const setFocus = useStore((s) => s.setFocusWorktree);
   const sessions = useStore((s) => s.sessions);
@@ -207,8 +219,9 @@ export function WorktreesView({ graph, repoPath }: { graph: GraphData | null; re
           const ext = liveRuns.filter((r) => !r.ownedByApp && r.cwd && (r.cwd === w.path || r.cwd.startsWith(w.path + "/"))).length;
           const latest = here[0];
           return (
-            <li key={w.path} className={w.path === focus?.worktreePath ? "on" : ""} data-wt={w.path}>
+            <li key={w.path} className={w.path === focus?.worktreePath ? "on" : ""} data-wt={w.path} style={{ "--wc": colorOf(wtColors, w.path) } as React.CSSProperties}>
               <div className="wt-line">
+                <WtDot path={w.path} />
                 <b>{baseName(w.path)}</b>
                 {w.isMain && <span className="tag">메인</span>}
                 {w.locked !== null && <span className="tag">잠김</span>}

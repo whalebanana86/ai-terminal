@@ -2,8 +2,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { Fragment, lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { api, errorText, externalRunning, type Agent, type ChatInfo, type LinkedSession, type LiveRun, type Transcript, type WorktreeStatus } from "../api";
-import { ChevronDown, FolderGit2, GitBranch, Info, Play, Plus, RefreshCw, Square, X } from "lucide-react";
-import { AgentBadge, ContextMenu, Empty } from "../components/Overlays";
+import { ChevronDown, GitBranch, Info, Play, Plus, RefreshCw, Square, X } from "lucide-react";
+import { AgentBadge, ContextMenu, Empty, WtDot } from "../components/Overlays";
 import { baseName, branchLabel, branchState, clientLabel, externalRunOf, kindLabel, kindLetter, relativeTime, relativeTo } from "../logic";
 import { useSelectedSession, useStore } from "../store";
 import { PanelHead } from "./GitPanel";
@@ -442,7 +442,7 @@ function SessionHeader({
       </div>
       <div className="sh-meta">
         <span title={s.worktreePath ?? s.cwd ?? ""}>
-          <FolderGit2 size={12} aria-hidden /> {s.worktreePath ? baseName(s.worktreePath) : s.cwd ? `${baseName(s.cwd)} (Git 아님)` : "?"}
+          <WtDot path={s.worktreePath} /> {s.worktreePath ? baseName(s.worktreePath) : s.cwd ? `${baseName(s.cwd)} (Git 아님)` : "?"}
         </span>
         {s.worktreePath && (
           <span data-testid="session-branches" title={`세션 시작: ${branchLabel(bs.start)} · 마지막 작업: ${branchLabel(bs.last)} · 지금 워크트리: ${branchText}`} className={bs.changedSinceLast ? "warn-text" : ""}>
