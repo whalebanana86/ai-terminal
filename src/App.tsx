@@ -29,9 +29,12 @@ export default function App() {
     const unsubs = [
       listen<ChangeBatch>("fs-changed", (e) => st().onFsChanged(e.payload.worktree, e.payload.paths, e.payload.files, e.payload.git)),
       listen<string[]>("sessions-changed", () => {
-        window.clearTimeout(sessionTimer);
-        // 에이전트가 일하는 동안 기록이 계속 바뀌므로 1초 단위로 묶는다.
-        sessionTimer = window.setTimeout(() => void st().refreshSessions(), 1000);
+        // 에이전트가 일하는 동안 기록이 계속 바뀌므로 1초에 한 번만 읽는다(계속 미루면 일이 끝날 때까지 새 요청이 안 보인다).
+        if (sessionTimer !== undefined) return;
+        sessionTimer = window.setTimeout(() => {
+          sessionTimer = undefined;
+          void st().refreshSessions();
+        }, 1000);
       }),
       listen<{ id: string; code: number | null }>("exec-exit", async (e) => {
         await st().refreshExecs();

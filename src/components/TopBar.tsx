@@ -3,6 +3,7 @@ import { api, errorText } from "../api";
 import { Check, ChevronDown, FolderGit2, Plus, X } from "lucide-react";
 import { baseName } from "../logic";
 import { useStore } from "../store";
+import { StickBuddy } from "./StickBuddy";
 
 export function TopBar() {
   const focus = useStore((s) => s.focus);
@@ -53,6 +54,7 @@ export function TopBar() {
         <Plus size={14} aria-hidden /> 저장소 추가
       </button>
       <div className="spacer" data-tauri-drag-region />
+      <StickBuddy />
     </header>
   );
 }
