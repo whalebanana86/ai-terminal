@@ -4,7 +4,7 @@ import type { ChangeKind, ChatInfo, ExecInfo, LinkedSession, LiveRun, StatusEntr
 /** Claude 가 detached/저장소 아님일 때 쓰는 "HEAD" 를 사람이 읽을 이름으로 */
 export function branchLabel(b: string | null | undefined): string {
   if (!b) return "—";
-  if (b === "HEAD") return "detached HEAD";
+  if (b === "HEAD") return "브랜치 없음";
   return b;
 }
 
@@ -239,8 +239,8 @@ export function kindLabel(k: ChangeKind | string | undefined): string {
 /** 위험한 Git 작업 전에 보여 줄 경고 문구. 경고가 없으면 null */
 export function checkoutWarning(dirtyCount: number, target: string, otherSessionsHere: number): string | null {
   const parts: string[] = [];
-  if (dirtyCount > 0) parts.push(`이 워크트리에 커밋하지 않은 변경 ${dirtyCount}개가 있습니다. Git 이 막지 않는 변경은 '${target}' 으로 함께 옮겨집니다.`);
-  if (otherSessionsHere > 0) parts.push(`이 워크트리에서 작업 중인 에이전트 세션이 ${otherSessionsHere}개 있습니다. 브랜치를 바꾸면 에이전트가 다른 브랜치의 파일을 보게 됩니다.`);
+  if (dirtyCount > 0) parts.push(`이 폴더에 커밋하지 않은 변경 ${dirtyCount}개가 있어요. 충돌하지 않는 변경은 '${target}' 으로 함께 옮겨집니다.`);
+  if (otherSessionsHere > 0) parts.push(`이 폴더에서 일하는 에이전트가 ${otherSessionsHere}개 있어요. 브랜치를 바꾸면 에이전트가 갑자기 다른 파일을 보게 됩니다.`);
   return parts.length ? parts.join("\n") : null;
 }
 

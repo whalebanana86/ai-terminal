@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FolderOpen } from "lucide-react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { api, errorText, type ChangeKind, type DirEntry, type FileContent, type FileDiff, type WorktreeStatus } from "../api";
 import { Empty } from "../components/Overlays";
@@ -15,13 +16,13 @@ export function FilePanel() {
     <section className="panel" data-pane="3" tabIndex={-1}>
       <PanelHead title="파일">
         {wt && (
-          <button className="btn btn-ghost btn-small" onClick={() => void api.revealInFinder(wt)} title="Finder 에서 보기">
-            Finder
+          <button className="icon-btn ghost" onClick={() => void api.revealInFinder(wt)} title="Finder 에서 보기" aria-label="Finder 에서 보기">
+            <FolderOpen size={14} aria-hidden />
           </button>
         )}
       </PanelHead>
       {!wt ? (
-        <Empty title="볼 워크트리가 없습니다" />
+        <Empty title="볼 폴더가 없습니다">위에서 폴더를 고르세요.</Empty>
       ) : (
         <Group orientation="vertical" className="file-split">
           <Panel id="tree" defaultSize={viewer ? "45" : "100"} minSize="15">
@@ -125,7 +126,7 @@ function FileTree({ worktree }: { worktree: string }) {
           <li key={e.rel} className={`tree-row dir${e.ignored ? " ignored" : ""}`} style={{ paddingLeft: 8 + depth * 14 }} onClick={() => toggle(e.rel)}>
             <span className="twisty">{open ? "▾" : "▸"}</span>
             <span className="name">{e.name}</span>
-            {n ? <span className="dir-dot" title={`변경 ${n}개`}>●</span> : null}
+            {n ? <span className="dir-count" title={`안에 바뀐 파일 ${n}개`}>{n}</span> : null}
           </li>,
         );
         if (open) rows.push(...renderDir(e.rel, depth + 1));
@@ -175,10 +176,10 @@ function FileTree({ worktree }: { worktree: string }) {
         </span>
         <span className="spacer" />
         <label className="chk">
-          <input type="checkbox" checked={onlyChanged} onChange={(e) => setOnlyChanged(e.target.checked)} /> 변경만 ({changed.length})
+          <input type="checkbox" checked={onlyChanged} onChange={(e) => setOnlyChanged(e.target.checked)} /> 바뀐 파일만 ({changed.length})
         </label>
-        <label className="chk" title=".gitignore 로 무시되는 파일">
-          <input type="checkbox" checked={showIgnored} onChange={(e) => setShowIgnored(e.target.checked)} /> 무시된 파일
+        <label className="chk" title=".gitignore 로 Git 이 무시하는 파일(빌드 결과물 등)">
+          <input type="checkbox" checked={showIgnored} onChange={(e) => setShowIgnored(e.target.checked)} /> 숨김 파일
         </label>
       </div>
       {err && <div className="banner banner-error">{err}</div>}
@@ -259,11 +260,11 @@ function FileViewer({ worktree }: { worktree: string }) {
             <button className={mode === "preview" ? "on" : ""} onClick={() => openViewer({ ...viewer, mode: "preview" })}>
               내용
             </button>
-            <button className={mode === "diff" ? "on" : ""} onClick={() => openViewer({ ...viewer, mode: "diff" })} title="HEAD 대비 전체 변경">
+            <button className={mode === "diff" ? "on" : ""} onClick={() => openViewer({ ...viewer, mode: "diff" })} title="마지막 커밋과 비교한 전체 변경">
               변경
             </button>
-            <button className={mode === "stage" ? "on" : ""} onClick={() => openViewer({ ...viewer, mode: "stage" })} title="hunk 단위 스테이지">
-              스테이징
+            <button className={mode === "stage" ? "on" : ""} onClick={() => openViewer({ ...viewer, mode: "stage" })} title="바뀐 부분(조각)만 골라 커밋에 담기">
+              일부 담기
             </button>
           </div>
         )}
@@ -332,7 +333,7 @@ function StageView({ worktree, rel }: { worktree: string; rel: string }) {
 
   const apply = async (action: "stage" | "unstage" | "discard", index: number, id: string) => {
     if (action === "discard") {
-      const ok = await ask({ title: "이 조각의 변경 버리기", body: `${rel} 의 이 변경 조각을 워크트리에서 되돌립니다. 되돌릴 수 없습니다.`, danger: true, confirmLabel: "버리기" });
+      const ok = await ask({ title: "이 부분의 변경 버리기", body: `${rel} 의 이 부분을 바뀌기 전으로 되돌립니다. 되돌릴 수 없어요.`, danger: true, confirmLabel: "버리기" });
       if (!ok) return;
     }
     setBusy(true);
@@ -351,7 +352,7 @@ function StageView({ worktree, rel }: { worktree: string; rel: string }) {
   if (!data) return <div className="loading">…</div>;
   const total = [...data[0], ...data[1]].reduce((n, f) => n + f.hunks.reduce((m, h) => m + h.lines.length, 0), 0);
   if (total > MAX_DIFF_LINES)
-    return <Empty title="변경이 너무 큽니다">{total}줄이 바뀌어 hunk 단위 보기를 생략했습니다. 왼쪽 목록의 + / − 로 파일 단위 스테이지를 쓰세요.</Empty>;
+    return <Empty title="변경이 너무 큽니다">{total}줄이 바뀌어 부분 선택을 생략했어요. 왼쪽 목록의 + / − 로 파일 전체를 담거나 빼세요.</Empty>;
   const [unstaged, staged] = data;
   const section = (title: string, files: FileDiff[], side: "unstaged" | "staged") => (
     <div className="stage-section" data-side={side}>
@@ -359,7 +360,7 @@ function StageView({ worktree, rel }: { worktree: string; rel: string }) {
         {title} <span className="count">{files.reduce((n, f) => n + f.hunks.length, 0)}</span>
       </div>
       {!files.length || !files.some((f) => f.hunks.length) ? (
-        <div className="muted pad small">{side === "unstaged" ? "스테이지할 변경이 없습니다" : "스테이지된 변경이 없습니다"}</div>
+        <div className="muted pad small">{side === "unstaged" ? "담을 변경이 없어요" : "아직 담은 부분이 없어요"}</div>
       ) : (
         files.map((f, fi) =>
           f.hunks.map((h, hi) => (
@@ -369,16 +370,16 @@ function StageView({ worktree, rel }: { worktree: string; rel: string }) {
                 <span className="spacer" />
                 {side === "unstaged" ? (
                   <>
-                    <button className="btn btn-small btn-ghost" disabled={busy} onClick={() => apply("discard", hi, h.id)}>
+                    <button className="btn btn-small btn-ghost danger-text" disabled={busy} onClick={() => apply("discard", hi, h.id)} title="이 부분 변경 버리기 (되돌릴 수 없음)">
                       버리기
                     </button>
-                    <button className="btn btn-small" disabled={busy} onClick={() => apply("stage", hi, h.id)} data-action="stage-hunk">
-                      스테이지
+                    <button className="btn btn-small" disabled={busy} onClick={() => apply("stage", hi, h.id)} data-action="stage-hunk" title="이 부분만 커밋에 담기 (git add -p)">
+                      담기
                     </button>
                   </>
                 ) : (
-                  <button className="btn btn-small" disabled={busy} onClick={() => apply("unstage", hi, h.id)} data-action="unstage-hunk">
-                    스테이지 취소
+                  <button className="btn btn-small" disabled={busy} onClick={() => apply("unstage", hi, h.id)} data-action="unstage-hunk" title="이 부분을 커밋에서 빼기">
+                    빼기
                   </button>
                 )}
               </div>
@@ -398,8 +399,8 @@ function StageView({ worktree, rel }: { worktree: string; rel: string }) {
   );
   return (
     <div className="diff stage-view" data-testid="stage-view">
-      {section("스테이지 안 됨", unstaged, "unstaged")}
-      {section("스테이지됨", staged, "staged")}
+      {section("아직 안 담은 부분", unstaged, "unstaged")}
+      {section("커밋에 담은 부분", staged, "staged")}
     </div>
   );
 }
@@ -425,7 +426,7 @@ function capDiff(diff: FileDiff[]): { files: FileDiff[]; hidden: number } {
 }
 
 export function DiffView({ diff: full }: { diff: FileDiff[] }) {
-  if (!full.length) return <Empty title="변경 없음">HEAD 와 같습니다.</Empty>;
+  if (!full.length) return <Empty title="변경 없음">마지막 커밋과 같아요.</Empty>;
   const { files: diff, hidden } = capDiff(full);
   return (
     <div className="diff" data-testid="diff-view">

@@ -1,18 +1,15 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { api, errorText } from "../api";
-import { branchLabel, baseName } from "../logic";
-import { useFocusRepo, useSelectedSession, useStore } from "../store";
+import { Check, ChevronDown, FolderGit2, Plus, X } from "lucide-react";
+import { baseName } from "../logic";
+import { useStore } from "../store";
 
 export function TopBar() {
-  const info = useStore((s) => s.info);
   const focus = useStore((s) => s.focus);
   const repos = useStore((s) => s.repos);
   const refreshRepos = useStore((s) => s.refreshRepos);
   const setFocus = useStore((s) => s.setFocusWorktree);
   const toast = useStore((s) => s.toast);
-  const repo = useFocusRepo();
-  const session = useSelectedSession();
-  const wt = repo?.worktrees.find((w) => w.path === focus?.worktreePath);
 
   const addRepo = async () => {
     const dir = await open({ directory: true, multiple: false, title: "Git 저장소 폴더 선택" });
@@ -34,53 +31,48 @@ export function TopBar() {
       <div className="brand" data-tauri-drag-region>
         AI Terminal
       </div>
-      <select
-        className="repo-select"
-        aria-label="저장소와 워크트리 선택"
-        value={focus?.worktreePath ?? ""}
-        onChange={(e) => e.target.value && setFocus(e.target.value)}
-      >
-        <option value="">저장소 / 워크트리 선택…</option>
-        {repos.map((r) => (
-          <optgroup key={r.id} label={`${r.name}${r.pinned ? "" : " (세션에서 발견)"}`}>
-            {r.worktrees
-              .filter((w) => w.exists && !w.bare)
-              .map((w) => (
-                <option key={w.path} value={w.path}>
-                  {baseName(w.path)} — {w.detached ? `detached ${w.head?.slice(0, 7) ?? ""}` : w.branch ?? "?"}
-                </option>
-              ))}
-          </optgroup>
-        ))}
-      </select>
-      <button className="btn btn-small" onClick={addRepo} title="로컬 Git 저장소 추가">
-        + 저장소
+      <label className="folder-select" title="볼 폴더(저장소·워크트리)를 고릅니다. 체크아웃은 하지 않아요.">
+        <FolderGit2 size={14} aria-hidden />
+        <select aria-label="볼 폴더 고르기" value={focus?.worktreePath ?? ""} onChange={(e) => e.target.value && setFocus(e.target.value)}>
+          <option value="">폴더를 고르세요…</option>
+          {repos.map((r) => (
+            <optgroup key={r.id} label={r.name}>
+              {r.worktrees
+                .filter((w) => w.exists && !w.bare)
+                .map((w) => (
+                  <option key={w.path} value={w.path}>
+                    {baseName(w.path) === r.name ? r.name : `${r.name} / ${baseName(w.path)}`}
+                  </option>
+                ))}
+            </optgroup>
+          ))}
+        </select>
+        <ChevronDown size={14} aria-hidden className="select-caret" />
+      </label>
+      <button className="btn btn-small btn-ghost" onClick={addRepo} title="로컬 Git 저장소를 목록에 추가">
+        <Plus size={14} aria-hidden /> 저장소 추가
       </button>
-      <div className="focus-path" data-tauri-drag-region title={focus?.worktreePath}>
-        {focus ? (
-          <>
-            <span className="muted">보는 중</span> <b>{repo?.name ?? baseName(focus.worktreePath)}</b>
-            <span className="muted"> › </span>
-            {baseName(focus.worktreePath)}
-            <span className="muted"> › </span>
-            <span className="branch-chip">{wt ? (wt.detached ? `detached ${wt.head?.slice(0, 7)}` : branchLabel(wt.branch)) : "…"}</span>
-            {focus.source === "session" && session && <span className="muted"> · 세션 기준</span>}
-          </>
-        ) : (
-          <span className="muted">세션이나 저장소를 고르세요</span>
-        )}
-      </div>
-      <div className="cli-status">
-        <span className={info?.claude ? "ok" : "missing"} title={info?.claude ?? "claude 를 PATH 에서 찾지 못함"}>
-          claude
-        </span>
-        <span className={info?.codex ? "ok" : "missing"} title={info?.codex ?? "codex 를 PATH 에서 찾지 못함"}>
-          codex
-        </span>
-        <span className={info?.git ? "ok" : "missing"} title={info?.gitVersion ?? "git 없음"}>
-          git
-        </span>
-      </div>
+      <div className="spacer" data-tauri-drag-region />
     </header>
+  );
+}
+
+/** 화면 맨 아래 상태줄: CLI 설치 상태 등 참고 정보 */
+export function StatusBar() {
+  const info = useStore((s) => s.info);
+  const item = (name: string, path: string | null | undefined, extra?: string | null) => (
+    <span className={path ? "ok" : "missing"} title={path ? `${path}${extra ? ` (${extra})` : ""}` : `${name} 을(를) 찾지 못했습니다. 설치되어 있고 로그인 셸 PATH 에 있는지 확인하세요.`}>
+      {path ? <Check size={11} aria-hidden /> : <X size={11} aria-hidden />} {name}
+    </span>
+  );
+  return (
+    <footer className="statusbar" aria-label="상태">
+      <span className="muted">CLI</span>
+      {item("Claude Code", info?.claude)}
+      {item("Codex", info?.codex)}
+      {item("git", info?.git, info?.gitVersion)}
+      <span className="spacer" />
+      <span className="muted" title="이 앱은 대화·코드를 외부로 보내지 않습니다">로컬 전용</span>
+    </footer>
   );
 }

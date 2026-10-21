@@ -296,7 +296,7 @@ export const api = {
   fsRead: (worktree: string, rel: string) => invoke<FileContent>("fs_read", { worktree, rel }),
   sessions: () => invoke<LinkedSession[]>("sessions_list"),
   transcript: (id: string) => invoke<Transcript>("session_transcript", { id }),
-  execStart: (args: { agent: Agent; mode: "new" | "resume"; sessionId?: string; cwd?: string; cols: number; rows: number; force?: boolean }) =>
+  execStart: (args: { agent: Agent; mode: "new" | "resume"; sessionId?: string; cwd?: string; cols: number; rows: number; force?: boolean; prompt?: string }) =>
     invoke<ExecInfo>("exec_start", { args }),
   execAttach: (id: string, onData: Channel<ArrayBuffer | number[] | string>) => invoke<number>("exec_attach", { id, onData }),
   execDetach: (id: string, sinkId: number) => invoke<void>("exec_detach", { id, sinkId }),

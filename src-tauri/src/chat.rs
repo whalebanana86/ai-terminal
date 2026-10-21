@@ -99,6 +99,8 @@ pub struct StartChat {
 pub struct ChatManager {
     chats: Mutex<HashMap<String, Arc<Chat>>>,
     next_sink: std::sync::atomic::AtomicU64,
+    /// 닫는 중인 채팅 프로세스. 완전히 끝날 때까지 "앱이 띄운 것"으로 본다(외부 실행으로 오인 방지).
+    closing: Arc<Mutex<HashMap<u32, std::time::Instant>>>,
 }
 
 fn clip(s: &str) -> String {
@@ -416,6 +418,14 @@ impl ChatManager {
         self.chats.lock().values().map(|c| c.info()).collect()
     }
 
+    /// 닫는 중이라 아직 살아 있는 채팅 프로세스 pid
+    pub fn closing_pids(&self) -> Vec<u32> {
+        let mut m = self.closing.lock();
+        // 끝났거나(신호 0 실패) 오래된 항목은 지운다.
+        m.retain(|pid, at| at.elapsed() < std::time::Duration::from_secs(30) && unsafe { libc::kill(*pid as libc::pid_t, 0) } == 0);
+        m.keys().copied().collect()
+    }
+
     /// 이 세션을 살아 있는 채팅으로 열어 둔 것이 있으면 그 채팅
     pub fn find_by_session(&self, session_id: &str) -> Option<Arc<Chat>> {
         self.chats.lock().values().find(|c| c.alive() && c.state.lock().session_id.as_deref() == Some(session_id)).cloned()
@@ -611,6 +621,9 @@ impl ChatManager {
         let Some(chat) = self.chats.lock().remove(id) else { return };
         chat.stdin.lock().take(); // EOF → Claude 가 스스로 끝난다
         let pid = chat.state.lock().pid;
+        if let Some(p) = pid {
+            self.closing.lock().insert(p, std::time::Instant::now());
+        }
         if pid.is_some() {
             kill_group(pid, libc::SIGTERM);
             let c = chat.clone();

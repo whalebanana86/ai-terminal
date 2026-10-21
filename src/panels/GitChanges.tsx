@@ -1,3 +1,4 @@
+import { Minus, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api, errorText, type StatusEntry, type WorktreeStatus } from "../api";
 import { Empty } from "../components/Overlays";
@@ -53,10 +54,7 @@ export function ChangesView({ worktree, status, onChanged }: { worktree: string;
   const commit = async () => {
     setBusy(true);
     try {
-      if (!staged.length && !amend) {
-        // 스테이지된 게 없으면 모두 스테이지하고 커밋(중첩 저장소 제외)
-        await api.stage(worktree, pathsOf(unstaged));
-      }
+      // 스테이지된 것만 커밋한다(에이전트가 남긴 임시 파일이 몰래 담기지 않게).
       await api.commitStaged(worktree, msg, amend);
       toast("success", amend ? "마지막 커밋을 고쳤습니다" : "커밋했습니다");
       setMsg("");
@@ -88,24 +86,24 @@ export function ChangesView({ worktree, status, onChanged }: { worktree: string;
         </span>
         {nested && <span className="tag tag-warn" title="안쪽에 다른 Git 저장소나 워크트리가 있어 커밋하지 않습니다">중첩 저장소</span>}
         {side === "unstaged" && !nested && e.kind !== "untracked" && e.kind !== "conflicted" && (
-          <button className="icon-btn" disabled={busy} title="변경 버리기" aria-label={`${e.path} 변경 버리기`} onClick={() => discard(e)}>
-            ↺
+          <button className="icon-btn danger hover-only" disabled={busy} title="변경 버리기 (되돌릴 수 없음)" aria-label={`${e.path} 변경 버리기`} onClick={() => discard(e)}>
+            <Trash2 size={13} aria-hidden />
           </button>
         )}
         {side === "unstaged" && !nested && (
           <button
             className="icon-btn"
             disabled={busy}
-            title={e.kind === "conflicted" ? "충돌 표시가 없으면 해결됨으로 표시" : "스테이지"}
+            title={e.kind === "conflicted" ? "충돌을 고쳤으면 해결됨으로 표시" : "커밋에 담기"}
             aria-label={`${e.path} 스테이지`}
             onClick={() => (e.kind === "conflicted" ? act("해결됨 표시", () => api.resolve(worktree, e.path, "mark"), false) : act("스테이지", () => api.stage(worktree, [e.path])))}
           >
-            +
+            <Plus size={14} aria-hidden />
           </button>
         )}
         {side === "staged" && (
-          <button className="icon-btn" disabled={busy} title="스테이지 취소" aria-label={`${e.path} 스테이지 취소`} onClick={() => act("스테이지 취소", () => api.unstage(worktree, e.origPath ? [e.path, e.origPath] : [e.path]))}>
-            −
+          <button className="icon-btn" disabled={busy} title="스테이지 해제" aria-label={`${e.path} 스테이지 해제`} onClick={() => act("스테이지 해제", () => api.unstage(worktree, e.origPath ? [e.path, e.origPath] : [e.path]))}>
+            <Minus size={14} aria-hidden />
           </button>
         )}
       </li>
@@ -116,35 +114,40 @@ export function ChangesView({ worktree, status, onChanged }: { worktree: string;
     <div className="changes">
       <div className="changes-scroll">
         <div className="changes-head">
-          <b>스테이지 안 됨</b> <span className="count">{unstaged.length}</span>
+          <b>바뀐 파일</b> <span className="count">{unstaged.length}</span>
           <span className="spacer" />
-          <button className="btn btn-small" disabled={busy || !unstaged.length} onClick={() => act("모두 스테이지", () => api.stage(worktree, pathsOf(unstaged)))}>
-            모두 스테이지
+          <button className="btn btn-small" disabled={busy || !pathsOf(unstaged).length} onClick={() => act("모두 스테이지", () => api.stage(worktree, pathsOf(unstaged)))}>
+            모두 담기
           </button>
         </div>
         <ul className="file-list" data-testid="unstaged-list">
           {unstaged.map((e) => row(e, "unstaged"))}
         </ul>
         <div className="changes-head">
-          <b>스테이지됨</b> <span className="count">{staged.length}</span>
+          <b>커밋에 담음</b> <span className="count">{staged.length}</span>
           <span className="spacer" />
-          <button className="btn btn-small" disabled={busy || !staged.length} onClick={() => act("모두 스테이지 취소", () => api.unstage(worktree, pathsOf(staged)))}>
-            모두 취소
+          <button className="btn btn-small" disabled={busy || !staged.length} onClick={() => act("모두 스테이지 해제", () => api.unstage(worktree, pathsOf(staged)))}>
+            모두 해제
           </button>
         </div>
         <ul className="file-list" data-testid="staged-list">
           {staged.map((e) => row(e, "staged"))}
-          {!staged.length && <li className="muted small">파일 줄의 + 또는 오른쪽 '스테이징' 보기의 hunk 단위로 스테이지하세요.</li>}
+          {!staged.length && <li className="muted small pad-s">커밋할 파일을 + 로 담으세요. 파일을 누르면 오른쪽에서 일부 줄만 담을 수도 있어요.</li>}
         </ul>
       </div>
       <div className="commit-box">
+        {(staged.length > 0 || amend) && (
+          <div className="commit-preview muted small" data-testid="commit-preview">
+            {amend && !staged.length ? "마지막 커밋의 메시지만 바꿉니다" : `커밋될 파일: ${staged.slice(0, 3).map((e) => e.path).join(", ")}${staged.length > 3 ? ` 외 ${staged.length - 3}개` : ""}`}
+          </div>
+        )}
         <textarea
           placeholder={amend ? "고칠 커밋 메시지" : "커밋 메시지"}
           value={msg}
           onChange={(e) => setMsg(e.target.value)}
           rows={3}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && e.metaKey && msg.trim()) void commit();
+            if (e.key === "Enter" && e.metaKey && msg.trim() && (staged.length || amend)) void commit();
           }}
         />
         <div className="commit-row">
@@ -152,10 +155,21 @@ export function ChangesView({ worktree, status, onChanged }: { worktree: string;
             <input type="checkbox" checked={amend} onChange={(e) => setAmend(e.target.checked)} /> 마지막 커밋 고치기
           </label>
           <span className="spacer" />
-          <button className="btn btn-primary" disabled={busy || !msg.trim() || (!staged.length && !unstaged.length && !amend)} onClick={commit} data-testid="commit-btn">
-            {busy ? "커밋 중…" : amend ? "커밋 고치기" : staged.length ? `스테이지된 ${staged.length}개 커밋` : `모두 스테이지하고 커밋 (${pathsOf(unstaged).length})`}
+          <button
+            className="btn btn-primary"
+            disabled={busy || !msg.trim() || (!staged.length && !amend)}
+            onClick={commit}
+            data-testid="commit-btn"
+            title={!staged.length && !amend ? "먼저 커밋할 파일을 + 로 담으세요" : !msg.trim() ? "커밋 메시지를 입력하세요" : "⌘⏎"}
+          >
+            {busy ? "커밋 중…" : amend ? "커밋 고치기" : staged.length ? `커밋 (${staged.length}개 파일)` : "담은 파일 없음"}
           </button>
         </div>
+        {!staged.length && !amend && pathsOf(unstaged).length > 0 && (
+          <button className="link-btn" disabled={busy} onClick={() => act("모두 담기", () => api.stage(worktree, pathsOf(unstaged)))} data-testid="stage-all-link">
+            변경 {pathsOf(unstaged).length}개 모두 담기
+          </button>
+        )}
       </div>
     </div>
   );

@@ -48,17 +48,17 @@ js "await window.__TAURI_INTERNALS__.invoke('repo_add', {path: '$R/demo'}); awai
 echo "── 1. 브랜치 전환 메뉴로 체크아웃"
 js "document.querySelector('[data-testid=git-current-branch]').click(); await wait(300);
     [...document.querySelectorAll('.switcher-item')].find(b => b.innerText.includes('side')).click();
-    await confirmDialog('체크아웃'); await wait(1200); return 1" >/dev/null
+    await confirmDialog('전환'); await wait(1200); return 1" >/dev/null
 check "demo-two 가 side 로 체크아웃됨" "$(G "$R/demo-two" rev-parse --abbrev-ref HEAD)" "side"
 check "Git 패널도 side" "$(js "return document.querySelector('[data-testid=git-current-branch]').innerText")" "side"
 js "document.querySelector('[data-testid=git-current-branch]').click(); await wait(300);
     [...document.querySelectorAll('.switcher-item')].find(b => b.innerText.startsWith('main')).click();
-    await confirmDialog('그 워크트리 보기'); await wait(1200); return 1" >/dev/null
+    await confirmDialog('그 폴더 열기'); await wait(1200); return 1" >/dev/null
 check "main 은 다른 워크트리 사용 중 → 그 워크트리로 화면 이동" "$(js "return st().focus.worktreePath")" "$R/demo"
 check "그동안 demo-two HEAD 는 그대로" "$(G "$R/demo-two" rev-parse --abbrev-ref HEAD)" "side"
 
 echo "── 2. 브랜치 탭에서 새 브랜치"
-js "await tab('branches'); btn('+ 브랜치').click(); await fillPrompt({0: 'feat/new'}, '만들기'); await wait(1000); return 1" >/dev/null
+js "await tab('branches'); btn('새 브랜치', document.querySelector('.branches')).click(); await fillPrompt({0: 'feat/new'}, '만들기'); await wait(1000); return 1" >/dev/null
 check "feat/new 생성(체크아웃 안 함)" "$(G "$R/demo" branch --list feat/new | tr -d ' *')" "feat/new"
 check "현재 브랜치는 그대로 main" "$(G "$R/demo" rev-parse --abbrev-ref HEAD)" "main"
 
@@ -71,7 +71,7 @@ check "새 워크트리가 git 에 등록됨" "$(G "$R/demo" worktree list | gre
 check "새 워크트리 브랜치" "$(G "$R/demo-task1" rev-parse --abbrev-ref HEAD)" "agent/task-1"
 check "만든 워크트리로 화면 이동" "$(js "return st().focus.worktreePath")" "$R/demo-task1"
 echo dirty > "$R/demo-task1/dirty.txt"
-js "await tab('worktrees'); const li = document.querySelector('.wt-list li[data-wt=\"$R/demo-task1\"]'); btn('삭제', li).click(); await wait(400);
+js "await tab('worktrees'); const li = document.querySelector('.wt-list li[data-wt=\"$R/demo-task1\"]'); li.querySelector('[data-action=wt-menu]').click(); await wait(300); document.querySelector('.menu [data-action=wt-delete]').click(); await wait(400);
     const m = document.querySelector('form.modal'); const boxes = m.querySelectorAll('input[type=checkbox]');
     btn('삭제', m).click(); await wait(300);
     const blocked = !!document.querySelector('form.modal .banner-error');
@@ -118,8 +118,8 @@ G "$R/demo" switch -q -c topic HEAD~1 2>/dev/null || G "$R/demo" switch -q -c to
 echo t > "$R/demo/t.txt"; G "$R/demo" add t.txt; G "$R/demo" commit -qm topic-commit
 js "await focus('$R/demo'); await tab('graph'); const row = [...document.querySelectorAll('.grow')].find(r => r.innerText.includes('main') && r.querySelector('.ref-branch'));
     row.dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, clientX: 200, clientY: 200})); await wait(300);
-    [...document.querySelectorAll('.menu-item')].find(b => b.innerText.includes(\"위로 rebase\") && b.innerText.includes(\"'main'\")).click();
-    await confirmDialog('rebase'); await wait(2500); return 1" >/dev/null
+    [...document.querySelectorAll('.menu-item')].find(b => b.innerText.includes(\"이 위로 리베이스\")).click();
+    await confirmDialog('리베이스'); await wait(2500); return 1" >/dev/null
 check "topic 이 main 위로 올라감 (main 이 조상)" "$(G "$R/demo" merge-base --is-ancestor main topic && echo yes)" "yes"
 check "topic 커밋 1개 유지" "$(G "$R/demo" rev-list --count main..topic)" "1"
 

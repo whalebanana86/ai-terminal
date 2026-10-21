@@ -1,3 +1,4 @@
+import { FolderOpen, MoreHorizontal } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText, type GitRef, type GraphData, type Worktree, type WorktreeStatus } from "../api";
 import { ContextMenu, type MenuItem } from "../components/Overlays";
@@ -23,7 +24,7 @@ export function BranchSwitcher({ worktree, status, graph, repoPath }: { worktree
       window.removeEventListener("keydown", esc, true);
     };
   }, [open]);
-  const label = status.detached ? `detached ${status.head?.slice(0, 7) ?? ""}` : branchLabel(status.branch);
+  const label = status.detached ? `브랜치 없음 (${status.head?.slice(0, 7) ?? ""})` : branchLabel(status.branch);
   const needle = q.trim().toLowerCase();
   const refs = graph.refs.filter((r) => r.kind !== "tag" && (!needle || r.short.toLowerCase().includes(needle)));
   const pick = (r: GitRef) => {
@@ -32,7 +33,7 @@ export function BranchSwitcher({ worktree, status, graph, repoPath }: { worktree
   };
   return (
     <div className="switcher" ref={box}>
-      <button className="branch-chip strong as-button" data-testid="git-current-branch" onClick={() => setOpen(!open)} title="브랜치 바꾸기 (체크아웃)">
+      <button className="branch-chip strong as-button" data-testid="git-current-branch" onClick={() => setOpen(!open)} title="눌러서 브랜치 전환 (체크아웃)">
         {label}
       </button>
       {open && (
@@ -46,7 +47,7 @@ export function BranchSwitcher({ worktree, status, graph, repoPath }: { worktree
                 void ga.createBranch(worktree, "HEAD", `현재 HEAD (${label})`);
               }}
             >
-              + 새 브랜치…
+              새 브랜치…
             </button>
             <button
               className="btn btn-small"
@@ -56,7 +57,7 @@ export function BranchSwitcher({ worktree, status, graph, repoPath }: { worktree
                 void ga.newWorktree(repoPath, { base: status.branch ?? "HEAD" });
               }}
             >
-              + 새 워크트리…
+              새 워크트리…
             </button>
           </div>
           <ul className="switcher-list">
@@ -68,7 +69,7 @@ export function BranchSwitcher({ worktree, status, graph, repoPath }: { worktree
                   <button className={`switcher-item${cur ? " cur" : ""}`} disabled={cur} onClick={() => pick(r)}>
                     <span className={`ref ref-${r.kind}`}>{r.short}</span>
                     {cur && <span className="muted small">현재</span>}
-                    {other && <span className="muted small">⌂ {baseName(other.path)}</span>}
+                    {other && <span className="muted small">📁 {baseName(other.path)}에서 사용 중</span>}
                     {r.track && <span className="muted small">{r.track}</span>}
                   </button>
                 </li>
@@ -101,16 +102,16 @@ export function BranchesView({ worktree, repoPath, graph, status }: { worktree: 
     const usedBy = r.kind === "branch" ? graph.worktrees.find((w) => w.branch === r.short) : undefined;
     const list: MenuItem[] = [];
     if (r.kind !== "tag") {
-      list.push({ label: "체크아웃…", disabled: isCur, onClick: () => ga.checkout(worktree, r.short, r.kind === "remote" ? "remote" : "branch", graph.worktrees) });
+      list.push({ label: "이 브랜치로 전환…", hint: "지금 폴더를 체크아웃합니다", disabled: isCur, onClick: () => ga.checkout(worktree, r.short, r.kind === "remote" ? "remote" : "branch", graph.worktrees) });
     }
     if (r.kind === "branch") {
       list.push({ label: "새 워크트리에서 열기…", disabled: !!usedBy, hint: usedBy ? `이미 ${usedBy.path} 에서 사용 중` : "지금 워크트리를 건드리지 않습니다", onClick: () => ga.newWorktree(repoPath, { existingBranch: r.short }) });
     }
-    if (usedBy && usedBy.path !== worktree) list.push({ label: `그 워크트리 보기 (${baseName(usedBy.path)})`, onClick: () => useStore.getState().setFocusWorktree(usedBy.path) });
+    if (usedBy && usedBy.path !== worktree) list.push({ label: `그 브랜치를 쓰는 폴더 열기 (${baseName(usedBy.path)})`, onClick: () => useStore.getState().setFocusWorktree(usedBy.path) });
     list.push(
       { separator: true, label: "" },
-      { label: `'${cur ?? "?"}' 에 병합…`, disabled: isCur || !cur, onClick: () => ga.merge(worktree, cur, r.short) },
-      { label: `'${cur ?? "?"}' 을(를) 이 위로 rebase…`, disabled: isCur || !cur, onClick: () => ga.rebase(worktree, cur, r.short, status.upstream) },
+      { label: `${cur ?? "?"} 에 병합…`, disabled: isCur || !cur, onClick: () => ga.merge(worktree, cur, r.short) },
+      { label: `${cur ?? "?"} 를 이 위로 리베이스…`, hint: "⚠ 커밋 해시가 바뀝니다", disabled: isCur || !cur, onClick: () => ga.rebase(worktree, cur, r.short, status.upstream) },
       { separator: true, label: "" },
       { label: "여기서 새 브랜치…", onClick: () => ga.createBranch(worktree, r.short, r.short) },
     );
@@ -125,7 +126,7 @@ export function BranchesView({ worktree, repoPath, graph, status }: { worktree: 
       <div className="filters">
         <input className="search" placeholder="브랜치 찾기" value={q} onChange={(e) => setQ(e.target.value)} aria-label="브랜치 찾기" />
         <button className="btn btn-small" onClick={() => ga.createBranch(worktree, "HEAD", "현재 HEAD")}>
-          + 브랜치
+          새 브랜치
         </button>
       </div>
       <div className="branch-groups">
@@ -152,10 +153,10 @@ export function BranchesView({ worktree, repoPath, graph, status }: { worktree: 
                         setMenu({ x: e.clientX, y: e.clientY, items: itemsFor(r) });
                       }}
                       onDoubleClick={() => r.kind !== "tag" && !isCur && ga.checkout(worktree, r.short, r.kind === "remote" ? "remote" : "branch", graph.worktrees)}
-                      title="더블클릭: 체크아웃(확인창) · 우클릭: 메뉴"
+                      title="더블클릭: 이 브랜치로 전환 · 우클릭/⋯: 메뉴"
                     >
                       <span className={`ref ref-${r.kind}${isCur ? " ref-focus" : ""}`}>{r.short}</span>
-                      {usedBy && <span className="muted small">⌂ {baseName(usedBy.path)}</span>}
+                      {usedBy && <span className="muted small" title={usedBy.path}>📁 {baseName(usedBy.path)}</span>}
                       {r.track && <span className="muted small">{r.track}</span>}
                       <span className="spacer" />
                       {t ? <span className="muted small">{relativeTime(t * 1000, now)}</span> : null}
@@ -164,7 +165,7 @@ export function BranchesView({ worktree, repoPath, graph, status }: { worktree: 
                         aria-label={`${r.short} 메뉴`}
                         onClick={(e) => setMenu({ x: e.clientX, y: e.clientY, items: itemsFor(r) })}
                       >
-                        ⋯
+                        <MoreHorizontal size={15} aria-hidden />
                       </button>
                     </li>
                   );
@@ -180,6 +181,7 @@ export function BranchesView({ worktree, repoPath, graph, status }: { worktree: 
 }
 
 export function WorktreesView({ graph, repoPath }: { graph: GraphData | null; repoPath: string }) {
+  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const focus = useStore((s) => s.focus);
   const setFocus = useStore((s) => s.setFocusWorktree);
   const sessions = useStore((s) => s.sessions);
@@ -190,10 +192,10 @@ export function WorktreesView({ graph, repoPath }: { graph: GraphData | null; re
   return (
     <div className="worktrees">
       <div className="filters">
-        <span className="muted">워크트리마다 다른 브랜치를 동시에 열 수 있습니다. 에이전트를 병렬로 돌릴 때 쓰세요.</span>
+        <span className="muted">같은 저장소를 여러 폴더로 열어, 폴더마다 다른 브랜치에서 에이전트를 동시에 돌릴 수 있어요.</span>
         <span className="spacer" />
         <button className="btn btn-small btn-primary" onClick={() => ga.newWorktree(repoPath, { base: "HEAD" })}>
-          + 워크트리
+          <FolderOpen size={13} aria-hidden /> 새 워크트리
         </button>
         {prunable && (
           <button
@@ -223,16 +225,40 @@ export function WorktreesView({ graph, repoPath }: { graph: GraphData | null; re
                 {w.locked !== null && <span className="tag">잠김</span>}
                 {!w.exists && <span className="tag tag-warn">폴더 없음</span>}
                 <span className="spacer" />
-                {w.exists && w.path !== focus?.worktreePath && (
-                  <button className="btn btn-small" onClick={() => setFocus(w.path)} title="체크아웃 없이 이 워크트리를 봅니다">
-                    보기
-                  </button>
+                {w.path === focus?.worktreePath ? (
+                  <span className="tag tag-on">보는 중</span>
+                ) : (
+                  w.exists && (
+                    <button className="btn btn-small" onClick={() => setFocus(w.path)} title="이 폴더로 화면을 옮깁니다 (체크아웃하지 않음)">
+                      열기
+                    </button>
+                  )
                 )}
-                {!w.isMain && (
-                  <button className="btn btn-small btn-ghost danger-text" onClick={() => ga.removeWorktree(repoPath, w)} title="워크트리 삭제">
-                    삭제
-                  </button>
-                )}
+                <button
+                  className="icon-btn ghost"
+                  aria-label={`${baseName(w.path)} 메뉴`}
+                  data-action="wt-menu"
+                  onClick={(e) =>
+                    setMenu({
+                      x: e.clientX,
+                      y: e.clientY,
+                      items: [
+                        { label: "Finder 에서 보기", disabled: !w.exists, onClick: () => void api.revealInFinder(w.path) },
+                        { separator: true, label: "" },
+                        {
+                          label: w.exists ? "워크트리 삭제…" : "사라진 워크트리 정리…",
+                          danger: true,
+                          disabled: w.isMain,
+                          hint: w.isMain ? "메인 워크트리는 지울 수 없어요" : "폴더를 지웁니다. 커밋은 남아요",
+                          testId: "wt-delete",
+                          onClick: () => ga.removeWorktree(repoPath, w),
+                        },
+                      ],
+                    })
+                  }
+                >
+                  <MoreHorizontal size={15} aria-hidden />
+                </button>
               </div>
               <div className="wt-line">
                 <span className="branch-chip">{w.detached ? `detached ${w.head?.slice(0, 7)}` : w.branch ?? "(bare)"}</span>
@@ -251,6 +277,7 @@ export function WorktreesView({ graph, repoPath }: { graph: GraphData | null; re
           );
         })}
       </ul>
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
     </div>
   );
 }

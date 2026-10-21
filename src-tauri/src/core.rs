@@ -92,6 +92,8 @@ pub struct StartRequest {
     pub rows: u16,
     /// 외부에서 실행 중인 세션이라도 열기(사용자가 확인함)
     pub force: bool,
+    /// 새 세션의 첫 지시(있으면 CLI 인자로 넘긴다)
+    pub prompt: Option<String>,
 }
 
 pub struct AppCore {
@@ -436,7 +438,7 @@ impl AppCore {
 
     pub fn start(self: &Arc<Self>, req: StartRequest) -> Result<ExecInfo> {
         let _open = self.open_lock.lock();
-        let (program, mut args, cwd, session_id) = match (req.agent.as_str(), req.mode.as_str()) {
+        let (program, mut args, cwd, session_id): (String, Vec<String>, String, Option<String>) = match (req.agent.as_str(), req.mode.as_str()) {
             (agent @ ("claude" | "codex"), "resume") => {
                 let sid = req.session_id.clone().ok_or_else(|| anyhow!("재개할 세션을 고르세요"))?;
                 let meta = self.find_session(&sid).ok_or_else(|| anyhow!("세션을 찾을 수 없습니다: {sid}"))?;
@@ -477,6 +479,13 @@ impl AppCore {
             }
             _ => bail!("지원하지 않는 실행 요청입니다"),
         };
+        // 첫 지시: `--` 뒤에 두어 '-' 로 시작해도 옵션으로 해석되지 않게 한다(셸을 거치지 않으므로 따옴표 문제 없음).
+        if req.mode == "new" {
+            if let Some(p) = req.prompt.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
+                args.push("--".into());
+                args.push(p.to_string());
+            }
+        }
         // 테스트에서 실제 CLI 대신 가짜 프로그램을 쓸 수 있게 한다.
         #[cfg(debug_assertions)]
         let program = std::env::var(format!("AITERM_{}_BIN", program.to_uppercase())).unwrap_or(program);
@@ -565,6 +574,7 @@ impl AppCore {
     pub fn app_pids(&self) -> std::collections::HashSet<u32> {
         let mut set: std::collections::HashSet<u32> = self.exec_list().into_iter().filter(|e| !e.exited).filter_map(|e| e.pid).collect();
         set.extend(self.chats.list().into_iter().filter_map(|c| c.pid));
+        set.extend(self.chats.closing_pids());
         set
     }
 
@@ -840,7 +850,7 @@ mod tests {
         let core = AppCore::new(Db::open_in_memory().unwrap(), Arc::new(|_, _| {}));
         core.list_sessions().unwrap();
         let info = core
-            .start(StartRequest { agent: "claude".into(), mode: "resume".into(), session_id: Some("claude:c9".into()), cwd: None, cols: 80, rows: 24, force: false })
+            .start(StartRequest { agent: "claude".into(), mode: "resume".into(), session_id: Some("claude:c9".into()), cwd: None, cols: 80, rows: 24, force: false, prompt: None })
             .unwrap();
         assert_eq!(info.branch_at_start.as_deref(), Some("feature"));
         assert_eq!(info.worktree_path.as_deref(), Some(wt.to_str().unwrap()));
@@ -856,9 +866,23 @@ mod tests {
         assert!(out.contains("ARGS:--resume c9"), "{out}");
         assert!(out.contains(&format!("PWD:{}", wt.display())), "{out}");
 
+        // 새 세션의 첫 지시는 `--` 뒤 인자로 넘어간다
+        let first = core
+            .start(StartRequest { agent: "claude".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false, prompt: Some("-v 로 시작하는 지시".into()) })
+            .unwrap();
+        let mut out = String::new();
+        for _ in 0..100 {
+            out = core.pty.output_text(&first.id).unwrap();
+            if out.contains("PWD:") {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        assert!(out.contains("-- -v 로 시작하는 지시"), "{out}");
+
         // Codex 새 실행: 시작 후 같은 cwd 에 생긴 스레드와 연결된다
         let info = core
-            .start(StartRequest { agent: "codex".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false })
+            .start(StartRequest { agent: "codex".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false, prompt: None })
             .unwrap();
         assert!(info.session_id.is_none());
         write_codex(&home, "fresh", &main, "main");
@@ -873,7 +897,7 @@ mod tests {
 
         // 같은 폴더에서 두 번째 새 실행: 이미 연결된 스레드를 다시 가져가지 않는다.
         let second = core
-            .start(StartRequest { agent: "codex".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false })
+            .start(StartRequest { agent: "codex".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false, prompt: None })
             .unwrap();
         core.list_sessions().unwrap();
         let e2 = core.exec_list().into_iter().find(|e| e.id == second.id).unwrap();

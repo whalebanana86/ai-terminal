@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errorText, type CommitDetail, type GitRef, type GraphData, type OpState, type WorktreeStatus } from "../api";
-import { AgentBadge, ContextMenu, Empty, type MenuItem } from "../components/Overlays";
+import { ArrowDownToLine, ArrowUpFromLine, Crosshair, RefreshCw, X } from "lucide-react";
+import { ContextMenu, Empty, type MenuItem } from "../components/Overlays";
 import * as ga from "../gitActions";
 import { baseName, branchLabel, branchState, kindLetter } from "../logic";
 import { useFocusRepo, useSelectedSession, useStore } from "../store";
@@ -26,6 +27,7 @@ export function GitPanel() {
   const [busy, setBusy] = useState<string | null>(null);
   const [toHead, setToHead] = useState(0);
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  const [dismissed, setDismissed] = useState<string | null>(null);
   const wtPath = focus?.worktreePath ?? null;
 
   // 응답이 늦게 와도 지금 보는 워크트리가 아니면 버린다(빠르게 세션을 바꿀 때 덮어쓰기 방지).
@@ -92,15 +94,15 @@ export function GitPanel() {
   const onPull = async () => {
     if (!wtPath) return;
     const ok = await ask({
-      title: "Pull (fast-forward 만)",
-      body: `${baseName(wtPath)} 의 ${status?.branch ?? "현재 브랜치"} 를 원격에서 받아옵니다.\n병합 커밋이나 rebase 는 하지 않으며, fast-forward 가 불가능하면 아무것도 바꾸지 않고 실패합니다.${dirty ? `\n\n커밋하지 않은 변경 ${dirty}개가 있습니다.` : ""}${runningHere ? `\n이 워크트리에서 에이전트 ${runningHere}개가 실행 중입니다.` : ""}`,
-      confirmLabel: "Pull",
+      title: "원격에서 받기",
+      body: `${baseName(wtPath)} 의 ${status?.branch ?? "현재 브랜치"} 를 원격에서 받아옵니다.\n내 커밋과 섞어야 하는 경우에는 아무것도 바꾸지 않고 멈춰요(병합 커밋·리베이스 없음).${dirty ? `\n\n커밋하지 않은 변경 ${dirty}개가 있어요.` : ""}${runningHere ? `\n이 폴더에서 에이전트 ${runningHere}개가 실행 중이에요.` : ""}`,
+      confirmLabel: "받기",
     });
-    if (ok) await runOp("Pull", () => api.pull(wtPath));
+    if (ok) await runOp("받기", () => api.pull(wtPath));
   };
   const onPush = async () => {
     if (!wtPath || !status) return;
-    if (status.detached) return toast("error", "detached HEAD 에서는 Push 할 수 없습니다. 브랜치를 먼저 만드세요.");
+    if (status.detached) return toast("error", "브랜치가 없는 상태에서는 올릴 수 없어요. 브랜치를 먼저 만드세요.");
     let upstream: string | undefined;
     if (!status.upstream) {
       const remotes = await api.remotes(wtPath).catch(() => [] as string[]);
@@ -108,41 +110,46 @@ export function GitPanel() {
       upstream = remotes.includes("origin") ? "origin" : remotes[0];
     }
     const ok = await ask({
-      title: "Push",
+      title: "원격에 올리기",
       body: upstream
         ? `'${status.branch}' 에 추적 브랜치가 없습니다. ${upstream}/${status.branch} 로 올리고 추적을 설정합니다.`
         : `'${status.branch}' 의 커밋 ${status.ahead}개를 ${status.upstream} 로 올립니다. 강제 푸시는 하지 않습니다.`,
-      confirmLabel: "Push",
+      confirmLabel: "올리기",
     });
-    if (ok) await runOp("Push", () => api.push(wtPath, upstream));
+    if (ok) await runOp("올리기", () => api.push(wtPath, upstream));
   };
 
   /** 그래프 행 우클릭: 그 커밋/브랜치로 할 수 있는 작업 */
   const onGraphMenu = (sha: string, x: number, y: number) => {
     if (!wtPath || !graph) return;
-    const refs = graph.refs.filter((r) => r.target === sha && r.kind !== "tag");
     const cur = status?.branch ?? null;
+    const localNames = new Set(graph.refs.filter((r) => r.kind === "branch").map((r) => r.short));
+    // 같은 이름의 로컬 브랜치가 있으면 원격 브랜치는 따로 보여 주지 않는다.
+    const refs = graph.refs.filter((r) => r.target === sha && r.kind !== "tag" && !(r.kind === "remote" && localNames.has(r.short.split("/").slice(1).join("/"))));
     const items: MenuItem[] = [];
     for (const r of refs) {
       const isCur = r.kind === "branch" && r.short === cur;
-      items.push(
-        { label: `'${r.short}' 체크아웃…`, disabled: isCur, onClick: () => ga.checkout(wtPath, r.short, r.kind === "remote" ? "remote" : "branch", graph.worktrees) },
-        {
-          label: `'${r.short}' 을(를) 새 워크트리에서 열기…`,
-          disabled: r.kind !== "branch" || graph.worktrees.some((w) => w.branch === r.short),
-          hint: "지금 워크트리를 건드리지 않습니다",
-          onClick: () => ga.newWorktree(repo?.path ?? wtPath, { existingBranch: r.short }),
-        },
-        { label: `'${r.short}' → '${cur ?? "?"}' 병합…`, disabled: isCur || !cur, onClick: () => ga.merge(wtPath, cur, r.short) },
-        { label: `'${cur ?? "?"}' 을(를) '${r.short}' 위로 rebase…`, disabled: isCur || !cur, onClick: () => ga.rebase(wtPath, cur, r.short, status?.upstream ?? null) },
-        { separator: true, label: "" },
-      );
+      if (isCur) continue; // 지금 브랜치 자신에게 할 동작은 없다
+      const usedElsewhere = r.kind === "branch" && graph.worktrees.some((w) => w.branch === r.short);
+      items.push({ header: true, label: r.kind === "remote" ? `원격 브랜치 ${r.short}` : `브랜치 ${r.short}` });
+      items.push({
+        label: usedElsewhere ? "그 브랜치를 쓰는 폴더 열기" : "이 브랜치로 전환…",
+        hint: usedElsewhere ? "다른 워크트리가 이미 쓰고 있어요" : "지금 폴더를 체크아웃합니다",
+        onClick: () => ga.checkout(wtPath, r.short, r.kind === "remote" ? "remote" : "branch", graph.worktrees),
+      });
+      if (r.kind === "branch" && !usedElsewhere) {
+        items.push({ label: "새 워크트리에서 열기…", hint: "지금 폴더는 그대로 둡니다", onClick: () => ga.newWorktree(repo?.path ?? wtPath, { existingBranch: r.short }) });
+      }
+      if (cur) {
+        items.push({ label: `${cur} 에 병합…`, hint: `${r.short} 의 커밋을 ${cur} 로 가져옵니다`, onClick: () => ga.merge(wtPath, cur, r.short) });
+        items.push({ label: `${cur} 를 이 위로 리베이스…`, hint: "⚠ 커밋 해시가 바뀝니다", onClick: () => ga.rebase(wtPath, cur, r.short, status?.upstream ?? null) });
+      }
     }
     items.push(
+      { header: true, label: `커밋 ${sha.slice(0, 7)}` },
       { label: "여기서 새 브랜치…", onClick: () => ga.createBranch(wtPath, sha, sha.slice(0, 10)) },
       { label: "여기서 새 워크트리…", hint: "새 브랜치 + 새 폴더", onClick: () => ga.newWorktree(repo?.path ?? wtPath, { base: sha }) },
-      { label: "이 커밋으로 이동 (detached)…", onClick: () => ga.checkout(wtPath, sha, "commit", graph.worktrees) },
-      { separator: true, label: "" },
+      { label: "이 커밋으로 이동…", hint: "⚠ 브랜치 없이 커밋을 직접 봅니다", onClick: () => ga.checkout(wtPath, sha, "commit", graph.worktrees) },
       { label: "커밋 해시 복사", onClick: () => void navigator.clipboard.writeText(sha) },
     );
     setSelectedSha(sha);
@@ -153,7 +160,7 @@ export function GitPanel() {
     return (
       <section className="panel" data-pane="1" tabIndex={-1}>
         <PanelHead title="Git" />
-        <Empty title="볼 워크트리가 없습니다">가운데에서 세션을 고르거나, 위에서 저장소를 추가하세요.</Empty>
+        <Empty title="볼 폴더가 없습니다">위에서 폴더를 고르거나 '저장소 추가' 로 Git 저장소를 여세요.</Empty>
       </section>
     );
   }
@@ -162,14 +169,19 @@ export function GitPanel() {
   return (
     <section className="panel" data-pane="1" tabIndex={-1}>
       <PanelHead title="Git">
-        <button className="btn btn-small" disabled={!!busy} onClick={() => runOp("Fetch", () => api.fetch(wtPath))} title="git fetch --all --prune">
-          {busy === "Fetch" ? "…" : "Fetch"}
+        <button className="btn btn-small" disabled={!!busy} onClick={() => runOp("원격 확인", () => api.fetch(wtPath))} title="원격 저장소의 새 커밋을 확인만 합니다 (git fetch)">
+          <RefreshCw size={12} aria-hidden className={busy === "원격 확인" ? "spin" : ""} /> 원격 확인
         </button>
-        <button className="btn btn-small" disabled={!!busy || !status?.upstream} onClick={onPull} title="git pull --ff-only">
-          {busy === "Pull" ? "…" : `Pull${status?.behind ? ` ↓${status.behind}` : ""}`}
+        <button
+          className="btn btn-small"
+          disabled={!!busy || !status?.upstream}
+          onClick={onPull}
+          title={status?.upstream ? `원격의 새 커밋을 받아옵니다 (git pull --ff-only)` : "연결된 원격 브랜치가 없어 받을 수 없어요. 먼저 올리기로 원격 브랜치를 만드세요."}
+        >
+          <ArrowDownToLine size={12} aria-hidden /> 받기{status?.behind ? ` ${status.behind}` : ""}
         </button>
-        <button className="btn btn-small" disabled={!!busy || !status || status.detached} onClick={onPush} title="git push">
-          {busy === "Push" ? "…" : `Push${status?.ahead ? ` ↑${status.ahead}` : ""}`}
+        <button className="btn btn-small" disabled={!!busy || !status || status.detached} onClick={onPush} title={status?.detached ? "브랜치가 없어 올릴 수 없어요" : "내 커밋을 원격에 올립니다 (git push)"}>
+          <ArrowUpFromLine size={12} aria-hidden /> 올리기{status?.ahead ? ` ${status.ahead}` : ""}
         </button>
       </PanelHead>
 
@@ -178,10 +190,10 @@ export function GitPanel() {
           <span className="repo-name">{repo?.name ?? baseName(wtPath)}</span>
           <span className="muted">/</span>
           <span title={wtPath}>{baseName(wtPath)}</span>
-          {wt?.isMain === false && <span className="tag">링크 워크트리</span>}
+          {wt?.isMain === false && <span className="tag" title="같은 저장소를 다른 폴더로 연 워크트리">추가 워크트리</span>}
         </div>
         <div className="git-focus-line">
-          <span className="muted">현재</span>
+          <span className="muted">브랜치</span>
           {graph && status ? (
             <BranchSwitcher worktree={wtPath} status={status} graph={graph} repoPath={repo?.path ?? wtPath} />
           ) : (
@@ -196,15 +208,20 @@ export function GitPanel() {
             </span>
           )}
         </div>
-        {sessionHere && bs && (bs.changedSinceStart || bs.changedSinceLast) && (
-          <div className="banner banner-warn" data-testid="branch-mismatch">
-            <AgentBadge agent={sessionHere.agent} small /> 세션은 <b>{branchLabel(bs.start)}</b>에서 시작
-            {bs.last && bs.last !== bs.start ? (
-              <>
-                {" "}· 마지막 기록 <b>{branchLabel(bs.last)}</b>
-              </>
-            ) : null}
-            , 지금 워크트리는 <b>{bs.currentDetached ? "detached HEAD" : branchLabel(bs.current)}</b>입니다. 화면은 현재 상태를 보여 주며 자동으로 체크아웃하지 않습니다.
+        {sessionHere && bs?.changedSinceLast && bs.last && dismissed !== `${sessionHere.id}:${bs.last}:${bs.current}` && (
+          <div className="banner banner-warn one-line" data-testid="branch-mismatch">
+            <span>
+              이 세션은 <b>{branchLabel(bs.last)}</b>에서 작업했어요. 지금 폴더는 <b>{bs.currentDetached ? "브랜치 없음" : branchLabel(bs.current)}</b>입니다.
+            </span>
+            <span className="spacer" />
+            {graph && bs.last !== "HEAD" && (
+              <button className="btn btn-small" onClick={() => ga.checkout(wtPath, bs.last!, "branch", graph.worktrees)}>
+                {branchLabel(bs.last)}로 전환…
+              </button>
+            )}
+            <button className="icon-btn ghost" aria-label="닫기" onClick={() => setDismissed(`${sessionHere.id}:${bs.last}:${bs.current}`)}>
+              <X size={13} aria-hidden />
+            </button>
           </div>
         )}
         {op?.operation && <OpBanner worktree={wtPath} op={op} onChanged={load} />}
@@ -225,8 +242,8 @@ export function GitPanel() {
         ))}
         <span className="spacer" />
         {tab === "graph" && (
-          <button className="btn btn-ghost btn-small" onClick={() => setToHead((n) => n + 1)} title="HEAD 로 스크롤">
-            HEAD로
+          <button className="btn btn-ghost btn-small" onClick={() => setToHead((n) => n + 1)} title="지금 폴더가 가리키는 커밋으로 스크롤">
+            <Crosshair size={12} aria-hidden /> 현재 위치
           </button>
         )}
       </div>
@@ -275,7 +292,7 @@ export function PanelHead({ title, children }: { title: string; children?: React
   );
 }
 
-const OP_NAME: Record<string, string> = { merge: "병합", rebase: "rebase", "cherry-pick": "cherry-pick", revert: "revert", bisect: "bisect", am: "패치 적용(am)" };
+const OP_NAME: Record<string, string> = { merge: "병합", rebase: "리베이스", "cherry-pick": "커밋 가져오기(cherry-pick)", revert: "되돌리기(revert)", bisect: "원인 찾기(bisect)", am: "패치 적용(am)" };
 
 /** 병합/rebase 진행 중: 충돌 파일 해결과 계속·건너뛰기·중단 */
 function OpBanner({ worktree, op, onChanged }: { worktree: string; op: OpState; onChanged: () => void }) {
@@ -396,7 +413,7 @@ function CommitDetailView(props: { worktree: string; sha: string; graph: GraphDa
                 disabled={r.kind === "branch" && r.short === cur}
                 onClick={() => ga.checkout(props.worktree, r.short, r.kind === "remote" ? "remote" : "branch", props.graph.worktrees)}
               >
-                {r.short} 체크아웃…
+                {r.short} 로 전환…
               </button>
             ))}
             <button className="btn btn-small btn-ghost" onClick={() => ga.newWorktree(repo?.path ?? props.worktree, { base: props.sha })}>

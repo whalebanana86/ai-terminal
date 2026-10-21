@@ -51,9 +51,9 @@ export async function checkout(worktree: string, target: string, kind: "branch" 
     const other = usedElsewhere(local, worktree, worktrees);
     if (other) {
       const go = await st().ask({
-        title: `'${local}' 은(는) 다른 워크트리에서 사용 중`,
-        body: `Git 은 한 브랜치를 두 워크트리에서 동시에 체크아웃할 수 없습니다.\n${other.path}\n\n그 워크트리를 대신 볼까요? (체크아웃 없이 화면만 바꿉니다)`,
-        confirmLabel: "그 워크트리 보기",
+        title: `${local} 은(는) 다른 폴더에서 쓰는 중`,
+        body: `Git 은 한 브랜치를 두 워크트리(폴더)에서 동시에 열 수 없어요.\n${other.path}\n\n그 폴더를 대신 열까요? (화면만 옮기고 체크아웃하지 않아요)`,
+        confirmLabel: "그 폴더 열기",
       });
       if (go) st().setFocusWorktree(other.path);
       return;
@@ -61,16 +61,16 @@ export async function checkout(worktree: string, target: string, kind: "branch" 
   }
   const warn = checkoutWarning(await dirtyCount(worktree), target, agentsIn(worktree));
   const ok = await st().ask({
-    title: kind === "commit" ? "커밋으로 이동 (detached HEAD)" : `'${local}' 체크아웃`,
+    title: kind === "commit" ? "커밋으로 이동 (브랜치 없음 상태)" : `${local} 로 전환 (체크아웃)`,
     body:
-      `워크트리 ${baseName(worktree)} 의 HEAD 를 ${kind === "commit" ? target.slice(0, 10) + " (detached)" : local} 로 바꿉니다.` +
+      `폴더 ${baseName(worktree)} 를 ${kind === "commit" ? "커밋 " + target.slice(0, 10) + " (브랜치 없음 상태)" : local} 로 바꿉니다.` +
       (kind === "remote" ? `\n로컬 브랜치가 없으면 ${target} 를 추적하는 '${local}' 을 만듭니다.` : "") +
-      `\n실제 Git 작업이며 워크트리의 파일이 바뀝니다.${warn ? "\n\n⚠ " + warn : ""}`,
+      `\n폴더 안의 파일이 그 브랜치 내용으로 바뀌어요.${warn ? "\n\n⚠ " + warn : ""}`,
     danger: !!warn,
-    confirmLabel: "체크아웃",
+    confirmLabel: "전환",
   });
   if (!ok) return;
-  await run("체크아웃", () => api.checkout(worktree, target, kind));
+  await run("전환", () => api.checkout(worktree, target, kind));
 }
 
 /** 현재 워크트리를 건드리지 않고 새 워크트리에서 브랜치를 연다(에이전트 병렬 작업에 권장). */
@@ -123,7 +123,7 @@ export async function removeWorktree(repoPath: string, wt: Worktree) {
   const values = await st().promptForm({
     title: `워크트리 삭제: ${baseName(wt.path)}`,
     body:
-      `${wt.path}\n폴더를 지우고 워크트리 등록을 해제합니다. 브랜치 '${wt.branch ?? "(detached)"}' 의 커밋은 남습니다.` +
+      `${wt.path}\n폴더를 지우고 워크트리 등록을 해제합니다. 브랜치 '${wt.branch ?? "(브랜치 없음)"}' 의 커밋은 남아요.` +
       (dirty ? `\n\n⚠ 커밋하지 않은 변경 ${dirty}개가 있습니다. 지우면 되돌릴 수 없습니다.` : "") +
       (agents ? `\n⚠ 이 워크트리에서 에이전트 ${agents}개가 실행 중입니다.` : ""),
     fields: [
@@ -170,7 +170,7 @@ export async function createBranch(worktree: string, start: string, startLabel: 
     body: `${startLabel} 에서 시작합니다.`,
     fields: [
       { key: "name", label: "브랜치 이름", value: "", placeholder: "feature/..." },
-      { key: "checkout", label: "만든 뒤 이 워크트리에서 체크아웃", value: "false", checkbox: true },
+      { key: "checkout", label: "만든 뒤 지금 폴더를 이 브랜치로 전환", value: "false", checkbox: true },
     ],
     confirmLabel: "만들기",
     validate: (v) => (v.name.trim() ? null : "이름을 입력하세요"),
@@ -196,15 +196,15 @@ export async function deleteBranch(repoPath: string, ref: GitRef) {
 
 /** 현재 브랜치에 target 을 병합 */
 export async function merge(worktree: string, current: string | null, target: string) {
-  if (!current) return st().toast("error", "detached HEAD 에서는 병합할 수 없습니다. 브랜치를 먼저 체크아웃하세요.");
+  if (!current) return st().toast("error", "브랜치가 없는 상태에서는 병합할 수 없어요. 먼저 브랜치로 전환하세요.");
   const cmp = await api.compare(worktree, current, target).catch(() => null);
   if (cmp && cmp.behind === 0) return st().toast("info", `'${target}' 의 커밋이 이미 '${current}' 에 모두 들어 있습니다`);
   const warn = checkoutWarning(await dirtyCount(worktree), current, agentsIn(worktree));
   const values = await st().promptForm({
-    title: `'${target}' → '${current}' 병합`,
+    title: `${target} → ${current} 병합`,
     body:
       `${target} 에만 있는 커밋 ${cmp?.behind ?? "?"}개를 ${current} 로 가져옵니다.` +
-      (cmp?.fastForward ? "\n지금은 fast-forward 가 가능합니다(병합 커밋 없이 앞으로 이동)." : "") +
+      (cmp?.fastForward ? "\n지금은 병합 커밋 없이 앞으로 이동만 하면 됩니다." : "") +
       "\n충돌이 나면 멈추고, 해결한 뒤 계속하거나 중단할 수 있습니다." +
       (warn ? `\n\n⚠ ${warn}` : ""),
     fields: [
@@ -213,9 +213,9 @@ export async function merge(worktree: string, current: string | null, target: st
         label: "방식",
         value: "ff",
         options: [
-          { value: "ff", label: "가능하면 fast-forward (기본)" },
+          { value: "ff", label: "가능하면 그냥 앞으로 이동 (기본, fast-forward)" },
           { value: "no-ff", label: "항상 병합 커밋 만들기 (--no-ff)" },
-          { value: "ff-only", label: "fast-forward 만 (안 되면 취소)" },
+          { value: "ff-only", label: "앞으로 이동만, 안 되면 취소 (--ff-only)" },
         ],
       },
     ],
@@ -229,7 +229,7 @@ export async function merge(worktree: string, current: string | null, target: st
 
 /** 현재 브랜치를 onto 위로 rebase */
 export async function rebase(worktree: string, current: string | null, onto: string, upstream: string | null) {
-  if (!current) return st().toast("error", "detached HEAD 에서는 rebase 할 수 없습니다.");
+  if (!current) return st().toast("error", "브랜치가 없는 상태에서는 리베이스할 수 없어요.");
   const cmp = await api.compare(worktree, current, onto).catch(() => null);
   if (cmp && cmp.behind === 0) return st().toast("info", `'${current}' 은(는) 이미 '${onto}' 위에 있습니다`);
   // 이미 push 한 커밋을 다시 쓰는지
@@ -237,15 +237,15 @@ export async function rebase(worktree: string, current: string | null, onto: str
   const rewritesPushed = !!upstream && !!cmp && (pushed ? pushed.ahead < cmp.ahead : true);
   const warn = checkoutWarning(await dirtyCount(worktree), current, agentsIn(worktree));
   const ok = await st().ask({
-    title: `'${current}' 을(를) '${onto}' 위로 rebase`,
+    title: `${current} 를 ${onto} 위로 리베이스`,
     body:
       `${current} 에만 있는 커밋 ${cmp?.ahead ?? "?"}개를 ${onto} 의 최신 커밋(${cmp?.behind ?? "?"}개 앞) 위에 다시 씁니다. 커밋 해시가 바뀝니다.` +
       (rewritesPushed ? `\n\n⚠ 이미 ${upstream} 에 push 한 커밋도 다시 쓰게 됩니다. 이후 push 에는 강제 푸시가 필요하고, 다른 사람의 작업과 충돌할 수 있습니다.` : "") +
       (warn ? `\n\n⚠ ${warn}` : ""),
     danger: rewritesPushed || !!warn,
-    confirmLabel: "rebase",
+    confirmLabel: "리베이스",
   });
   if (!ok) return;
-  const r = await run("rebase", () => api.rebase(worktree, onto));
-  if (r?.conflict) st().toast("error", "rebase 중 충돌이 생겼습니다. 해결한 뒤 '계속', 이 커밋을 건너뛰려면 '건너뛰기', 원래대로 하려면 '중단'.");
+  const r = await run("리베이스", () => api.rebase(worktree, onto));
+  if (r?.conflict) st().toast("error", "리베이스 중 충돌이 생겼어요. Git 패널 위쪽에서 해결한 뒤 '계속', 건너뛰려면 '건너뛰기', 원래대로 하려면 '중단'.");
 }

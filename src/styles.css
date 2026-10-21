@@ -7,9 +7,9 @@
   --line-2: #323a48;
   --fg: #d7dae0;
   --fg-dim: #8b93a3;
-  --fg-faint: #5d6575;
+  --fg-faint: #808a9c; /* 4.9:1 이상 (WCAG AA) */
   --accent: #4cc2ff;
-  --accent-2: #2a7fb8;
+  --accent-2: #2470a6; /* 흰 글자 5.3:1 */
   --ok: #7ee787;
   --warn: #ffb454;
   --err: #ff6b6b;
@@ -218,7 +218,7 @@ code,
   color: #fff;
 }
 .btn-primary:hover:not(:disabled) {
-  background: #3591cc;
+  background: #2b7fbb;
 }
 .btn-danger {
   background: #8e2c2c;
@@ -431,7 +431,7 @@ code,
   background: #1a1f29;
 }
 .grow.on-chain {
-  background: #142231;
+  background: transparent;
 }
 .grow.selected {
   background: #1f3a55;
@@ -1250,9 +1250,11 @@ code,
   padding: 8px 6px 4px;
 }
 .icon-btn {
-  width: 22px;
-  height: 20px;
+  width: 26px;
+  height: 24px;
   line-height: 16px;
+  display: inline-grid;
+  place-items: center;
   padding: 0;
   border-radius: 4px;
   border: 1px solid var(--line-2);
@@ -1461,4 +1463,287 @@ code,
   border-radius: 6px;
   padding: 6px 8px;
   user-select: text;
+}
+
+/* ── UI 개편: 아이콘·버튼·상태 ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.icon-btn.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--fg-dim);
+}
+.icon-btn.ghost:hover:not(:disabled) {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.icon-btn.danger {
+  color: var(--err);
+  border-color: #5b2a2d;
+  background: #2b1517;
+}
+.icon-btn.danger:hover:not(:disabled) {
+  background: #8e2c2c;
+  color: #fff;
+}
+/* 위험한 버튼은 그 줄에 마우스를 올리거나 키보드로 갈 때만 보인다 */
+.hover-only {
+  opacity: 0;
+}
+li:hover .hover-only,
+.hover-only:focus-visible {
+  opacity: 1;
+}
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  padding: 2px 0;
+  text-align: right;
+  font-size: 12px;
+}
+.link-btn:hover:not(:disabled) {
+  text-decoration: underline;
+}
+.commit-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pad-s {
+  padding: 4px 6px;
+}
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.menu-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.menu-hint {
+  font-size: 11px;
+  color: var(--fg-faint);
+}
+.menu-item:hover:not(:disabled) .menu-hint {
+  color: #d6e8f7;
+}
+.menu-header {
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--fg-dim);
+  letter-spacing: 0.2px;
+}
+.menu-header:not(:first-child) {
+  margin-top: 4px;
+  border-top: 1px solid var(--line-2);
+  padding-top: 8px;
+}
+.tag-on {
+  color: var(--accent);
+  border-color: var(--accent-2);
+}
+.dir-count {
+  font-size: 10px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #3d3020;
+  color: #e2c08d;
+  text-align: center;
+}
+.twisty {
+  width: 14px;
+  font-size: 11px;
+}
+
+/* 상단 폴더 선택 / 하단 상태줄 */
+.folder-select {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  padding: 0 26px 0 9px;
+  height: 28px;
+  color: var(--fg-dim);
+}
+.folder-select select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: none;
+  color: var(--fg);
+  font-weight: 600;
+  max-width: 280px;
+  outline: none;
+}
+.folder-select:focus-within {
+  border-color: var(--accent-2);
+}
+.select-caret {
+  position: absolute;
+  right: 8px;
+  pointer-events: none;
+}
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 22px;
+  padding: 0 10px;
+  border-top: 1px solid var(--line);
+  background: var(--bg-1);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.statusbar .ok,
+.statusbar .missing {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.statusbar .ok {
+  color: var(--fg-dim);
+}
+.statusbar .ok svg {
+  color: var(--ok);
+}
+.statusbar .missing {
+  color: var(--err);
+}
+
+/* 세션 목록·상세 */
+.s-status {
+  font-size: 10.5px;
+  padding: 0 6px;
+  border-radius: 9px;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+.st-run {
+  color: var(--ok);
+  border-color: #2b5a33;
+  background: #142a19;
+}
+.st-chat {
+  color: var(--accent);
+  border-color: #234d6c;
+  background: #12273a;
+}
+.st-ext {
+  color: #c9b3ff;
+  border-color: #4a3d72;
+  background: #1f1a30;
+}
+.s-dup {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--fg-faint);
+}
+.s-snippet {
+  color: var(--fg-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+  font-size: 11.5px;
+}
+.branch-chip svg {
+  vertical-align: -1px;
+}
+.sh-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  min-width: 0;
+  white-space: nowrap;
+}
+.sh-meta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.copyable {
+  cursor: copy;
+}
+.copyable:hover {
+  text-decoration: underline dotted;
+}
+.split-btn {
+  display: inline-flex;
+}
+.split-btn .btn:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.split-caret {
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+  border-left: 1px solid #1a5784 !important;
+  padding: 2px 5px !important;
+}
+.banner.one-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: normal;
+}
+
+/* 새 세션 창 */
+.modal-wide {
+  width: min(560px, 94vw);
+}
+.choice-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 10px 0;
+}
+.choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line-2);
+  background: var(--bg-1);
+  text-align: left;
+}
+.choice:hover {
+  border-color: #3b4a5f;
+}
+.choice.on {
+  border-color: var(--accent);
+  background: #12273a;
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.choice-title {
+  font-weight: 700;
+}
+.choice-sub {
+  font-size: 11.5px;
+  color: var(--fg-dim);
+}
+.modal textarea.text-input {
+  resize: vertical;
+  font: inherit;
 }

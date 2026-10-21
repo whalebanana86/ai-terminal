@@ -203,8 +203,8 @@ function badges(p: { refs: GitRef[]; worktrees: Worktree[]; focusWorktree: strin
     out.push({
       key: `wt:${w.path}`,
       cls: `ref ref-wt${mine ? " ref-focus" : ""}`,
-      title: `워크트리 HEAD: ${w.path}`,
-      label: mine ? "HEAD" : `⌂ ${baseName(w.path)}`,
+      title: mine ? "지금 보는 폴더가 가리키는 커밋" : `다른 폴더(워크트리) ${w.path} 가 가리키는 커밋`,
+      label: mine ? "현재" : `📁 ${baseName(w.path)}`,
       rank: mine ? 0 : 3,
     });
   }
@@ -214,8 +214,8 @@ function badges(p: { refs: GitRef[]; worktrees: Worktree[]; focusWorktree: strin
     out.push({
       key: r.name,
       cls: `ref ref-${r.kind}${focusBranch ? " ref-focus" : ""}${startBranch ? " ref-start" : ""}`,
-      title: `${r.name}${r.track ? " " + r.track : ""}${startBranch ? " · 세션이 시작된 브랜치" : ""}`,
-      label: r.short + (startBranch ? " ◷" : ""),
+      title: `${r.kind === "branch" ? "로컬 브랜치" : r.kind === "remote" ? "원격 브랜치" : "태그"} ${r.short}${r.track ? " " + r.track : ""}${startBranch ? " · 세션이 시작된 브랜치" : ""}`,
+      label: r.short + (startBranch ? " (세션 시작)" : ""),
       rank: focusBranch ? 1 : startBranch ? 2 : r.kind === "branch" ? 4 : r.kind === "remote" ? 5 : 6,
     });
   }

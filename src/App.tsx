@@ -4,7 +4,7 @@ import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panel
 import type { ChangeBatch } from "./api";
 import { api } from "./api";
 import { ConfirmDialog, PromptDialog, Toasts } from "./components/Overlays";
-import { TopBar } from "./components/TopBar";
+import { StatusBar, TopBar } from "./components/TopBar";
 import { AgentPanel } from "./panels/AgentPanel";
 import { FilePanel } from "./panels/FilePanel";
 import { GitPanel } from "./panels/GitPanel";
@@ -89,6 +89,7 @@ export default function App() {
           </Panel>
         </Group>
       )}
+      <StatusBar />
       <Toasts />
       <ConfirmDialog />
       <PromptDialog />

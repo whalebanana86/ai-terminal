@@ -23,7 +23,10 @@ const panels = {
 };
 
 const before = st().execs.length;
-document.querySelector("[data-testid=resume]").click();
+// "이어가기 ▾" 메뉴에서 "원본 CLI 터미널로 이어가기"
+document.querySelector('[aria-label="이어가기 방법 고르기"]').click();
+await wait(300);
+document.querySelector(".menu [data-action=resume]").click();
 let e;
 const txt = () => (e && window.__aiterm.terminalText(e.id)) || "";
 // 화면이 준비될 때까지 기다리며, 입력 전에 반드시 화면을 확인한다.

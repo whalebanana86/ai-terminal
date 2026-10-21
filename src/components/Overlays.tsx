@@ -157,7 +157,11 @@ export interface MenuItem {
   disabled?: boolean;
   /** 구분선 */
   separator?: boolean;
+  /** 누를 수 없는 묶음 제목 */
+  header?: boolean;
   hint?: string;
+  /** 테스트·자동화용 data-action */
+  testId?: string;
 }
 
 /** 우클릭 메뉴. 바깥을 누르거나 Esc 로 닫힌다. */
@@ -190,6 +194,10 @@ export function ContextMenu({ x, y, items, onClose }: { x: number; y: number; it
       {items.map((it, i) =>
         it.separator ? (
           <div key={i} className="menu-sep" />
+        ) : it.header ? (
+          <div key={i} className="menu-header">
+            {it.label}
+          </div>
         ) : (
           <button
             key={i}
@@ -197,12 +205,14 @@ export function ContextMenu({ x, y, items, onClose }: { x: number; y: number; it
             className={`menu-item${it.danger ? " danger" : ""}`}
             disabled={it.disabled}
             title={it.hint}
+            data-action={it.testId}
             onClick={() => {
               onClose();
               it.onClick?.();
             }}
           >
-            {it.label}
+            <span className="menu-label">{it.label}</span>
+            {it.hint && <span className="menu-hint">{it.hint}</span>}
           </button>
         ),
       )}
