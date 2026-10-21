@@ -55,6 +55,11 @@ export interface ConfirmRequest {
 interface State {
   info: AppInfo | null;
   repos: RepoSummary[];
+  openRepoIds: string[];
+  repoTabPaths: Record<string, string>;
+  repoTabSessions: Record<string, string>;
+  openRepoTab: (id: string) => void;
+  closeRepoTab: (id: string) => void;
   rawSessions: LinkedSession[];
   sessions: LinkedSession[];
   execs: ExecInfo[];
@@ -107,6 +112,9 @@ function persist(key: string, value: unknown) {
 export const useStore = create<State>((set, get) => ({
   info: null,
   repos: [],
+  openRepoIds: [],
+  repoTabPaths: {},
+  repoTabSessions: {},
   rawSessions: [],
   sessions: [],
   execs: [],
@@ -129,10 +137,11 @@ export const useStore = create<State>((set, get) => ({
   restored: false,
 
   boot: async () => {
-    const [info, focusRaw, selRaw] = await Promise.all([
+    const [info, focusRaw, selRaw, tabsRaw] = await Promise.all([
       api.appInfo().catch(() => null),
       api.kvGet("focus").catch(() => null),
       api.kvGet("selectedSession").catch(() => null),
+      api.kvGet("repoTabs").catch(() => null),
     ]);
     set({ info });
     void api.setLang(lang).catch(() => {});
@@ -154,10 +163,31 @@ export const useStore = create<State>((set, get) => ({
     const s = sel ? get().sessions.find((x) => x.id === sel) : null;
     const keep = s && get().focus && s.otherWorktrees?.includes(get().focus!.worktreePath);
     if (s?.worktreePath && s.cwdExists && !keep) set({ focus: { worktreePath: s.worktreePath, source: "session" } });
-    if (!get().focus) {
-      const first = get().repos.find((r) => r.exists && r.worktrees.length);
-      if (first) set({ focus: { worktreePath: first.worktrees[0].path, source: "manual" } });
+    let ids: string[] | null = null;
+    let paths: Record<string, string> = {};
+    let tabSessions: Record<string, string> = {};
+    try {
+      const saved = JSON.parse(tabsRaw ?? "null");
+      if (Array.isArray(saved?.ids)) {
+        if (saved.sessions && typeof saved.sessions === "object") tabSessions = Object.fromEntries(Object.entries(saved.sessions).filter(([, v]) => typeof v === "string")) as Record<string, string>;
+        ids = [...new Set<string>(saved.ids.filter((id: unknown) => typeof id === "string"))];
+        if (saved.paths && typeof saved.paths === "object") paths = Object.fromEntries(Object.entries(saved.paths).filter(([, v]) => typeof v === "string")) as Record<string, string>;
+      }
+      if (!tabsRaw) {
+        const legacy = JSON.parse(localStorage.getItem("aiterm.repoWorktrees") ?? "{}");
+        if (legacy && typeof legacy === "object" && !Array.isArray(legacy)) paths = Object.fromEntries(Object.entries(legacy).filter(([, v]) => typeof v === "string")) as Record<string, string>;
+      }
+    } catch { /* Invalid preferences fall back to the previously focused repository. */ }
+    const active = get().repos.find((r) => r.worktrees.some((w) => w.path === get().focus?.worktreePath));
+    ids = (ids ?? (active ? [active.id] : [])).filter((id) => get().repos.some((r) => r.id === id));
+    set({ openRepoIds: ids, repoTabPaths: paths, repoTabSessions: tabSessions });
+    if (!active || !ids.includes(active.id)) {
+      set({ focus: null, selectedSessionId: null, viewer: null });
+      if (ids.length) get().openRepoTab(ids[0]);
+      else { persist("focus", null); persist("selectedSession", null); }
     }
+    if (get().focus && get().selectedSessionId) rememberTab(get().focus!.worktreePath, get().selectedSessionId);
+    persistTabs();
     set({ restored: true });
   },
 
@@ -196,8 +226,9 @@ export const useStore = create<State>((set, get) => ({
       patch.focus = { worktreePath: s.worktreePath, source: "session" };
     }
     set(patch);
+    if (!patch.focus && get().focus) rememberTab(get().focus!.worktreePath, id);
     persist("selectedSession", id);
-    if (patch.focus) persist("focus", patch.focus);
+    if (patch.focus) { persist("focus", patch.focus); rememberTab(patch.focus.worktreePath, id); }
   },
 
   setFocusWorktree: (path) => {
@@ -213,6 +244,36 @@ export const useStore = create<State>((set, get) => ({
     }
     set({ focus, viewer: null, ...(same ? { gitTick: get().gitTick + 1, statusTick: get().statusTick + 1, fsTick: get().fsTick + 1, watchNonce: get().watchNonce + 1 } : {}) });
     persist("focus", focus);
+    rememberTab(path);
+  },
+
+  openRepoTab: (id) => {
+    const repo = get().repos.find((r) => r.id === id);
+    const available = repo?.worktrees.filter((w) => w.exists && !w.bare) ?? [];
+    const target = available.find((w) => w.path === get().repoTabPaths[id]) ?? available.find((w) => w.isMain) ?? available[0];
+    if (!target) return;
+    get().setFocusWorktree(target.path);
+    const belongs = (session: LinkedSession) => session.worktreePath === target.path || session.otherWorktrees?.includes(target.path);
+    const remembered = get().sessions.find((session) => session.id === get().repoTabSessions[id] && belongs(session));
+    const running = get().sessions.filter(belongs).filter((session) => session.runningExecId || get().liveRuns.some((r) => r.sessionId === session.externalId || r.sessionId === session.id) || get().chats.some((c) => c.alive && (c.sessionId === session.id || `chat:${c.id}` === session.id))).sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    const session = remembered ?? running;
+    if (session) get().selectSession(session.id);
+  },
+  closeRepoTab: (id) => {
+    const previous = get().openRepoIds;
+    const index = previous.indexOf(id);
+    const ids = previous.filter((x) => x !== id);
+    const active = get().repos.find((r) => r.id === id)?.worktrees.some((w) => w.path === get().focus?.worktreePath);
+    set({ openRepoIds: ids });
+    if (active) {
+      set({ focus: null, selectedSessionId: null, viewer: null });
+      persist("focus", null); persist("selectedSession", null);
+      for (const next of [...ids.slice(index), ...ids.slice(0, index).reverse()]) {
+        get().openRepoTab(next);
+        if (get().focus) break;
+      }
+    }
+    persistTabs();
   },
 
   openViewer: (v) => set({ viewer: v }),
@@ -363,4 +424,22 @@ export function useSelectedSession(): LinkedSession | null {
 /** 테스트 자동화 빌드나 개발 모드에서만 화면 상태를 창 객체에 노출한다(배포 빌드에는 없음). */
 export function exposeForAutomation() {
   (window as unknown as { __aitermStore: typeof useStore }).__aitermStore = useStore;
+}
+
+function rememberTab(path: string, selected?: string | null) {
+  const state = useStore.getState();
+  const repo = state.repos.find((r) => r.worktrees.some((w) => w.path === path));
+  if (!repo) return;
+  const ids = state.openRepoIds.includes(repo.id) ? state.openRepoIds : [...state.openRepoIds, repo.id];
+  const paths = { ...state.repoTabPaths, [repo.id]: path };
+  const sessions = { ...state.repoTabSessions };
+  if (selected) sessions[repo.id] = selected;
+  else if (selected === null) delete sessions[repo.id];
+  useStore.setState({ openRepoIds: ids, repoTabPaths: paths, repoTabSessions: sessions });
+  persistTabs();
+}
+
+function persistTabs() {
+  const s = useStore.getState();
+  persist("repoTabs", { ids: s.openRepoIds, paths: s.repoTabPaths, sessions: s.repoTabSessions });
 }

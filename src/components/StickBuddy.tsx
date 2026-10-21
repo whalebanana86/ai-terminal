@@ -1,4 +1,4 @@
-import { Bug, MessageCircleQuestion, Play, Plus, Trash2, Wrench, type LucideIcon } from "lucide-react";
+import { Bug, MessageCircleQuestion, Play, Sparkles, Trash2, Wrench, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { t } from "../i18n";
 import { relativeTime } from "../logic";
@@ -12,7 +12,7 @@ import { useStore } from "../store";
  */
 
 const KINDS: { kind: RequestKind; label: string; icon: LucideIcon; color: string }[] = [
-  { kind: "add", label: t("추가"), icon: Plus, color: "#4fd18b" },
+  { kind: "add", label: t("추가"), icon: Sparkles, color: "#4fd18b" },
   { kind: "modify", label: t("수정"), icon: Wrench, color: "#4cc2ff" },
   { kind: "delete", label: t("삭제"), icon: Trash2, color: "#ff8a5b" },
   { kind: "bug", label: t("버그·오류"), icon: Bug, color: "#c792ff" },
@@ -35,14 +35,25 @@ function load(): Saved {
   try {
     const v = JSON.parse(localStorage.getItem(KEY) ?? "null") as Saved | null;
     // 예전 저장값에 없는 칸(질문)은 0 으로 채운다
-    if (v && v.day === today() && v.counts) return { ...v, counts: { ...empty().counts, ...v.counts } };
+    if (v && v.day === today() && v.counts) {
+      let additions = 0;
+      const recent = (v.recent ?? []).map((r) => {
+        if (r.kind || !r.text?.trim()) return r;
+        // Previously unclassified retained requests now belong to the addition count too.
+        additions++;
+        return { ...r, kind: "add" as const };
+      });
+      const counts = { ...empty().counts, ...v.counts };
+      counts.add += additions;
+      return { ...v, recent, counts };
+    }
   } catch {
     /* 깨진 값은 버린다 */
   }
   return empty();
 }
 
-/** none = 어느 종류도 아닌 대답("진행해" 등): 고개만 끄덕 */
+/** none is reserved for an empty legacy/test request. */
 type Act = RequestKind | "none";
 
 export function StickBuddy() {
@@ -295,7 +306,7 @@ export function StickBuddy() {
           </ul>
           <div className="muted small stick-pop-foot">
             {t("줄을 누르면 스틱맨이 그 동작을 다시 해요.")}{" "}
-            {t("요청 글자로 추가·수정·삭제·버그·질문을 나눠요(앱 안에서만, 어디에도 보내지 않음). \"진행해\"처럼 어디에도 안 맞는 말(·)은 세지 않아요. 하루가 지나면 0 부터.")}
+            {t("요청 글자로 추가·수정·삭제·버그·질문을 나눠요(앱 안에서만, 어디에도 보내지 않음). 분류하기 어려운 요청은 추가로 세어요. 하루가 지나면 0 부터.")}
           </div>
         </div>
       )}

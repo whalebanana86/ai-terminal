@@ -2423,3 +2423,19 @@ li:hover .hover-only,
 .brand { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; max-width: 300px; flex-shrink: 0; }
 .brand-name { font-size: 13px; line-height: 17px; }
 .brand-tagline { overflow: hidden; text-overflow: ellipsis; font-size: 11px; line-height: 14px; font-weight: 400; letter-spacing: 0; color: var(--fg-dim); }
+.repo-tab-group { display:flex; align-items:center; flex:none; border:1px solid transparent; border-bottom:2px solid transparent; border-radius:6px 6px 0 0; }
+.repo-tab-group.active { background:var(--bg-2); border-color:var(--line); border-bottom-color:var(--wt, var(--accent)); }
+.repo-tab-group .repo-tab { border:0; padding-right:6px; }
+.repo-tab-close, .repo-tab-add { display:flex; align-items:center; justify-content:center; border:0; background:transparent; color:var(--fg-dim); cursor:pointer; width:28px; height:28px; border-radius:4px; flex:none; }
+.repo-tab-close:hover, .repo-tab-add:hover { color:var(--fg); background:var(--bg-3); }
+.statusbar { overflow-x:auto; white-space:nowrap; }
+.subscription-usage { display:flex; align-items:center; gap:12px; margin-left:8px; padding-left:12px; border-left:1px solid var(--line); }
+.quota-provider { display:flex; align-items:center; gap:7px; }
+.quota-provider strong { font-weight:500; }
+.quota-provider.unavailable { color:var(--fg-dim); }
+.quota-window { display:flex; align-items:center; gap:4px; }
+.quota-meter { width:26px; height:4px; border-radius:2px; overflow:hidden; background:var(--line); }
+.quota-meter i { display:block; height:100%; background:var(--accent); }
+.quota-window.high { color:var(--warning, #e7b76b); }
+.quota-window.high i { background:currentColor; }
+.quota-refresh { display:flex; padding:4px; border:0; background:transparent; color:var(--fg-dim); cursor:pointer; }

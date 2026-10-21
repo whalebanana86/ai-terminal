@@ -278,7 +278,15 @@ export interface OpState {
   conflicted: string[];
 }
 
+export interface SubscriptionQuota {
+  provider: Agent;
+  windows: { usedPercent: number; windowMinutes: number; resetsAt: number | null; resetText: string | null }[];
+  checkedAt: number;
+  error: string | null;
+}
+
 export const api = {
+  subscriptionUsage: () => invoke<SubscriptionQuota[]>("subscription_usage"),
   appInfo: () => invoke<AppInfo>("app_info"),
   repoList: () => invoke<RepoSummary[]>("repo_list"),
   repoAdd: (path: string) => invoke<{ id: string; path: string; name: string; pinned: boolean }>("repo_add", { path }),

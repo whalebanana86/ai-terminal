@@ -15,6 +15,7 @@ pub mod pty;
 pub mod sessions;
 pub mod watch;
 pub mod updates;
+pub mod usage;
 #[cfg(feature = "automation")]
 pub mod automation;
 
@@ -108,6 +109,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
+            usage::subscription_usage,
             updates::check_update,
             updates::install_update,
             updates::open_update_download,

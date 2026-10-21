@@ -1,5 +1,19 @@
 /** 영어 사전: ui (위쪽 막대·상태줄·스틱맨·파일 패널·공통 대화상자·앱 알림) */
 export default {
+  "{name} 탭 닫기": "Close {name} tab",
+  "탭 닫기": "Close tab",
+  "CLI 구독 로그인이 필요합니다": "Sign in to your CLI subscription",
+  "CLI를 설치해 주세요": "Install the CLI",
+  "조회 한도 초과. 잠시 후 다시 확인하세요": "Too many requests. Try again later",
+  "사용량을 조회하지 못했습니다": "Could not retrieve subscription usage",
+  "구독 한도 사용률": "Subscription quota usage",
+  "주간": "Weekly",
+  "초기화": "Resets",
+  "마지막 확인": "Last checked",
+  "조회 중…": "Checking…",
+  "확인 불가": "Unavailable",
+  "이전 조회값": "Previous reading",
+  "사용량 새로고침 (최대 2분 간격)": "Refresh usage (at most every 2 minutes)",
   // 공통 대화상자
   취소: "Cancel",
   확인: "OK",
@@ -29,8 +43,8 @@ export default {
   "오늘 받은 요청": "Today's requests",
   "오늘 AI 에게 보낸 요청": "Requests sent to AI today",
   "아직 없어요. AI 에게 요청을 보내면 여기에 쌓여요.": "Nothing yet. Requests you send to AI will show up here.",
-  "요청 글자로 추가·수정·삭제·버그·질문을 나눠요(앱 안에서만, 어디에도 보내지 않음). \"진행해\"처럼 어디에도 안 맞는 말(·)은 세지 않아요. 하루가 지나면 0 부터.":
-    "Requests are sorted into Add, Modify, Delete, Bug/Error and Question by their wording (inside the app only, nothing is sent anywhere). Replies that fit none, like \"go ahead\" (·), aren't counted. Resets to 0 each day.",
+  "요청 글자로 추가·수정·삭제·버그·질문을 나눠요(앱 안에서만, 어디에도 보내지 않음). 분류하기 어려운 요청은 추가로 세어요. 하루가 지나면 0 부터.":
+    "Requests are sorted into Add, Modify, Delete, Bug/Error and Question by their wording (inside the app only, nothing is sent anywhere). Unrecognized requests count as Add. Resets to 0 each day.",
 
   // 파일 패널: 트리
   파일: "Files",

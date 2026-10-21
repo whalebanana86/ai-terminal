@@ -24,8 +24,8 @@ describe("classifyRequest", () => {
     ["새로 만들어 줘", "add"],
     ["잘못된 줄 지워 줘", "delete"],
     ["버튼 추가해 줄 수 있어?", "add"],
-    ["이어서 진행해", null],
-    ["고마워", null],
+    ["이어서 진행해", "add"],
+    ["고마워", "add"],
     ["Add a dark mode toggle", "add"],
     ["add error handling to the parser", "add"],
     ["Fix the crash when saving", "bug"],
@@ -36,7 +36,10 @@ describe("classifyRequest", () => {
     ["refactor the store", "modify"],
     ["what does this do?", "question"],
     ["there is a typo in the title", "bug"],
-    ["ok, go ahead", null],
+    ["ok, go ahead", "add"],
+    ["qwerty 123", "add"],
+    ["", null],
+    ["   ", null],
   ];
   for (const [text, kind] of cases) it(`${text} → ${kind}`, () => expect(classifyRequest(text)).toBe(kind));
 });
