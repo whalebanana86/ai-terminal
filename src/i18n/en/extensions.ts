@@ -34,8 +34,14 @@ export default {
   저장: "Save",
   // 가운데 칸 파일 탭
   "가운데 칸 탭": "Center pane tabs",
-  "저장하지 않은 수정이 있어요. 닫으면 수정을 버려요.": "There are unsaved edits. Closing discards them.",
-  "버리고 닫기": "Discard and close",
+  "저장하지 않은 수정이 있어요": "There are unsaved edits",
+  "저장하지 않은 파일 {n}개:\n{files}\n\n저장하고 닫을까요?": "{n} unsaved file(s):\n{files}\n\nSave before closing?",
+  "저장하고 닫기": "Save and close",
+  "저장하지 않고 닫기": "Close without saving",
+  "저장하지 못해 닫지 않은 파일: {files}": "Not closed because they couldn't be saved: {files}",
+  "그사이 밖에서 바뀜": "changed outside in the meantime",
+  "다른 탭 모두 닫기": "Close other tabs",
+  "모두 닫기": "Close all",
   // 내 수정 워크트리
   "이 워크트리에서 AI 가 {n}개 일하는 중이에요. 같은 파일을 고치면 서로 덮어쓸 수 있어요.": "{n} AI agent(s) are working in this worktree. Editing the same file can overwrite each other's changes.",
   "내 수정 워크트리에서 고치기": "Edit in my own worktree",

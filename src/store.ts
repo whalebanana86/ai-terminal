@@ -68,7 +68,9 @@ export interface ConfirmRequest {
   body: string;
   danger?: boolean;
   confirmLabel?: string;
-  resolve: (ok: boolean) => void;
+  /** 세 번째 버튼(예: "저장하지 않고 닫기"). 누르면 resolve("alt") */
+  altLabel?: string;
+  resolve: (ok: boolean | "alt") => void;
 }
 
 interface State {
@@ -122,9 +124,13 @@ interface State {
   /** 탭 안에서 모드를 바꾸거나(v) 닫는다(null) */
   setTabViewer: (id: string, v: Viewer) => void;
   setActiveTab: (id: string | null) => void;
+  /** 탭 여러 개를 한 번에 닫는다(저장 안 한 수정 확인은 부르는 쪽에서) */
+  closeTabs: (ids: string[]) => void;
   toast: (kind: Toast["kind"], text: string) => void;
   dismissToast: (id: number) => void;
-  ask: (req: Omit<ConfirmRequest, "resolve">) => Promise<boolean>;
+  ask: (req: Omit<ConfirmRequest, "resolve" | "altLabel">) => Promise<boolean>;
+  /** 버튼 셋(취소·altLabel·confirmLabel) 확인창. 취소면 null */
+  choose: (req: Omit<ConfirmRequest, "resolve"> & { altLabel: string }) => Promise<"confirm" | "alt" | null>;
   promptForm: (req: Omit<PromptRequest, "resolve">) => Promise<Record<string, string> | null>;
   refreshChats: () => Promise<void>;
   setLiveRuns: (runs: LiveRun[]) => void;
@@ -330,6 +336,16 @@ export const useStore = create<State>((set, get) => ({
     set({ fileTabs: rest, activeTab: active });
   },
   setActiveTab: (id) => set({ activeTab: id }),
+  closeTabs: (ids) => {
+    const tabs = get().fileTabs;
+    const active = get().activeTab;
+    const rest = tabs.filter((x) => !ids.includes(x.id));
+    if (!active || !ids.includes(active)) return set({ fileTabs: rest });
+    // 닫힌 지금 탭 자리에서 가장 가까운 남은 탭(없으면 에이전트)
+    const i = tabs.findIndex((x) => x.id === active);
+    const next = tabs.slice(i + 1).find((x) => !ids.includes(x.id)) ?? [...tabs.slice(0, i)].reverse().find((x) => !ids.includes(x.id));
+    set({ fileTabs: rest, activeTab: next?.id ?? null });
+  },
 
   toast: (kind, text) => {
     const id = toastSeq++;
@@ -345,7 +361,20 @@ export const useStore = create<State>((set, get) => ({
           ...req,
           resolve: (ok) => {
             set({ confirm: null });
-            resolve(ok);
+            resolve(ok === true);
+          },
+        },
+      });
+    }),
+
+  choose: (req) =>
+    new Promise((resolve) => {
+      set({
+        confirm: {
+          ...req,
+          resolve: (ok) => {
+            set({ confirm: null });
+            resolve(ok === "alt" ? "alt" : ok ? "confirm" : null);
           },
         },
       });

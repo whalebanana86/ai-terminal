@@ -1,10 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+const saved = vi.hoisted(() => ({ calls: [] as string[], conflict: new Set<string>() }));
 vi.mock("./api", () => ({
-  api: { kvSet: async () => {}, kvGet: async () => null, extensionsList: async () => [], extensionSet: async () => [] },
+  api: {
+    kvSet: async () => {},
+    kvGet: async () => null,
+    extensionsList: async () => [],
+    extensionSet: async () => [],
+    saveFile: async (a: { rel: string; text: string }) => {
+      saved.calls.push(`${a.rel}=${a.text}`);
+      return { saved: !saved.conflict.has(a.rel), hash: "h2" };
+    },
+  },
   errorText: String,
 }));
 vi.mock("./panels/TerminalView", () => ({ exposeTerminals: () => {} }));
+vi.mock("./panels/FilePanel", () => ({ FileViewer: () => null }));
+import { Text } from "@codemirror/state";
+import { getDraft, setDraft } from "./extensions/editor/drafts";
 import { useExtensions } from "./extensions";
+import { closeFileTabs } from "./panels/CenterTabs";
 import { fileTabId, useStore } from "./store";
 
 const editor = (on: boolean) => useExtensions.setState({ loaded: true, enabled: { editor: on, stickman: true, usage: true } });
@@ -80,5 +94,72 @@ describe("가운데 칸 파일 탭", () => {
     editor(true);
     expect(s().viewer).toBeNull();
     expect(s().fileTabs.map((x) => x.viewer.rel)).toEqual(["a"]);
+  });
+});
+
+describe("탭 여러 개 닫기", () => {
+  const s = () => useStore.getState();
+  const open = (...rels: string[]) => rels.forEach((rel) => s().openViewer({ kind: "file", rel, mode: "preview" }));
+  const id = (rel: string) => fileTabId("/w", { kind: "file", rel, mode: "preview" });
+  const draft = (rel: string, text: string) => setDraft("/w", rel, { doc: Text.of([text]), hash: "h1", crlf: false, bom: false });
+  /** 확인창이 뜨면 답한다 */
+  const answer = async (a: boolean | "alt") => {
+    for (let i = 0; i < 20 && !s().confirm; i++) await new Promise((r) => setTimeout(r, 0));
+    s().confirm!.resolve(a);
+  };
+  beforeEach(() => {
+    useExtensions.setState({ loaded: true, enabled: { editor: true, stickman: true, usage: true } });
+    useStore.setState({ viewer: null, fileTabs: [], activeTab: null, focus: { worktreePath: "/w", source: "manual" }, confirm: null, toasts: [] });
+    saved.calls = [];
+    saved.conflict.clear();
+  });
+
+  it("지금 탭이 닫히면 가장 가까운 남은 탭으로", () => {
+    open("a", "b", "c", "d");
+    s().setActiveTab(id("b"));
+    s().closeTabs([id("b"), id("c")]);
+    expect(s().fileTabs.map((x) => x.viewer.rel)).toEqual(["a", "d"]);
+    expect(s().activeTab).toBe(id("d"));
+    s().closeTabs([id("d")]);
+    expect(s().activeTab).toBe(id("a"));
+    s().closeTabs([id("a")]);
+    expect(s().activeTab).toBeNull();
+  });
+
+  it("저장 안 한 수정이 없으면 묻지 않고 모두 닫는다", async () => {
+    open("a", "b");
+    await closeFileTabs(s().fileTabs.map((x) => x.id));
+    expect(s().fileTabs).toEqual([]);
+  });
+
+  it("묻고: 취소 → 그대로, 저장하지 않고 닫기 → 수정 버림", async () => {
+    open("a", "b");
+    draft("a", "mine");
+    let p = closeFileTabs(s().fileTabs.map((x) => x.id));
+    await answer(false);
+    await p;
+    expect(s().fileTabs).toHaveLength(2);
+    expect(getDraft("/w", "a")).toBeDefined();
+    p = closeFileTabs(s().fileTabs.map((x) => x.id));
+    await answer("alt");
+    await p;
+    expect(s().fileTabs).toEqual([]);
+    expect(getDraft("/w", "a")).toBeUndefined();
+    expect(saved.calls).toEqual([]);
+  });
+
+  it("저장하고 닫기 → 저장한 건 닫고, 밖에서 바뀌어 못 저장한 건 남긴다", async () => {
+    open("a", "b", "c");
+    draft("a", "mine a");
+    draft("b", "mine b");
+    saved.conflict.add("b");
+    const p = closeFileTabs(s().fileTabs.map((x) => x.id));
+    await answer(true);
+    await p;
+    expect(saved.calls).toEqual(["a=mine a", "b=mine b"]);
+    expect(s().fileTabs.map((x) => x.viewer.rel)).toEqual(["b"]);
+    expect(getDraft("/w", "a")).toBeUndefined();
+    expect(getDraft("/w", "b")).toBeDefined();
+    expect(s().toasts.some((x) => x.kind === "error" && x.text.includes("b"))).toBe(true);
   });
 });

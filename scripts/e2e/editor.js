@@ -142,6 +142,26 @@ try {
   click('.center-tabs [data-tab="win.txt"] .center-tab-close');
   await wait(200);
   check(!$('.center-tabs [data-tab="win.txt"]'), "탭 닫기");
+  // 탭 오른쪽 클릭 → 닫기 / 모두 닫기. 저장 안 한 수정이 있으면 저장하고 닫기·저장하지 않고 닫기·취소
+  const rightClick = (sel) => $(sel)?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 600, clientY: 130 }));
+  await openEdit("src/hello.ts");
+  await type("// discard me\n");
+  rightClick('.center-tabs [data-tab="src/hello.ts"]');
+  click((await until(() => $('[data-action="tab-close"]'))) && '[data-action="tab-close"]');
+  check(!!(await until(() => $(".modal-actions [data-action=alt]"))), "저장 안 한 탭을 닫으면 물어봄");
+  click(".modal-actions [data-action=alt]");
+  await until(() => !$('.center-tabs [data-tab="src/hello.ts"]'));
+  check(!$('.center-tabs [data-tab="src/hello.ts"]') && !(await readDisk("src/hello.ts")).includes("discard me"), "저장하지 않고 닫기");
+  await openEdit("src/hello.ts");
+  await type("// close-all\n");
+  st.getState().openViewer({ kind: "file", rel: "win.txt", mode: "preview" });
+  await wait(500);
+  rightClick('.center-tabs [data-tab="win.txt"]');
+  click((await until(() => $('[data-action="tab-close-all"]'))) && '[data-action="tab-close-all"]');
+  check(!!(await until(() => $(".modal-actions [data-action=alt]"))), "모두 닫기도 저장 안 한 수정을 물어봄");
+  click(".modal-actions .btn-primary");
+  await until(() => st.getState().fileTabs.length === 0);
+  check(st.getState().fileTabs.length === 0 && (await readDisk("src/hello.ts")).includes("// close-all"), "저장하고 모두 닫기");
 
   // 6. CRLF·BOM 유지, 고칠 수 없는 파일
   await openEdit("win.txt");
