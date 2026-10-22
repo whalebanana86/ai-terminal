@@ -82,7 +82,7 @@ export function CenterFileView() {
   if (!tab) return null;
   return (
     <div className="center-file" role="tabpanel" data-testid="center-file">
-      <FileViewer key={tab.id} worktree={tab.worktree} viewer={tab.viewer} onViewer={(v) => setTabViewer(tab.id, v)} wtDot />
+      <FileViewer key={tab.id} worktree={tab.worktree} viewer={tab.viewer} onViewer={(v) => setTabViewer(tab.id, v)} />
     </div>
   );
 }

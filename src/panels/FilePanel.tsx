@@ -218,7 +218,7 @@ function FileTree({ worktree }: { worktree: string }) {
 // ───────────────────────── 보기 (미리보기 / diff) ─────────────────────────
 
 /** 파일 하나 보기(내용·변경·일부 담기·확장 탭). 오른쪽 아래 칸과 가운데 칸 탭이 함께 쓴다. onViewer(null) = 닫기 */
-export function FileViewer({ worktree, viewer, onViewer, wtDot }: { worktree: string; viewer: NonNullable<Viewer>; onViewer: (v: Viewer) => void; wtDot?: boolean }) {
+export function FileViewer({ worktree, viewer, onViewer }: { worktree: string; viewer: NonNullable<Viewer>; onViewer: (v: Viewer) => void }) {
   const openViewer = onViewer;
   const fileTick = useFileTick(viewer.rel, worktree);
   // 화면 모드가 바뀌면 코드 색(밝게/어둡게 테마)을 다시 칠한다
@@ -284,7 +284,6 @@ export function FileViewer({ worktree, viewer, onViewer, wtDot }: { worktree: st
     <div className="viewer">
       <div className="viewer-head">
         <span className="path-text" title={title}>
-          {wtDot && <WtDot path={worktree} />}
           {viewer.kind === "commit-file" && <code className="sha">{viewer.sha.slice(0, 7)}</code>} {title}
         </span>
         <span className="spacer" />
