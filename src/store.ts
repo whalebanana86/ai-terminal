@@ -18,6 +18,23 @@ export type Viewer =
   | { kind: "commit-file"; sha: string; rel: string }
   | null;
 
+/** 가운데 칸 탭으로 연 파일(파일 편집 기능을 켰을 때). 워크트리를 옮겨도 남는다. */
+export interface FileTab {
+  id: string;
+  worktree: string;
+  viewer: NonNullable<Viewer>;
+}
+
+export function fileTabId(worktree: string, v: NonNullable<Viewer>): string {
+  return `${worktree}\u0000${v.kind === "commit-file" ? `${v.sha}:` : ""}${v.rel}`;
+}
+
+/** 파일 편집을 켜면 파일은 오른쪽 아래 대신 가운데 칸 탭으로 연다 */
+function filesInMiddle(): boolean {
+  const e = useExtensions.getState();
+  return e.loaded && e.enabled.editor;
+}
+
 export interface Toast {
   id: number;
   kind: "info" | "error" | "success";
@@ -68,7 +85,11 @@ interface State {
   sessionsLoading: boolean;
   selectedSessionId: string | null;
   focus: Focus | null;
+  /** 오른쪽 파일 칸 아래에 연 파일(파일 편집이 꺼져 있을 때) */
   viewer: Viewer;
+  fileTabs: FileTab[];
+  /** 가운데 칸에서 보고 있는 파일 탭. null 이면 에이전트 */
+  activeTab: string | null;
   /** 포커스 워크트리의 변경 신호 (값이 바뀌면 다시 읽는다)
    *  fsTick: 파일 내용/목록, statusTick: git status(파일 또는 git 변경), gitTick: HEAD·refs·워크트리(그래프) */
   fsTick: number;
@@ -77,6 +98,9 @@ interface State {
   watchNonce: number;
   gitTick: number;
   changedPaths: string[];
+  /** 워크트리별 파일·.git 변경 신호(가운데 탭에 연 다른 워크트리 파일도 바깥 변경을 따라가게) */
+  fsSignals: Record<string, { n: number; paths: string[] }>;
+  gitSignals: Record<string, number>;
   /** 워크트리 → 최근 파일 변경 시각 (실행 중인 다른 세션 표시용) */
   worktreeActivity: Record<string, number>;
   toasts: Toast[];
@@ -93,7 +117,11 @@ interface State {
   refreshExecs: () => Promise<void>;
   selectSession: (id: string | null) => void;
   setFocusWorktree: (path: string) => void;
-  openViewer: (v: Viewer) => void;
+  /** 파일 보기 열기. 파일 편집이 켜져 있으면 가운데 칸 탭으로(keepMode: 이미 열린 탭이면 보던 탭 모드 그대로) */
+  openViewer: (v: Viewer, opts?: { keepMode?: boolean }) => void;
+  /** 탭 안에서 모드를 바꾸거나(v) 닫는다(null) */
+  setTabViewer: (id: string, v: Viewer) => void;
+  setActiveTab: (id: string | null) => void;
   toast: (kind: Toast["kind"], text: string) => void;
   dismissToast: (id: number) => void;
   ask: (req: Omit<ConfirmRequest, "resolve">) => Promise<boolean>;
@@ -124,11 +152,15 @@ export const useStore = create<State>((set, get) => ({
   selectedSessionId: null,
   focus: null,
   viewer: null,
+  fileTabs: [],
+  activeTab: null,
   fsTick: 0,
   statusTick: 0,
   watchNonce: 0,
   gitTick: 0,
   changedPaths: [],
+  fsSignals: {},
+  gitSignals: {},
   worktreeActivity: {},
   toasts: [],
   confirm: null,
@@ -220,7 +252,7 @@ export const useStore = create<State>((set, get) => ({
 
   selectSession: (id) => {
     const s = id ? get().sessions.find((x) => x.id === id) : null;
-    const patch: Partial<State> = { selectedSessionId: id };
+    const patch: Partial<State> = { selectedSessionId: id, activeTab: null };
     // 세션의 워크트리로 포커스만 옮긴다. 체크아웃은 하지 않는다.
     // 지금 보는 워크트리에서도 일한 세션이면(최근엔 다른 곳) 보던 곳을 유지한다.
     const keep = !!s && !!get().focus && !!s.otherWorktrees?.includes(get().focus!.worktreePath);
@@ -279,7 +311,25 @@ export const useStore = create<State>((set, get) => ({
     persistTabs();
   },
 
-  openViewer: (v) => set({ viewer: v }),
+  openViewer: (v, opts) => {
+    const wt = get().focus?.worktreePath;
+    if (!v || !wt || !filesInMiddle()) return set({ viewer: v });
+    const id = fileTabId(wt, v);
+    const tabs = get().fileTabs;
+    const has = tabs.find((x) => x.id === id);
+    const fileTabs = has ? (opts?.keepMode ? tabs : tabs.map((x) => (x.id === id ? { ...x, viewer: v } : x))) : [...tabs, { id, worktree: wt, viewer: v }];
+    set({ fileTabs, activeTab: id, viewer: null });
+  },
+  setTabViewer: (id, v) => {
+    const tabs = get().fileTabs;
+    if (v) return set({ fileTabs: tabs.map((x) => (x.id === id ? { ...x, viewer: v } : x)) });
+    // 닫으면 옆 탭(없으면 에이전트)을 보여 준다
+    const i = tabs.findIndex((x) => x.id === id);
+    const rest = tabs.filter((x) => x.id !== id);
+    const active = get().activeTab === id ? (rest[Math.min(i, rest.length - 1)]?.id ?? null) : get().activeTab;
+    set({ fileTabs: rest, activeTab: active });
+  },
+  setActiveTab: (id) => set({ activeTab: id }),
 
   toast: (kind, text) => {
     const id = toastSeq++;
@@ -339,6 +389,8 @@ export const useStore = create<State>((set, get) => ({
     const patch: Partial<State> = {
       worktreeActivity: { ...get().worktreeActivity, [worktree]: Date.now() },
     };
+    if (files) patch.fsSignals = { ...get().fsSignals, [worktree]: { n: (get().fsSignals[worktree]?.n ?? 0) + 1, paths } };
+    if (git) patch.gitSignals = { ...get().gitSignals, [worktree]: (get().gitSignals[worktree] ?? 0) + 1 };
     if (focus?.worktreePath === worktree) {
       if (files) {
         patch.fsTick = get().fsTick + 1;
@@ -425,6 +477,32 @@ export function useSelectedSession(): LinkedSession | null {
 }
 
 /** 테스트 자동화 빌드나 개발 모드에서만 화면 상태를 창 객체에 노출한다(배포 빌드에는 없음). */
+/** 이 워크트리에서 지금 보이는 파일 보기(오른쪽 아래, 또는 가운데 칸의 지금 탭) — 목록의 선택 표시용 */
+export function useShownViewer(worktree: string | null | undefined): Viewer {
+  return useStore((s) => {
+    if (s.viewer) return s.viewer;
+    const tab = s.activeTab ? s.fileTabs.find((x) => x.id === s.activeTab) : undefined;
+    return tab && tab.worktree === worktree ? tab.viewer : null;
+  });
+}
+
+// 파일 편집을 끄면 가운데 탭을 닫고(지금 탭은 오른쪽 아래로), 켜면 오른쪽 아래에 열린 파일을 탭으로 옮긴다
+useExtensions.subscribe((now, prev) => {
+  const on = now.loaded && now.enabled.editor;
+  if (on === (prev.loaded && prev.enabled.editor)) return;
+  const s = useStore.getState();
+  if (on) {
+    if (s.viewer) {
+      const v = s.viewer;
+      useStore.setState({ viewer: null });
+      s.openViewer(v);
+    }
+    return;
+  }
+  const tab = s.fileTabs.find((x) => x.id === s.activeTab);
+  useStore.setState({ fileTabs: [], activeTab: null, viewer: tab && tab.worktree === s.focus?.worktreePath ? tab.viewer : s.viewer });
+});
+
 export function exposeForAutomation() {
   (window as unknown as { __aitermStore: typeof useStore }).__aitermStore = useStore;
   (window as unknown as { __aitermExt: typeof useExtensions }).__aitermExt = useExtensions;

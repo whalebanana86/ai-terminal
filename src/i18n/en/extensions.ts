@@ -5,7 +5,8 @@ export default {
   "외부 편집기": "External editor",
   "자동 (설치된 편집기)": "Automatic (installed editor)",
   "파일 편집": "File editing",
-  "파일 보기에 '편집' 탭을 더해요. 켜면 앱이 워크트리 안 파일을 저장할 수 있어요.": "Adds an 'Edit' tab to the file viewer. When on, the app can save files inside your worktrees.",
+  "파일 보기에 '편집' 탭을 더하고, 파일을 가운데 칸 탭으로 크게 열어요. 켜면 앱이 워크트리 안 파일을 저장할 수 있어요.":
+    "Adds an 'Edit' tab and opens files as large tabs in the center pane. When on, the app can save files inside your worktrees.",
   스틱맨: "Stickman",
   "위쪽 막대 오른쪽에서 요청 종류마다 동작하고 오늘 요청 수를 세요.": "Acts out each kind of request at the right of the top bar and counts today's requests.",
   "구독 한도 표시": "Subscription limits",
@@ -32,6 +33,10 @@ export default {
   "⌘F 찾기 · Esc 나가기": "⌘F find · Esc leave",
   "저장 (⌘S)": "Save (⌘S)",
   저장: "Save",
+  // 가운데 칸 파일 탭
+  "가운데 칸 탭": "Center pane tabs",
+  "저장하지 않은 수정이 있어요. 닫으면 수정을 버려요.": "There are unsaved edits. Closing discards them.",
+  "버리고 닫기": "Discard and close",
   // 내 수정 워크트리
   "이 워크트리에서 AI 가 {n}개 일하는 중이에요. 같은 파일을 고치면 서로 덮어쓸 수 있어요.": "{n} AI agent(s) are working in this worktree. Editing the same file can overwrite each other's changes.",
   "내 수정 워크트리에서 고치기": "Edit in my own worktree",

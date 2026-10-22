@@ -59,8 +59,9 @@ export default function App() {
     };
   }, []);
 
-  // 감시 대상 = 포커스 워크트리 + 실행 중인 에이전트의 워크트리
-  const watchKey = [focus?.worktreePath ?? "", ...execs.filter((e) => !e.exited).map((e) => e.worktreePath ?? e.cwd)].sort().join("\n");
+  // 감시 대상 = 포커스 워크트리 + 실행 중인 에이전트의 워크트리 + 가운데 탭에 연 파일의 워크트리
+  const tabWorktrees = useStore((s) => [...new Set(s.fileTabs.map((x) => x.worktree))].sort().join("\n"));
+  const watchKey = [focus?.worktreePath ?? "", ...execs.filter((e) => !e.exited).map((e) => e.worktreePath ?? e.cwd), ...tabWorktrees.split("\n")].sort().join("\n");
   const watchNonce = useStore((s) => s.watchNonce);
   useEffect(() => {
     const list = [...new Set(watchKey.split("\n").filter(Boolean))];

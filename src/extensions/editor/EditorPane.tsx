@@ -17,7 +17,7 @@ import { isEditBranch, mergeIntoAgent, openInEditWorktree } from "./editWorktree
 
 type Outside = null | "changed" | "conflict";
 
-export default function EditorPane({ worktree, rel }: { worktree: string; rel: string }) {
+export default function EditorPane({ worktree, rel, setMode }: { worktree: string; rel: string; setMode: (mode: "preview") => void }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   /** 마지막으로 디스크와 같았던 내용과 그때의 지문 */
@@ -30,8 +30,7 @@ export default function EditorPane({ worktree, rel }: { worktree: string; rel: s
   const [outside, setOutside] = useState<Outside>(null);
   const [restored, setRestored] = useState(false);
   const [hideAgentNote, setHideAgentNote] = useState(false);
-  const fileTick = useFileTick(rel);
-  const openViewer = useStore((s) => s.openViewer);
+  const fileTick = useFileTick(rel, worktree);
   const agents = useStore((s) => countAgentsIn(s, worktree));
   const branch = useStore((s) => s.repos.flatMap((r) => r.worktrees).find((w) => w.path === worktree)?.branch ?? null);
   const actions = useRef({ save: (_force: boolean) => {}, leave: () => {} });
@@ -171,7 +170,7 @@ export default function EditorPane({ worktree, rel }: { worktree: string; rel: s
 
   actions.current = {
     save: (force) => void save(force),
-    leave: () => openViewer({ kind: "file", rel, mode: "preview" }),
+    leave: () => setMode("preview"),
   };
 
   const editWt = isEditBranch(branch);

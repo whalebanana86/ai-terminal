@@ -19,7 +19,8 @@ export interface FileModeSlot {
   available: (f: { rel: string; isImage: boolean }) => boolean;
   /** 탭 옆에 • 를 찍을지(예: 저장하지 않은 수정) */
   useBadge?: (worktree: string, rel: string) => boolean;
-  View: LazyExoticComponent<ComponentType<{ worktree: string; rel: string }>>;
+  /** setMode: 같은 파일의 다른 보기로(예: Esc → "preview") */
+  View: LazyExoticComponent<ComponentType<{ worktree: string; rel: string; setMode: (mode: "preview" | "diff" | "stage" | `ext:${string}`) => void }>>;
 }
 
 export interface ExtensionDef {
@@ -39,7 +40,7 @@ export const EXTENSIONS: ExtensionDef[] = [
   {
     id: "editor",
     title: () => t("파일 편집"),
-    description: () => t("파일 보기에 '편집' 탭을 더해요. 켜면 앱이 워크트리 안 파일을 저장할 수 있어요."),
+    description: () => t("파일 보기에 '편집' 탭을 더하고, 파일을 가운데 칸 탭으로 크게 열어요. 켜면 앱이 워크트리 안 파일을 저장할 수 있어요."),
     defaultEnabled: false,
     fileModes: [
       {

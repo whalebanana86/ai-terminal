@@ -10,13 +10,14 @@ import { useFileTick } from "../fileTick";
 import { escapeHtml, highlightLines } from "../highlight";
 import { t } from "../i18n";
 import { baseName, decorationMap, kindLabel, kindLetter } from "../logic";
-import { useStore } from "../store";
+import { useShownViewer, useStore, type Viewer } from "../store";
 import { onThemeChange } from "../theme";
 import { PanelHead } from "./GitPanel";
 
 export function FilePanel() {
   const focus = useStore((s) => s.focus);
   const viewer = useStore((s) => s.viewer);
+  const openViewer = useStore((s) => s.openViewer);
   const wt = focus?.worktreePath ?? null;
   return (
     <section className="panel" data-pane="3" tabIndex={-1}>
@@ -38,7 +39,7 @@ export function FilePanel() {
             <>
               <Separator className="sep sep-h" />
               <Panel id="viewer" defaultSize="55" minSize="20">
-                <FileViewer worktree={wt} />
+                <FileViewer worktree={wt} viewer={viewer} onViewer={openViewer} />
               </Panel>
             </>
           )}
@@ -53,7 +54,7 @@ export function FilePanel() {
 function FileTree({ worktree }: { worktree: string }) {
   const fsTick = useStore((s) => s.fsTick);
   const statusTick = useStore((s) => s.statusTick);
-  const viewer = useStore((s) => s.viewer);
+  const viewer = useShownViewer(worktree);
   const openViewer = useStore((s) => s.openViewer);
   const [children, setChildren] = useState<Map<string, DirEntry[]>>(new Map());
   const [expanded, setExpanded] = useState<Set<string>>(new Set([""]));
@@ -116,7 +117,7 @@ function FileTree({ worktree }: { worktree: string }) {
   };
 
   const openFile = (rel: string, kind: ChangeKind | undefined) =>
-    openViewer({ kind: "file", rel, mode: kind && kind !== "untracked" ? "diff" : "preview" });
+    openViewer({ kind: "file", rel, mode: kind && kind !== "untracked" ? "diff" : "preview" }, { keepMode: true });
 
   const renderDir = (rel: string, depth: number): React.ReactNode[] => {
     const list = children.get(rel);
@@ -166,7 +167,7 @@ function FileTree({ worktree }: { worktree: string }) {
       if (parent !== rel || names.has(ent.path)) continue;
       const on = viewer?.kind === "file" && viewer.rel === ent.path;
       rows.push(
-        <li key={`del:${ent.path}`} className={`tree-row file k-deleted${on ? " on" : ""}`} style={{ paddingLeft: 22 + depth * 14 }} onClick={() => openViewer({ kind: "file", rel: ent.path, mode: "diff" })} data-rel={ent.path}>
+        <li key={`del:${ent.path}`} className={`tree-row file k-deleted${on ? " on" : ""}`} style={{ paddingLeft: 22 + depth * 14 }} onClick={() => openViewer({ kind: "file", rel: ent.path, mode: "diff" }, { keepMode: true })} data-rel={ent.path}>
           <FileIcon name={baseName(ent.path)} />
           <span className="name">{baseName(ent.path)}</span>
           <span className="kind kind-deleted">D</span>
@@ -198,7 +199,7 @@ function FileTree({ worktree }: { worktree: string }) {
           ? changed.map((e) => {
               const on = viewer?.kind === "file" && viewer.rel === e.path;
               return (
-                <li key={e.path} className={`tree-row file k-${e.kind}${on ? " on" : ""}`} style={{ paddingLeft: 10 }} onClick={() => openViewer({ kind: "file", rel: e.path, mode: "diff" })} data-rel={e.path}>
+                <li key={e.path} className={`tree-row file k-${e.kind}${on ? " on" : ""}`} style={{ paddingLeft: 10 }} onClick={() => openViewer({ kind: "file", rel: e.path, mode: "diff" }, { keepMode: true })} data-rel={e.path}>
                   <FileIcon name={baseName(e.path)} />
                   <span className="name">{e.path}</span>
                   <span className={`kind kind-${e.kind}`}>{kindLetter(e.kind)}</span>
@@ -214,10 +215,10 @@ function FileTree({ worktree }: { worktree: string }) {
 
 // ───────────────────────── 보기 (미리보기 / diff) ─────────────────────────
 
-function FileViewer({ worktree }: { worktree: string }) {
-  const viewer = useStore((s) => s.viewer)!;
-  const openViewer = useStore((s) => s.openViewer);
-  const fileTick = useFileTick(viewer.rel);
+/** 파일 하나 보기(내용·변경·일부 담기·확장 탭). 오른쪽 아래 칸과 가운데 칸 탭이 함께 쓴다. onViewer(null) = 닫기 */
+export function FileViewer({ worktree, viewer, onViewer, wtDot }: { worktree: string; viewer: NonNullable<Viewer>; onViewer: (v: Viewer) => void; wtDot?: boolean }) {
+  const openViewer = onViewer;
+  const fileTick = useFileTick(viewer.rel, worktree);
   // 화면 모드가 바뀌면 코드 색(밝게/어둡게 테마)을 다시 칠한다
   const [themeTick, setThemeTick] = useState(0);
   useEffect(() => onThemeChange(() => setThemeTick((n) => n + 1)), []);
@@ -274,6 +275,7 @@ function FileViewer({ worktree }: { worktree: string }) {
     <div className="viewer">
       <div className="viewer-head">
         <span className="path-text" title={title}>
+          {wtDot && <WtDot path={worktree} />}
           {viewer.kind === "commit-file" && <code className="sha">{viewer.sha.slice(0, 7)}</code>} {title}
         </span>
         <span className="spacer" />
@@ -321,7 +323,7 @@ function FileViewer({ worktree }: { worktree: string }) {
           )
         ) : ext && viewer.kind === "file" ? (
           <Suspense fallback={<div className="loading">…</div>}>
-            <ext.View key={`${worktree}:${viewer.rel}`} worktree={worktree} rel={viewer.rel} />
+            <ext.View key={`${worktree}:${viewer.rel}`} worktree={worktree} rel={viewer.rel} setMode={(m) => openViewer({ kind: "file", rel: viewer.rel, mode: m })} />
           </Suspense>
         ) : mode === "stage" && viewer.kind === "file" ? (
           <StageView worktree={worktree} rel={viewer.rel} />
@@ -364,7 +366,7 @@ function ModeTab({ slot, worktree, rel, on, onClick }: { slot: FileModeSlot; wor
 
 /** 그림 한 장: 바둑판 배경 위에 창에 맞춰 보여 주고, 누르면 실제 크기 ↔ 맞춤. */
 function ImageBox({ worktree, rel, rev, label }: { worktree: string; rel: string; rev?: string; label: string }) {
-  const fileTick = useFileTick(rel);
+  const fileTick = useFileTick(rel, worktree);
   const [url, setUrl] = useState<string | null>(null);
   const [bytes, setBytes] = useState(0);
   const [dims, setDims] = useState<[number, number] | null>(null);
@@ -426,7 +428,7 @@ function ImageBox({ worktree, rel, rev, label }: { worktree: string; rel: string
 
 /** 한 파일의 바뀐 부분(hunk)을 담기·빼기·버리기. 깃 패널 '변경 사항' 아래와 오른쪽 보기에서 함께 쓴다. */
 export function StageView({ worktree, rel }: { worktree: string; rel: string }) {
-  const fileTick = useFileTick(rel);
+  const fileTick = useFileTick(rel, worktree);
   const toast = useStore((s) => s.toast);
   const ask = useStore((s) => s.ask);
   const [data, setData] = useState<[FileDiff[], FileDiff[]] | null>(null);

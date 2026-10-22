@@ -22,6 +22,11 @@ const until = async (fn, ms = 4000) => {
   return null;
 };
 const cm = () => $(".cm-content")?.cmTile?.view;
+/** 지금 보이는 파일 보기(가운데 탭 또는 오른쪽 아래) */
+const shown = () => {
+  const s = st.getState();
+  return s.viewer ?? s.fileTabs.find((x) => x.id === s.activeTab)?.viewer ?? null;
+};
 const type = async (text) => {
   const v = cm();
   v.dispatch({ changes: { from: v.state.doc.length, insert: text }, selection: { anchor: v.state.doc.length + text.length }, userEvent: "input.type" });
@@ -78,6 +83,8 @@ try {
   // 2. 켜고 편집·저장
   check(await ext.getState().set("editor", true), "편집 켜기(자동화 빌드는 확인창 없이)");
   check(!!(await openEdit("src/hello.ts")), "편집 탭이 열림");
+  check(!!$("[data-testid=center-file]") && !!$('.center-tabs [data-tab="src/hello.ts"]'), "파일이 가운데 칸 탭으로 열림");
+  check(!$(".file-split [data-testid=editor-pane]"), "오른쪽 아래에는 열지 않음");
   check(!!$('[data-mode="ext:editor"].on'), "편집 탭 선택됨");
   check(!!$(".cm-content .ͼp, .cm-content span[class]"), "코드 색칠");
   await type("// 한글 수정\n");
@@ -127,7 +134,16 @@ try {
   check((await readDisk("src/hello.ts")).includes("// key"), "⌘S 로 저장");
   cm().contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true, cancelable: true }));
   await wait(300);
-  check(st.getState().viewer?.mode === "preview", "Esc 로 내용 보기");
+  check(shown()?.mode === "preview", "Esc 로 내용 보기");
+  // 트리에서 파일을 누르면 가운데 탭, 에이전트 탭을 누르면 에이전트 화면
+  click('.tree-row[data-rel="win.txt"]');
+  check(!!(await until(() => $('.center-tabs [data-tab="win.txt"]'))), "트리에서 누른 파일도 가운데 탭으로");
+  click('.center-tabs [data-tab="agent"]');
+  await wait(200);
+  check(!$("[data-testid=center-file]") && st.getState().activeTab === null, "에이전트 탭으로 돌아감");
+  click('.center-tabs [data-tab="win.txt"] .center-tab-close');
+  await wait(200);
+  check(!$('.center-tabs [data-tab="win.txt"]'), "탭 닫기");
 
   // 6. CRLF·BOM 유지, 고칠 수 없는 파일
   await openEdit("win.txt");
