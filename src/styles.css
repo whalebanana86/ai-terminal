@@ -1,3 +1,17 @@
+/* 터미널 글꼴: D2Coding 수정본(한글 = 영문 두 칸, 한글 사이가 벌어지지 않음). src/assets/fonts/README.md */
+@font-face {
+  font-family: "Haengbang Mono";
+  src: url("./assets/fonts/HaengbangMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: block;
+}
+@font-face {
+  font-family: "Haengbang Mono";
+  src: url("./assets/fonts/HaengbangMono-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-display: block;
+}
+
 :root {
   --bg-0: #0b0d11;
   --bg-1: #12151b;

@@ -164,4 +164,6 @@ export default {
   "에이전트가 답하는 중입니다": "The agent is responding",
   "메시지 (Enter 보내기, Shift+Enter 줄바꿈)": "Message (Enter to send, Shift+Enter for new line)",
   보내기: "Send",
+  "세션 목록 펼치기": "Show session list",
+  "세션 목록 접기 (터미널을 크게)": "Hide session list (bigger terminal)",
 } satisfies Record<string, string>;
