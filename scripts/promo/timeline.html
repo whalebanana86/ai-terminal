@@ -1,0 +1,130 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<!-- 소개 영상 타임라인(1920×1080). render(t) 가 t 초의 화면을 그린다 → render.mjs frames 가 프레임마다 찍는다. 장면 그림은 같은 폴더 -->
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#07090d;font-family:-apple-system,"Apple SD Gothic Neo",sans-serif;color:#eef1f5}
+#bg{position:absolute;inset:0;background:radial-gradient(1200px 700px at 20% 0%,#16304a 0%,transparent 60%),radial-gradient(1000px 700px at 100% 100%,#2a1d3d 0%,transparent 55%),#07090d}
+.brand{position:absolute;left:56px;top:40px;font-size:24px;font-weight:700;letter-spacing:-.2px;opacity:.9}
+.brand small{font-weight:500;color:#8fa0b5;margin-left:10px;font-size:18px}
+.scene{position:absolute;inset:0;opacity:0}
+.cap{position:absolute;left:0;right:0;top:72px;text-align:center}
+.cap h1{margin:0;font-size:64px;font-weight:800;letter-spacing:-1.5px;line-height:1.1}
+.cap p{margin:14px 0 0;font-size:30px;color:#a9b6c8;font-weight:500}
+.card{position:absolute;left:140px;top:262px;width:1640px;height:780px;border-radius:22px;overflow:hidden;background:#0b0d11;
+  box-shadow:0 30px 80px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.08)}
+.card img{position:absolute;left:0;top:0;transform-origin:0 0}
+.pair .card{width:760px;height:740px;top:300px;left:170px}
+.pair .card.b{left:990px}
+.tag{position:absolute;top:252px;font-size:26px;font-weight:700;color:#cfd8e3}
+.wide .card{height:auto}
+.big{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.big .name{font-size:132px;font-weight:900;letter-spacing:-4px;line-height:1}
+.big .sub{font-size:38px;color:#a9b6c8;margin-top:22px;font-weight:600}
+.chip{display:inline-block;margin-top:40px;padding:12px 28px;border-radius:40px;background:#1c3b57;color:#8fd3ff;font-size:30px;font-weight:700;border:1px solid #2e5f88}
+.url{margin-top:34px;font-size:40px;font-weight:700;color:#e8eef6}
+.ok{color:#7ee787}
+</style></head><body>
+<div id="bg"></div>
+<div id="root"></div>
+<script>
+const CW = 1640, CH = 780;
+// 영역은 앱 화면(1440×900) 기준 비율 [x, y, w, h]
+const FULL = [0, 0, 1, 1];
+const S = [
+  { t: [0, 2.4], kind: "title" },
+  { t: [2.4, 7.4], img: "editor.png", h: "파일을 열면 바로 편집", s: "가운데 칸 탭으로 크게 · ⌘S 저장 · ⌘F 찾기", from: FULL, to: [0.33, 0.1, 0.67, 0.42] },
+  { t: [7.4, 11.4], img: "protect.png", h: "AI 가 그사이 같은 파일을 바꿨다면?", s: "덮어쓰지 않고 먼저 물어봐요", from: [0.3, 0.06, 0.72, 0.6], to: [0.33, 0.1, 0.42, 0.33] },
+  { t: [11.4, 14.9], img: "settings.png", h: "쓸 기능만 켜기", s: "설정 → 기능 · 파일 편집 · 스틱맨 · 구독 한도", from: [0.1, 0.05, 0.8, 0.9], to: [0.33, 0.27, 0.34, 0.44] },
+  { t: [14.9, 19.4], img: "graph.png", h: "AI 와 함께 쓴 커밋엔 🤖", s: "작성자는 .mailmap 으로 한 사람으로 묶어요", from: [0, 0.09, 0.5, 0.4], to: [0, 0.5, 0.5, 0.36] },
+  { t: [19.4, 23.4], kind: "pair", a: "list-open.png", b: "list-closed.png", la: "목록 펼침", lb: "목록 접음", h: "세션 목록을 접고 터미널을 크게", s: "버튼 하나로 접고 펼치기 · 높이는 기억해요", region: [0.335, 0.085, 0.33, 0.5] },
+  { t: [23.4, 26.9], img: "font.png", wide: true, h: "한글이 벌어지지 않는 터미널 글꼴", s: "같은 폭에 한 줄 15% 더", from: [0, 0, 1, 1], to: [0.01, 0.02, 0.98, 0.96] },
+  { t: [26.9, 29.5], kind: "outro" },
+];
+const FADE = 0.35;
+const ease = (x) => (x < 0 ? 0 : x > 1 ? 1 : x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const lerp = (a, b, k) => a + (b - a) * k;
+const root = document.getElementById("root");
+let pending = 0;
+const brand = '<div class="brand">코드행방<small>AI가 어디서 무엇을 바꾸는지</small></div>';
+
+function place(img, region, iw, ih, cw = CW, ch = CH) {
+  const [x, y, w, h] = region;
+  const rw = w * iw, rh = h * ih;
+  const sc = Math.min(cw / rw, ch / rh);
+  let tx = cw / 2 - (x * iw + rw / 2) * sc;
+  let ty = ch / 2 - (y * ih + rh / 2) * sc;
+  // 그림이 칸보다 크면 가장자리가 비어 보이지 않게, 작으면 가운데로
+  tx = iw * sc >= cw ? Math.min(0, Math.max(cw - iw * sc, tx)) : (cw - iw * sc) / 2;
+  ty = ih * sc >= ch ? Math.min(0, Math.max(ch - ih * sc, ty)) : (ch - ih * sc) / 2;
+  img.style.transform = `translate(${tx}px, ${ty}px) scale(${sc})`;
+}
+function loadImg(src) {
+  const img = new Image();
+  pending++;
+  img.onload = () => --pending === 0 && (window.ready = true);
+  img.src = src;
+  return img;
+}
+for (const sc of S) {
+  const el = document.createElement("section");
+  el.className = "scene" + (sc.kind === "pair" ? " pair" : "");
+  if (sc.kind === "title") {
+    el.innerHTML = `<div class="big"><div class="name">코드행방</div><div class="sub">AI가 어디서 무엇을 바꾸는지 한눈에</div><div class="chip">오늘 새로 들어온 기능 · v0.7.0</div></div>`;
+  } else if (sc.kind === "outro") {
+    el.innerHTML = `<div class="big"><div class="name">코드행방</div><div class="sub">Claude Code · Codex 를 여러 개 돌릴 때 쓰는 macOS 앱</div><div class="sub"><span class="ok">무료 · 오픈소스(MIT)</span> · 앱 안에서 자동 업데이트</div><div class="url">github.com/whalebanana86/ai-terminal</div></div>`;
+  } else if (sc.kind === "pair") {
+    el.innerHTML = brand + `<div class="cap"><h1>${sc.h}</h1><p>${sc.s}</p></div><div class="tag" style="left:140px">${sc.la}</div><div class="tag" style="left:980px">${sc.lb}</div><div class="card a"></div><div class="card b"></div>`;
+    sc.imgA = loadImg(sc.a); sc.imgB = loadImg(sc.b);
+    el.querySelector(".card.a").appendChild(sc.imgA); el.querySelector(".card.b").appendChild(sc.imgB);
+  } else {
+    el.innerHTML = brand + `<div class="cap"><h1>${sc.h}</h1><p>${sc.s}</p></div><div class="card"></div>`;
+    sc.im = loadImg(sc.img);
+    el.querySelector(".card").appendChild(sc.im);
+  }
+  sc.el = el;
+  sc.capEl = el.querySelector(".cap");
+  root.appendChild(el);
+}
+if (!pending) window.ready = true;
+
+window.render = (t) => {
+  for (const sc of S) {
+    const [a, b] = sc.t;
+    const first = sc === S[0], last = sc === S[S.length - 1];
+    // 앞뒤 장면과 FADE 동안 겹쳐 서서히 바뀐다
+    const fin = first ? 1 : ease((t - a + FADE / 2) / FADE);
+    const fout = last ? 1 : 1 - ease((t - b + FADE / 2) / FADE);
+    const op = Math.max(0, Math.min(fin, fout));
+    sc.el.style.opacity = op;
+    sc.el.style.display = op > 0 ? "block" : "none";
+    if (op <= 0) continue;
+    const u = (t - a) / (b - a);
+    if (sc.capEl) {
+      const k = ease((t - a) / 0.55);
+      sc.capEl.style.transform = `translateY(${lerp(26, 0, k)}px)`;
+      sc.capEl.style.opacity = k;
+    }
+    if (sc.kind === "title" || sc.kind === "outro") {
+      const k = ease((t - a) / 0.8);
+      sc.el.firstElementChild.style.transform = `scale(${lerp(0.94, 1, k)})`;
+      continue;
+    }
+    if (sc.kind === "pair") {
+      const iw = sc.imgA.naturalWidth, ih = sc.imgA.naturalHeight;
+      place(sc.imgA, sc.region, iw, ih, 760, 740);
+      place(sc.imgB, sc.region, iw, ih, 760, 740);
+      continue;
+    }
+    const [iw, ih] = [sc.im.naturalWidth, sc.im.naturalHeight];
+    const k = ease((u - 0.12) / 0.62);
+    const r = sc.from.map((v, i) => lerp(v, sc.to[i], k));
+    if (sc.wide) {
+      const card = sc.el.querySelector(".card");
+      const h = Math.round((CW * ih) / iw);
+      card.style.height = `${h}px`;
+      card.style.top = `${300 + Math.max(0, (740 - h) / 2)}px`;
+      place(sc.im, r, iw, ih, CW, h);
+    } else place(sc.im, r, iw, ih);
+  }
+};
+</script></body></html>

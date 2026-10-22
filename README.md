@@ -303,6 +303,7 @@ README 그림·시연 영상 다시 만들기 (지어낸 예시 데이터로만 
 
 ```bash
 scripts/make_screenshots.sh             # docs/screenshots/*.png + docs/demo.gif·mp4 (ffmpeg 필요)
+scripts/promo/make_promo.sh             # X·스레드용 30초 소개 영상 promo/*.mp4 (1920×1080, 화면 녹화 권한 없이, ffmpeg·크롬 필요)
 scripts/make_screenshots.sh --no-video  # 그림만
 ```
 

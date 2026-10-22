@@ -178,6 +178,7 @@ pnpm check                # tsc + vitest + cargo test
 AITERM_AUTOMATION_SOCKET=/tmp/aiterm-auto.sock pnpm tauri dev --features automation
 scripts/e2e/regression.sh; scripts/e2e/features.sh; scripts/e2e/hangul.sh; scripts/e2e/editor.sh
 scripts/make_screenshots.sh   # README images + demo video from sample data (needs ffmpeg)
+scripts/promo/make_promo.sh   # 30-second promo video for X/Threads in promo/ (1920×1080, no screen-recording permission; needs ffmpeg and Chrome)
 scripts/package_release.sh 0.1.0   # universal app → build/release/ DMG, zip, SHA256SUMS (a v* tag does this on GitHub Actions and publishes a Release)
 ```
 

@@ -54,10 +54,17 @@ def write(path, text):
         f.write(text)
 
 
-def commit(cwd, msg, ago, files, who=MINA):
+# 에이전트와 함께 쓴 커밋의 공동 작성자 트레일러(그래프의 🤖 표시)
+CLAUDE = "Claude <noreply@anthropic.com>"
+CODEX = "Codex <noreply@openai.com>"
+
+
+def commit(cwd, msg, ago, files, who=MINA, ai=None):
     for p, t in files.items():
         write(os.path.join(cwd, p), t)
     git(cwd, "add", "-A")
+    if ai:
+        msg = f"{msg}\n\nCo-Authored-By: {ai}"
     git(cwd, "commit", "-q", "-m", msg, when=NOW - ago, who=who)
 
 
@@ -171,7 +178,7 @@ def make_repo():
     git(MAIN, "switch", "-q", "main")
     commit(MAIN, "할 일 개수 표시", 3 * DAY + 2 * HOUR, {"src/components/Count.tsx": "export const Count = ({ n }: { n: number }) => <small>{n}개 남음</small>;\n"})
     git(MAIN, "merge", "-q", "--no-ff", "feature/tags", "-m", "태그 기능 병합 (feature/tags)", when=NOW - 3 * DAY, who=JUN)
-    commit(MAIN, "정렬이 끝난 일을 섞던 문제 고침", 1 * DAY + 2 * HOUR, {"src/lib/sort.ts": SORT_V2, "tests/sort.test.ts": 'import { sortTodos } from "../src/lib/sort";\n\ntest("안 끝난 일이 먼저", () => {\n  expect(sortTodos([{ id: "1", title: "a", done: true, tags: [] }, { id: "2", title: "b", done: false, tags: [] }])[0].id).toBe("2");\n});\n'})
+    commit(MAIN, "정렬이 끝난 일을 섞던 문제 고침", 1 * DAY + 2 * HOUR, ai=CLAUDE, files={"src/lib/sort.ts": SORT_V2, "tests/sort.test.ts": 'import { sortTodos } from "../src/lib/sort";\n\ntest("안 끝난 일이 먼저", () => {\n  expect(sortTodos([{ id: "1", title: "a", done: true, tags: [] }, { id: "2", title: "b", done: false, tags: [] }])[0].id).toBe("2");\n});\n'})
     git(MAIN, "remote", "add", "origin", os.path.join(ROOT, "remote", "todo-app.git"))
     git(MAIN, "push", "-q", "origin", "main", "feature/tags", "v0.1.0")
     git(MAIN, "branch", "-q", "--set-upstream-to=origin/main", "main")
@@ -183,13 +190,13 @@ def make_repo():
     git(MAIN, "switch", "-q", "main")
     # 에이전트마다 따로 쓰는 워크트리
     git(MAIN, "worktree", "add", "-q", "-b", "agent/login", LOGIN, "HEAD~1")
-    commit(LOGIN, "로그인 화면 뼈대", 2 * HOUR + 30 * MIN, {"src/pages/Login.tsx": "export function Login() {\n  return <form>…</form>;\n}\n"})
-    commit(LOGIN, "이메일 형식 검사", 1 * HOUR + 40 * MIN, {"src/lib/validate.ts": "export const isEmail = (s: string) => /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(s);\n"})
-    commit(LOGIN, "로그인 상태 유지", 25 * MIN, {"src/lib/auth.ts": "export const session = { get: () => localStorage.getItem(\"token\") };\n"})
+    commit(LOGIN, "로그인 화면 뼈대", 2 * HOUR + 30 * MIN, {"src/pages/Login.tsx": "export function Login() {\n  return <form>…</form>;\n}\n"}, ai=CLAUDE)
+    commit(LOGIN, "이메일 형식 검사", 1 * HOUR + 40 * MIN, {"src/lib/validate.ts": "export const isEmail = (s: string) => /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(s);\n"}, ai=CLAUDE)
+    commit(LOGIN, "로그인 상태 유지", 25 * MIN, {"src/lib/auth.ts": "export const session = { get: () => localStorage.getItem(\"token\") };\n"}, ai=CLAUDE)
     write(os.path.join(LOGIN, "src/pages/Login.tsx"), "export function Login() {\n  // TODO: 비밀번호 보기 버튼\n  return <form>…</form>;\n}\n")
     git(MAIN, "worktree", "add", "-q", "-b", "agent/dark-mode", DARK, "HEAD")
-    commit(DARK, "색을 CSS 변수로 정리", 1 * HOUR + 10 * MIN, {"src/styles.css": CSS + "\n.card { background: var(--bg); }\n"}, who=JUN)
-    commit(DARK, "다크 모드 켜고 끄기", 45 * MIN, {"src/styles.css": CSS + "\n@media (prefers-color-scheme: dark) {\n  :root { --bg: #1c1c1e; --fg: #f5f5f7; }\n}\n.card { background: var(--bg); }\n"}, who=JUN)
+    commit(DARK, "색을 CSS 변수로 정리", 1 * HOUR + 10 * MIN, {"src/styles.css": CSS + "\n.card { background: var(--bg); }\n"}, who=JUN, ai=CODEX)
+    commit(DARK, "다크 모드 켜고 끄기", 45 * MIN, {"src/styles.css": CSS + "\n@media (prefers-color-scheme: dark) {\n  :root { --bg: #1c1c1e; --fg: #f5f5f7; }\n}\n.card { background: var(--bg); }\n"}, who=JUN, ai=CODEX)
     # 메인 워크트리에 커밋 안 한 변경(변경 사항 탭·부분 담기 그림용)
     write(os.path.join(MAIN, "src/lib/sort.ts"), SORT_WORKING)
     write(os.path.join(MAIN, "src/styles.css"), CSS.replace("padding: 8px 12px", "padding: 10px 14px"))

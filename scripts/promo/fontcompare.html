@@ -1,0 +1,40 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="xterm.css">
+<!-- 소개 영상용: 예전 터미널 글꼴(한글 사이가 벌어짐)과 지금 글꼴(Haengbang Mono)을 같은 폭에 나란히 -->
+<style>
+@font-face{font-family:"Haengbang Mono";src:url(HaengbangMono-Regular.woff2) format("woff2");font-weight:400}
+@font-face{font-family:"Haengbang Mono";src:url(HaengbangMono-Bold.woff2) format("woff2");font-weight:700}
+body{margin:0;background:#0b0d11;color:#d7dae0;font:15px -apple-system,"Apple SD Gothic Neo",sans-serif;display:flex;gap:28px;padding:22px 26px}
+h3{font-size:24px!important} h3 small{font-size:17px!important}
+.col{width:760px} h3{margin:0 0 10px;font-size:20px;font-weight:700;display:flex;align-items:baseline;gap:10px}
+h3 small{font-size:14px;font-weight:500;color:#8b93a3}
+.old h3{color:#ff9f8a} .new h3{color:#7ee787}
+.box{height:300px;border:1px solid #323a48;border-radius:10px;padding:10px 12px;background:#0b0d11}
+</style></head><body>
+<div class="col old"><h3>예전 <small id="m0"></small></h3><div class="box" id="t0"></div></div>
+<div class="col new"><h3>지금 <small id="m1"></small></h3><div class="box" id="t1"></div></div>
+<script src="xterm.js"></script><script src="addon-unicode11.js"></script>
+<script>
+const text = [
+ "\x1b[1m- 병합·푸시:\x1b[0m 버전을 0.7.0 으로 올리고 소개 글(\x1b[34mdocs/release-notes/0.7.0.md\x1b[0m)을 쓴 뒤 main 에 병합해 태그를 푸시했습니다.",
+ "\x1b[1m- 확인:\x1b[0m 테스트, 겸용 빌드, 업데이트 서명이 모두 성공했습니다.",
+ "",
+ "\x1b[1m다음으로 할 일\x1b[0m",
+ "- 로그인 화면에 비밀번호 찾기 링크를 넣습니다.",
+];
+const fonts = ['"SF Mono", Menlo, "Apple SD Gothic Neo", monospace', '"Haengbang Mono", "SF Mono", Menlo, monospace'];
+// 앱과 같은 비율(12.5px : 13px)을 영상에서 읽히게 키움
+const sizes = [18, 18.72];
+Promise.all([document.fonts.load('13px "Haengbang Mono"'), document.fonts.load('bold 13px "Haengbang Mono"')]).then(() => {
+ fonts.forEach((f, i) => {
+  const term = new Terminal({fontFamily: f, fontSize: sizes[i], lineHeight: 1.2, cols: 10, rows: 10, allowProposedApi: true, theme:{background:"#0b0d11", foreground:"#d7dae0", blue:"#4cc2ff"}});
+  term.loadAddon(new Unicode11Addon.Unicode11Addon()); term.unicode.activeVersion = "11";
+  term.open(document.getElementById("t" + i));
+  const d = term._core._renderService.dimensions.css.cell;
+  const cols = Math.floor(736 / d.width), rows = Math.floor(280 / d.height);
+  term.resize(cols, rows);
+  term.write(text.join("\r\n"));
+  document.getElementById("m" + i).textContent = `한 줄 ${cols}칸`;
+ });
+ setTimeout(() => (window.ready = true), 300);
+});
+</script></body></html>
