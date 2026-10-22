@@ -2,6 +2,9 @@
 //!
 //! 읽기 명령은 `GIT_OPTIONAL_LOCKS=0` 으로 실행해서, 에이전트가 같은 워크트리에서
 //! 작업하는 동안 앱의 조회가 `index.lock` 을 잡아 방해하지 않게 한다.
+//!
+//! 작성자·커밋한 사람은 `%aN`/`%aE`/`%cN` 으로 읽어 저장소의 `.mailmap` 을 따른다.
+//! (대문자 코드는 `log.mailmap=false` 설정과 상관없이 항상 mailmap 을 적용한다.)
 
 use anyhow::{anyhow, bail, Context, Result};
 use serde::Serialize;
@@ -571,7 +574,7 @@ pub fn parse_log(raw: &str) -> Vec<Commit> {
         .collect()
 }
 
-const LOG_FORMAT: &str = "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%s%x1e";
+const LOG_FORMAT: &str = "--format=%H%x1f%P%x1f%aN%x1f%aE%x1f%at%x1f%s%x1e";
 
 /// 그래프용 커밋 목록. 모든 로컬/원격 브랜치·태그와 각 워크트리 HEAD 에서 출발한다.
 pub fn log_for_graph(repo: &Path, extra_heads: &[String], limit: usize) -> Result<Vec<Commit>> {
@@ -636,7 +639,7 @@ pub fn parse_name_status_z(raw: &str) -> Vec<StatusEntry> {
 
 pub fn commit_detail(repo: &Path, sha: &str) -> Result<CommitDetail> {
     validate_rev(sha)?;
-    let raw = run(repo, &["show", "-s", "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%cn%x1f%ct%x1f%B", sha, "--"])?;
+    let raw = run(repo, &["show", "-s", "--format=%H%x1f%P%x1f%aN%x1f%aE%x1f%at%x1f%cN%x1f%ct%x1f%B", sha, "--"])?;
     let f: Vec<&str> = raw.splitn(8, '\x1f').collect();
     if f.len() < 8 {
         bail!(tr!("커밋 정보를 읽을 수 없습니다: {sha}", "Can't read commit info: {sha}"));
@@ -1085,6 +1088,51 @@ u UU N... 100644 100644 100644 100644 d e f conflict.txt\0\
         assert!(safe_rel_path("../etc/passwd").is_err());
         assert!(safe_rel_path("/etc/passwd").is_err());
         assert!(safe_rel_path("src/main.rs").is_ok());
+    }
+
+    #[test]
+    fn author_names_follow_mailmap() {
+        let d = temp_repo();
+        let p = d.path();
+        let g = |name: &str, email: &str, a: &[&str]| {
+            let o = std::process::Command::new("git")
+                .args(a)
+                .env("GIT_AUTHOR_NAME", name)
+                .env("GIT_AUTHOR_EMAIL", email)
+                .env("GIT_COMMITTER_NAME", name)
+                .env("GIT_COMMITTER_EMAIL", email)
+                .current_dir(p)
+                .output()
+                .unwrap();
+            assert!(o.status.success(), "{a:?} {}", String::from_utf8_lossy(&o.stderr));
+        };
+        g("jw", "dev@dkdoctor.kr", &["commit", "-q", "--allow-empty", "-m", "a"]);
+        g("김재욱", "gimjaeug@gimjaeug-ui-MacBookPro.local", &["commit", "-q", "--allow-empty", "-m", "b"]);
+        // 그래프 목록의 "작성자 <이메일>" 과 커밋 상세의 "작성자 <이메일> / 커밋한 사람"
+        let shown = || -> Vec<String> {
+            log_for_graph(p, &[], 10)
+                .unwrap()
+                .iter()
+                .flat_map(|c| {
+                    let d = commit_detail(p, &c.sha).unwrap();
+                    [format!("{} <{}>", c.author, c.email), format!("{} <{}> / {}", d.author, d.email, d.committer)]
+                })
+                .collect()
+        };
+        // .mailmap 이 없으면 커밋에 적힌 이름 그대로
+        let kim = "김재욱 <gimjaeug@gimjaeug-ui-MacBookPro.local>";
+        assert_eq!(shown(), vec![kim.to_string(), format!("{kim} / 김재욱"), "jw <dev@dkdoctor.kr>".into(), "jw <dev@dkdoctor.kr> / jw".into()]);
+        std::fs::write(
+            p.join(".mailmap"),
+            "whalebanana86 <whalebanana86@gmail.com> jw <dev@dkdoctor.kr>\nwhalebanana86 <whalebanana86@gmail.com> 김재욱 <gimjaeug@gimjaeug-ui-MacBookPro.local>\n",
+        )
+        .unwrap();
+        let one = "whalebanana86 <whalebanana86@gmail.com>";
+        let mapped = vec![one.to_string(), format!("{one} / whalebanana86"), one.to_string(), format!("{one} / whalebanana86")];
+        assert_eq!(shown(), mapped);
+        // 사용자가 log.mailmap 을 꺼 두어도 대표 이름으로 묶인다
+        g("t", "t@t", &["config", "log.mailmap", "false"]);
+        assert_eq!(shown(), mapped);
     }
 
     fn temp_repo() -> tempfile::TempDir {

@@ -247,6 +247,7 @@ Codex는 설치된 CLI의 `account/rateLimits/read`를 사용합니다. Claude�
 | 채팅(Claude) | `claude -p --input-format stream-json --output-format stream-json --verbose --permission-prompts host --permission-prompt-tool stdio --permission-mode <범위>` — 도구 쓰기 전 `can_use_tool` 요청을 받아 허락 카드로 보여 준다. 허락하면 **CLI 가 보낸 입력 그대로** 돌려준다 |
 | 채팅(Codex) | 턴마다 `codex exec --json -s <샌드박스> -C <cwd> -` / `codex exec resume --json -c sandbox_mode=… <id> -` (지시는 stdin 으로) |
 | Git | `GIT_OPTIONAL_LOCKS=0`, `GIT_TERMINAL_PROMPT=0`, `core.fsmonitor=false` 등으로 사용자 설정이 화면 해석을 바꾸지 않게 하고, 쓰기는 확인 창을 거친 뒤에만 |
+| 작성자 이름 | 그래프·커밋 상세는 `%aN`·`%aE`·`%cN` 으로 읽어 `.mailmap` 을 따른다(`log.mailmap=false` 여도). 여러 이름으로 커밋한 같은 사람을 하나로 묶으려면 저장소 루트에 `.mailmap` 을 둔다 |
 
 앱이 띄우는 CLI 에는 로그인 셸(`$SHELL -l -i`)의 환경변수를 넘긴다(volta·homebrew·`~/.local/bin` 의 CLI 도 찾게). 이 앱을 다른 AI 세션 안에서 띄워도 `CLAUDECODE` 같은 부모 세션 변수는 넘기지 않는다.
 
