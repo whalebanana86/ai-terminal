@@ -2,6 +2,9 @@
 //!
 //! 읽기 명령은 `GIT_OPTIONAL_LOCKS=0` 으로 실행해서, 에이전트가 같은 워크트리에서
 //! 작업하는 동안 앱의 조회가 `index.lock` 을 잡아 방해하지 않게 한다.
+//!
+//! 작성자·커밋한 사람은 `%aN`/`%aE`/`%cN` 으로 읽어 저장소의 `.mailmap` 을 따른다.
+//! (대문자 코드는 `log.mailmap=false` 설정과 상관없이 항상 mailmap 을 적용한다.)
 
 use anyhow::{anyhow, bail, Context, Result};
 use serde::Serialize;
@@ -545,7 +548,20 @@ pub struct Commit {
     pub email: String,
     /// 작성 시각 (유닉스 초)
     pub time: i64,
+    /// 공동 작성자 "이름 <이메일>" (Co-authored-by 트레일러)
+    pub co_authors: Vec<String>,
     pub subject: String,
+}
+
+/// 공동 작성자 칸(\x1d 로 이은 트레일러 값)을 나눈다. 같은 사람은 한 번만.
+pub fn parse_co_authors(raw: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for v in raw.split('\x1d').map(str::trim).filter(|s| !s.is_empty()) {
+        if !out.iter().any(|o| o == v) {
+            out.push(v.to_string());
+        }
+    }
+    out
 }
 
 pub fn parse_log(raw: &str) -> Vec<Commit> {
@@ -555,8 +571,8 @@ pub fn parse_log(raw: &str) -> Vec<Commit> {
             if rec.is_empty() {
                 return None;
             }
-            let f: Vec<&str> = rec.splitn(6, '\x1f').collect();
-            if f.len() < 6 {
+            let f: Vec<&str> = rec.splitn(7, '\x1f').collect();
+            if f.len() < 7 {
                 return None;
             }
             Some(Commit {
@@ -565,13 +581,15 @@ pub fn parse_log(raw: &str) -> Vec<Commit> {
                 author: f[2].to_string(),
                 email: f[3].to_string(),
                 time: f[4].parse().unwrap_or(0),
-                subject: f[5].trim_end_matches('\n').to_string(),
+                co_authors: parse_co_authors(f[5]),
+                subject: f[6].trim_end_matches('\n').to_string(),
             })
         })
         .collect()
 }
 
-const LOG_FORMAT: &str = "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%s%x1e";
+/// 제목(%s)은 무엇이든 담을 수 있게 마지막 칸. 공동 작성자 트레일러는 키를 대소문자 무시로 찾는다.
+const LOG_FORMAT: &str = "--format=%H%x1f%P%x1f%aN%x1f%aE%x1f%at%x1f%(trailers:key=Co-authored-by,valueonly,unfold,separator=%x1d)%x1f%s%x1e";
 
 /// 그래프용 커밋 목록. 모든 로컬/원격 브랜치·태그와 각 워크트리 HEAD 에서 출발한다.
 pub fn log_for_graph(repo: &Path, extra_heads: &[String], limit: usize) -> Result<Vec<Commit>> {
@@ -603,6 +621,8 @@ pub struct CommitDetail {
     pub time: i64,
     pub committer: String,
     pub commit_time: i64,
+    /// 공동 작성자 "이름 <이메일>" (Co-authored-by 트레일러)
+    pub co_authors: Vec<String>,
     pub message: String,
     pub files: Vec<StatusEntry>,
 }
@@ -636,9 +656,9 @@ pub fn parse_name_status_z(raw: &str) -> Vec<StatusEntry> {
 
 pub fn commit_detail(repo: &Path, sha: &str) -> Result<CommitDetail> {
     validate_rev(sha)?;
-    let raw = run(repo, &["show", "-s", "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%cn%x1f%ct%x1f%B", sha, "--"])?;
-    let f: Vec<&str> = raw.splitn(8, '\x1f').collect();
-    if f.len() < 8 {
+    let raw = run(repo, &["show", "-s", "--format=%H%x1f%P%x1f%aN%x1f%aE%x1f%at%x1f%cN%x1f%ct%x1f%(trailers:key=Co-authored-by,valueonly,unfold,separator=%x1d)%x1f%B", sha, "--"])?;
+    let f: Vec<&str> = raw.splitn(9, '\x1f').collect();
+    if f.len() < 9 {
         bail!(tr!("커밋 정보를 읽을 수 없습니다: {sha}", "Can't read commit info: {sha}"));
     }
     let parents: Vec<String> = f[1].split(' ').filter(|s| !s.is_empty()).map(str::to_string).collect();
@@ -655,7 +675,8 @@ pub fn commit_detail(repo: &Path, sha: &str) -> Result<CommitDetail> {
         time: f[4].parse().unwrap_or(0),
         committer: f[5].into(),
         commit_time: f[6].parse().unwrap_or(0),
-        message: f[7].trim_end().into(),
+        co_authors: parse_co_authors(f[7]),
+        message: f[8].trim_end().into(),
         files: parse_name_status_z(&files_raw),
     })
 }
@@ -1087,6 +1108,51 @@ u UU N... 100644 100644 100644 100644 d e f conflict.txt\0\
         assert!(safe_rel_path("src/main.rs").is_ok());
     }
 
+    #[test]
+    fn author_names_follow_mailmap() {
+        let d = temp_repo();
+        let p = d.path();
+        let g = |name: &str, email: &str, a: &[&str]| {
+            let o = std::process::Command::new("git")
+                .args(a)
+                .env("GIT_AUTHOR_NAME", name)
+                .env("GIT_AUTHOR_EMAIL", email)
+                .env("GIT_COMMITTER_NAME", name)
+                .env("GIT_COMMITTER_EMAIL", email)
+                .current_dir(p)
+                .output()
+                .unwrap();
+            assert!(o.status.success(), "{a:?} {}", String::from_utf8_lossy(&o.stderr));
+        };
+        g("jw", "dev@dkdoctor.kr", &["commit", "-q", "--allow-empty", "-m", "a"]);
+        g("김재욱", "gimjaeug@gimjaeug-ui-MacBookPro.local", &["commit", "-q", "--allow-empty", "-m", "b"]);
+        // 그래프 목록의 "작성자 <이메일>" 과 커밋 상세의 "작성자 <이메일> / 커밋한 사람"
+        let shown = || -> Vec<String> {
+            log_for_graph(p, &[], 10)
+                .unwrap()
+                .iter()
+                .flat_map(|c| {
+                    let d = commit_detail(p, &c.sha).unwrap();
+                    [format!("{} <{}>", c.author, c.email), format!("{} <{}> / {}", d.author, d.email, d.committer)]
+                })
+                .collect()
+        };
+        // .mailmap 이 없으면 커밋에 적힌 이름 그대로
+        let kim = "김재욱 <gimjaeug@gimjaeug-ui-MacBookPro.local>";
+        assert_eq!(shown(), vec![kim.to_string(), format!("{kim} / 김재욱"), "jw <dev@dkdoctor.kr>".into(), "jw <dev@dkdoctor.kr> / jw".into()]);
+        std::fs::write(
+            p.join(".mailmap"),
+            "whalebanana86 <whalebanana86@gmail.com> jw <dev@dkdoctor.kr>\nwhalebanana86 <whalebanana86@gmail.com> 김재욱 <gimjaeug@gimjaeug-ui-MacBookPro.local>\n",
+        )
+        .unwrap();
+        let one = "whalebanana86 <whalebanana86@gmail.com>";
+        let mapped = vec![one.to_string(), format!("{one} / whalebanana86"), one.to_string(), format!("{one} / whalebanana86")];
+        assert_eq!(shown(), mapped);
+        // 사용자가 log.mailmap 을 꺼 두어도 대표 이름으로 묶인다
+        g("t", "t@t", &["config", "log.mailmap", "false"]);
+        assert_eq!(shown(), mapped);
+    }
+
     fn temp_repo() -> tempfile::TempDir {
         let d = tempfile::tempdir().unwrap();
         let ok = std::process::Command::new("git").args(["init", "-q"]).current_dir(d.path()).status().unwrap();
@@ -1201,10 +1267,49 @@ u UU N... 100644 100644 100644 100644 d e f conflict.txt\0\
 
     #[test]
     fn parses_log_records() {
-        let raw = "aaa\x1fbbb ccc\x1fKim\x1fk@x\x1f100\x1fmerge: x\x1e\nbbb\x1f\x1fKim\x1fk@x\x1f50\x1finit\x1e\n";
+        let raw = "aaa\x1fbbb ccc\x1fKim\x1fk@x\x1f100\x1fA <a@x>\x1dB <b@y>\x1dA <a@x>\x1fmerge: x\x1e\nbbb\x1f\x1fKim\x1fk@x\x1f50\x1f\x1finit\x1e\n";
         let c = parse_log(raw);
         assert_eq!(c.len(), 2);
         assert_eq!(c[0].parents, vec!["bbb", "ccc"]);
+        assert_eq!(c[0].co_authors, vec!["A <a@x>", "B <b@y>"]);
+        assert_eq!(c[0].subject, "merge: x");
         assert!(c[1].parents.is_empty());
+        assert!(c[1].co_authors.is_empty());
+        assert_eq!(c[1].subject, "init");
+    }
+
+    #[test]
+    fn reads_co_author_trailers_from_real_repo() {
+        let d = temp_repo();
+        let p = d.path();
+        let g = |a: &[&str]| {
+            let o = std::process::Command::new("git").args(["-c", "user.name=t", "-c", "user.email=t@t"]).args(a).current_dir(p).output().unwrap();
+            assert!(o.status.success(), "{a:?} {}", String::from_utf8_lossy(&o.stderr));
+            String::from_utf8_lossy(&o.stdout).trim().to_string()
+        };
+        g(&["commit", "-q", "--allow-empty", "-m", "zero"]);
+        g(&["commit", "-q", "--allow-empty", "-m", "one", "-m", "본문\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"]);
+        // 키 대소문자가 달라도, 다른 트레일러와 섞여도 공동 작성자만
+        g(&["commit", "-q", "--allow-empty", "-m", "two", "-m", "Co-authored-by: Kim <k@x>\nSigned-off-by: t <t@t>\nco-authored-by: Codex <noreply@openai.com>"]);
+        // 마지막 문단이 트레일러가 아니면 무시
+        g(&["commit", "-q", "--allow-empty", "-m", "prose", "-m", "Co-authored-by: X <x@x>\nand some text"]);
+        let log = log_for_graph(p, &[], 10).unwrap();
+        let got: Vec<(&str, Vec<&str>)> = log.iter().map(|c| (c.subject.as_str(), c.co_authors.iter().map(String::as_str).collect())).collect();
+        assert_eq!(
+            got,
+            vec![
+                ("prose", vec![]),
+                ("two", vec!["Kim <k@x>", "Codex <noreply@openai.com>"]),
+                ("one", vec!["Claude Opus 5.5 <noreply@anthropic.com>"]),
+                ("zero", vec![]),
+            ]
+        );
+        // 커밋 상세도 같은 값, 메시지는 그대로
+        let two = commit_detail(p, &log[1].sha).unwrap();
+        assert_eq!(two.co_authors, vec!["Kim <k@x>", "Codex <noreply@openai.com>"]);
+        assert!(two.message.starts_with("two\n\nCo-authored-by: Kim <k@x>"), "{}", two.message);
+        assert_eq!(commit_detail(p, &log[3].sha).unwrap().co_authors, Vec::<String>::new());
+        assert_eq!(commit_detail(p, &log[2].sha).unwrap().co_authors, vec!["Claude Opus 5.5 <noreply@anthropic.com>"]);
+        assert_eq!(g(&["rev-parse", "HEAD"]), log[0].sha);
     }
 }

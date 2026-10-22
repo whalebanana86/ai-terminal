@@ -81,6 +81,8 @@ Then use **＋ 저장소 추가** (Add repository) at the top to pick a Git repo
 | Middle — **Agents** | Conversations that worked in the current worktree (today, yesterday, this week…), the selected conversation, Continue |
 | Right — **Files** | The worktree's real files with M/U/D marks; click for content, diff or image |
 
+In the graph, 🤖 marks a commit **co-written by an AI** (a `Co-authored-by` trailer from Claude, Codex, Copilot, Cursor or Gemini). Repositories with several authors show an initials circle per commit (hover for name and email); single-author repositories drop that column so commit subjects get the space. Clicking a commit shows the author's email, co-authors (AI or people) and the committer when different.
+
 The coloured line under the title bar is the colour of the worktree you are looking at. Graph lines, the worktree list and the file pane header use the same colour, so you always know where you are.
 
 ### Picking a session moves all three panes
@@ -163,6 +165,7 @@ Turn on **File editing** in Settings → **Features** and files are **editable a
 - **Logs read:** `~/.claude/projects/*/<id>.jsonl`, `~/.claude/sessions/<pid>.json`, `~/.codex/state_*.sqlite` (read-only), `~/.codex/sessions/**/rollout-*.jsonl[.zst]`, `~/.codex/thread-writer-locks/`. `CLAUDE_CONFIG_DIR` and `CODEX_HOME` are honoured.
 - **Linking a session to a worktree:** the last recorded cwd wins (resume always runs in the first cwd, because `claude --resume` looks up the log by its starting folder). Sessions started in a parent folder that is not a repository are linked to the repository folder they worked in most recently (from the cwd values in the last 2 MB of the log). Running sessions are detected with libproc, without spawning `ps` or `lsof`.
 - **Commands:** `claude --resume <id>`, `codex resume <id> -C <cwd>`; chat uses `claude -p --input-format stream-json --output-format stream-json --verbose --permission-prompts host --permission-prompt-tool stdio` and answers `can_use_tool` requests with the CLI's own input; Codex chat runs `codex exec --json` per turn.
+- **Author names:** the graph and commit details read `%aN`/`%aE`/`%cN`, so they follow `.mailmap` (even with `log.mailmap=false`). To show someone who committed under several names as one person, put a `.mailmap` in the repository root.
 - **Security:** every Git/file command only accepts paths inside a registered worktree (`..`, absolute paths and symlinks pointing outside are refused). The only file write is `fs_save`, accepted only while File editing is on; features change only through `extension_set` (the UI's `kv_set` can't touch `ext.*`), and File editing turns on only after a person clicks the macOS dialog Rust shows, so the webview alone can't enable writes. External editors are limited to a known list; `git init` refuses home/system folders. The automation socket used by tests exists only in `--features automation` builds.
 - **Footprint:** CPU while an agent works 3.14% → 0.74%, memory 194 → 148 MB, session list 108 → 2 ms, UI bundle 11 MB → 3.5 MB; app 7.5 MB, dmg 3.8 MB.
 

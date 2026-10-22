@@ -34,6 +34,8 @@ pub struct GraphRow {
     pub author: String,
     pub email: String,
     pub time: i64,
+    /// 공동 작성자 "이름 <이메일>" (AI 와 함께 쓴 커밋 표시)
+    pub co_authors: Vec<String>,
     pub subject: String,
     pub lane: usize,
     pub color: usize,
@@ -132,6 +134,7 @@ pub fn layout(commits: &[Commit]) -> Vec<GraphRow> {
             author: c.author.clone(),
             email: c.email.clone(),
             time: c.time,
+            co_authors: c.co_authors.clone(),
             subject: c.subject.clone(),
             lane,
             color,
@@ -169,6 +172,7 @@ mod tests {
             author: String::new(),
             email: String::new(),
             time: 0,
+            co_authors: Vec::new(),
             subject: sha.into(),
         }
     }
@@ -225,6 +229,18 @@ mod tests {
     }
 
     #[test]
+    fn rows_carry_co_authors_to_screen() {
+        let mut a = c("a", &[]);
+        a.co_authors = vec!["Claude <noreply@anthropic.com>".into()];
+        let rows = layout(&[c("b", &["a"]), a]);
+        assert!(rows[0].co_authors.is_empty());
+        assert_eq!(rows[1].co_authors, vec!["Claude <noreply@anthropic.com>"]);
+        // 화면은 camelCase 이름으로 받는다
+        let v = serde_json::to_value(&rows[1]).unwrap();
+        assert_eq!(v["coAuthors"][0], "Claude <noreply@anthropic.com>");
+    }
+
+    #[test]
     fn lane_slots_are_released_after_convergence() {
         let rows = layout(&[c("x", &["base"]), c("y", &["base"]), c("base", &["root"]), c("root", &[])]);
         assert_eq!(rows[3].width, 1);
@@ -274,6 +290,19 @@ mod tests {
                 assert!(s.from_lane < r.width && s.to_lane < r.width, "{r:?}");
             }
         }
+    }
+
+    #[test]
+    fn rows_carry_author_and_email() {
+        // 화면의 작성자 칸(머리글자·한 명 판단)이 쓰는 이름과 이메일을 그대로 넘긴다
+        let mut a = c("a", &[]);
+        a.author = "김정우".into();
+        a.email = "JW@Example.com".into();
+        let rows = layout(&[a]);
+        assert_eq!(rows[0].author, "김정우");
+        assert_eq!(rows[0].email, "JW@Example.com");
+        let json = serde_json::to_value(&rows[0]).unwrap();
+        assert_eq!(json["email"], "JW@Example.com");
     }
 
     #[test]

@@ -3,6 +3,10 @@ import type { GitRef, GraphData, GraphRow, Worktree } from "../api";
 import { baseName, laneColor, relativeTime } from "../logic";
 import { colorOf, metroColors, useWtColors } from "../wtColors";
 import { t } from "../i18n";
+import { AI_NAME, aiAgentsIn } from "../aiAuthors";
+import { AiMark } from "../components/AiMark";
+import { authorLabel, isSingleAuthor } from "../author";
+import { AuthorCell } from "./AuthorCell";
 
 const ROW_H = 26;
 const LANE_W = 13;
@@ -65,6 +69,9 @@ export function GraphView({ data, focusWorktree, sessionStartBranch, selectedSha
   const metro = useMemo(() => metroColors(data.rows, data.worktrees, (p) => colorOf(wtColors, p)), [data.rows, data.worktrees, wtColors]);
   const colorFor = (p: string) => colorOf(wtColors, p);
 
+  // 작성자가 한 명뿐이면 작성자 칸을 그리지 않는다(보이는 줄이 아니라 불러온 전체 기준이라 스크롤해도 그대로)
+  const showAuthor = useMemo(() => !isSingleAuthor(data.rows), [data.rows]);
+
   const maxWidth = useMemo(() => Math.min(MAX_LANES_SHOWN, Math.max(1, ...data.rows.map((r) => r.width))), [data.rows]);
   const graphW = maxWidth * LANE_W + 10;
 
@@ -108,6 +115,7 @@ export function GraphView({ data, focusWorktree, sessionStartBranch, selectedSha
             selected={row.sha === selectedSha}
             onSelect={onSelect}
             onContextMenu={onContextMenu}
+            showAuthor={showAuthor}
             now={now}
           />
         ))}
@@ -139,6 +147,7 @@ function Row(props: {
   selected: boolean;
   onSelect: (sha: string) => void;
   onContextMenu?: (sha: string, x: number, y: number) => void;
+  showAuthor: boolean;
   now: number;
 }) {
   const { row, isHead } = props;
@@ -158,7 +167,7 @@ function Row(props: {
         props.onContextMenu?.(row.sha, e.clientX, e.clientY);
       }}
       data-sha={row.sha}
-      title={`${row.sha.slice(0, 10)} · ${row.author}`}
+      title={`${row.sha.slice(0, 10)} · ${authorLabel(row.author, row.email)}${row.coAuthors.length ? `\n${t("공동 작성자: {names}", { names: row.coAuthors.join(", ") })}` : ""}`}
     >
       <svg width={props.graphW} height={ROW_H} className="glanes" aria-hidden>
         {row.segments.map((s, i) => {
@@ -220,9 +229,22 @@ function Row(props: {
         </span>
         <span className="gsubject">{row.subject}</span>
       </div>
-      <div className="gauthor">{row.author}</div>
+      <AiCell coAuthors={row.coAuthors} />
+      {props.showAuthor && <AuthorCell name={row.author} email={row.email} />}
       <div className="gtime">{relativeTime(row.time * 1000, props.now)}</div>
     </div>
+  );
+}
+
+/** 공동 작성자 중 AI 가 있으면 작은 로봇, 없으면 같은 폭의 빈 칸(작성자 칸이 줄 맞게) */
+function AiCell({ coAuthors }: { coAuthors: string[] }) {
+  const ais = aiAgentsIn(coAuthors);
+  if (!ais.length) return <span className="gai" />;
+  const label = t("함께 쓴 AI: {names}", { names: ais.map((a) => AI_NAME[a]).join(", ") });
+  return (
+    <span className="gai" title={label} role="img" aria-label={label}>
+      <AiMark agent={ais[0]} />
+    </span>
   );
 }
 

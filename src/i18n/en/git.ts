@@ -197,10 +197,17 @@ export default {
   // 그래프
   "커밋 그래프": "Commit graph",
   "최근 {n}개 커밋만 표시합니다": "Showing only the latest {n} commits",
+  "작성자 정보 없음": "No author info",
   "지금 보는 워크트리가 가리키는 커밋": "Commit the current worktree points to",
   "다른 워크트리 {path} 가 가리키는 커밋": "Commit that worktree {path} points to",
   "로컬 브랜치 {name}": "Local branch {name}",
   "태그 {name}": "Tag {name}",
   "세션이 시작된 브랜치": "branch the session started on",
   "세션 시작": "session start",
+
+  // AI 공동 작성자 (Co-authored-by 트레일러)
+  "공동 작성자: {names}": "Co-authors: {names}",
+  "함께 쓴 AI: {names}": "Co-written with AI: {names}",
+  "공동 작성자": "Co-authors",
+  "커밋한 사람": "Committer",
 } satisfies Record<string, string>;

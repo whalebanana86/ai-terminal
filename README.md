@@ -118,6 +118,8 @@ Codex는 설치된 CLI의 `account/rateLimits/read`를 사용합니다. Claude�
 | 가운데 **에이전트** | 지금 보는 워크트리에서 일한 AI 대화들(오늘·어제·이번 주…), 고른 대화의 내용, 이어가기 |
 | 오른쪽 **파일** | 워크트리의 실제 파일. 바뀐 파일은 M·U·D 표시, 누르면 내용·바뀐 부분·그림 |
 
+그래프의 각 커밋 줄에서 🤖 표시는 **AI 가 같이 쓴 커밋**(커밋 메시지의 `Co-authored-by` 가 Claude·Codex·Copilot·Cursor·Gemini)이에요. 작성자가 여럿인 저장소에서는 오른쪽에 작성자 머리글자 동그라미가 나오고(마우스를 올리면 이름·이메일), 혼자 쓰는 저장소에서는 그 칸을 빼서 커밋 제목을 넓게 보여 줘요. 커밋을 누르면 작성자 이메일, 함께 쓴 AI·사람, (다르면) 커밋한 사람이 나와요.
+
 위쪽 줄 아래의 **색 선**은 지금 보고 있는 워크트리의 색이에요. 그래프의 노선, 워크트리 목록, 파일 칸 머리의 점이 모두 같은 색이라 "지금 어디를 보고 있는지" 헷갈리지 않아요.
 
 ### 대화를 고르면 세 칸이 같이 움직여요
@@ -247,6 +249,7 @@ Codex는 설치된 CLI의 `account/rateLimits/read`를 사용합니다. Claude�
 | 채팅(Claude) | `claude -p --input-format stream-json --output-format stream-json --verbose --permission-prompts host --permission-prompt-tool stdio --permission-mode <범위>` — 도구 쓰기 전 `can_use_tool` 요청을 받아 허락 카드로 보여 준다. 허락하면 **CLI 가 보낸 입력 그대로** 돌려준다 |
 | 채팅(Codex) | 턴마다 `codex exec --json -s <샌드박스> -C <cwd> -` / `codex exec resume --json -c sandbox_mode=… <id> -` (지시는 stdin 으로) |
 | Git | `GIT_OPTIONAL_LOCKS=0`, `GIT_TERMINAL_PROMPT=0`, `core.fsmonitor=false` 등으로 사용자 설정이 화면 해석을 바꾸지 않게 하고, 쓰기는 확인 창을 거친 뒤에만 |
+| 작성자 이름 | 그래프·커밋 상세는 `%aN`·`%aE`·`%cN` 으로 읽어 `.mailmap` 을 따른다(`log.mailmap=false` 여도). 여러 이름으로 커밋한 같은 사람을 하나로 묶으려면 저장소 루트에 `.mailmap` 을 둔다 |
 
 앱이 띄우는 CLI 에는 로그인 셸(`$SHELL -l -i`)의 환경변수를 넘긴다(volta·homebrew·`~/.local/bin` 의 CLI 도 찾게). 이 앱을 다른 AI 세션 안에서 띄워도 `CLAUDECODE` 같은 부모 세션 변수는 넘기지 않는다.
 

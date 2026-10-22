@@ -10,6 +10,8 @@ import { BranchesView, BranchSwitcher, WorktreesView } from "./GitBranches";
 import { ChangesView } from "./GitChanges";
 import { GraphView } from "./GraphView";
 import { locale, t } from "../i18n";
+import { AI_NAME, aiAgentOf, parseIdentity } from "../aiAuthors";
+import { AiMark } from "../components/AiMark";
 
 type Tab = "graph" | "changes" | "branches" | "worktrees";
 
@@ -406,6 +408,19 @@ function OpBanner({ worktree, op, onChanged }: { worktree: string; op: OpState; 
   );
 }
 
+/** 공동 작성자 한 사람: AI 면 로봇 + 설명 */
+function CoAuthor({ identity }: { identity: string }) {
+  const { name, email } = parseIdentity(identity);
+  const ai = aiAgentOf({ name, email });
+  return (
+    <span className={`cd-coauthor${ai ? " is-ai" : ""}`} title={ai ? t("함께 쓴 AI: {names}", { names: AI_NAME[ai] }) : undefined}>
+      {ai && <AiMark agent={ai} />}
+      {name || email}
+      {name && email && <span className="cd-email">&lt;{email}&gt;</span>}
+    </span>
+  );
+}
+
 function CommitDetailView(props: { worktree: string; sha: string; graph: GraphData; status: WorktreeStatus | null; onClose: () => void }) {
   const [d, setD] = useState<CommitDetail | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -433,8 +448,24 @@ function CommitDetailView(props: { worktree: string; sha: string; graph: GraphDa
         <>
           <div className="cd-msg">{d.message}</div>
           <div className="cd-meta">
-            {d.author} · {new Date(d.time * 1000).toLocaleString(locale)} · {t("부모")} {d.parents.map((p) => p.slice(0, 7)).join(", ") || t("없음")}
+            {d.author} {d.email && <span className="cd-email">&lt;{d.email}&gt;</span>} · {new Date(d.time * 1000).toLocaleString(locale)} · {t("부모")} {d.parents.map((p) => p.slice(0, 7)).join(", ") || t("없음")}
           </div>
+          {d.coAuthors.length > 0 && (
+            <div className="cd-meta cd-people">
+              <span className="cd-label">{t("공동 작성자")}</span>
+              {d.coAuthors.map((c) => (
+                <CoAuthor key={c} identity={c} />
+              ))}
+            </div>
+          )}
+          {d.committer !== d.author && (
+            <div className="cd-meta cd-people">
+              <span className="cd-label">{t("커밋한 사람")}</span>
+              <span>
+                {d.committer} · {new Date(d.commitTime * 1000).toLocaleString(locale)}
+              </span>
+            </div>
+          )}
           <div className="cd-actions">
             {refsHere.filter((r) => !(r.kind === "branch" && r.short === cur)).map((r) => (
               <button
