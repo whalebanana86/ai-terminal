@@ -18,16 +18,16 @@ describe("assignWorktreeColors", () => {
 
 // main: c3 ← c1 ← c0, topic(c2) 은 c1 에서 갈라짐. 레인 배치는 Rust layout 과 같은 모양으로 손으로 적었다.
 const rows: GraphRow[] = [
-  { sha: "c3", parents: ["c1"], author: "", email: "", time: 0, subject: "", lane: 0, color: 0, width: 1, segments: [{ fromLane: 0, fromY: 1, toLane: 0, toY: 2, color: 0 }] },
+  { sha: "c3", parents: ["c1"], author: "", email: "", time: 0, coAuthors: [], subject: "", lane: 0, color: 0, width: 1, segments: [{ fromLane: 0, fromY: 1, toLane: 0, toY: 2, color: 0 }] },
   {
-    sha: "c2", parents: ["c1"], author: "", email: "", time: 0, subject: "", lane: 1, color: 1, width: 2,
+    sha: "c2", parents: ["c1"], author: "", email: "", time: 0, coAuthors: [], subject: "", lane: 1, color: 1, width: 2,
     segments: [{ fromLane: 0, fromY: 0, toLane: 0, toY: 2, color: 0 }, { fromLane: 1, fromY: 1, toLane: 1, toY: 2, color: 1 }],
   },
   {
-    sha: "c1", parents: ["c0"], author: "", email: "", time: 0, subject: "", lane: 0, color: 0, width: 2,
+    sha: "c1", parents: ["c0"], author: "", email: "", time: 0, coAuthors: [], subject: "", lane: 0, color: 0, width: 2,
     segments: [{ fromLane: 0, fromY: 0, toLane: 0, toY: 1, color: 0 }, { fromLane: 1, fromY: 0, toLane: 0, toY: 1, color: 1 }, { fromLane: 0, fromY: 1, toLane: 0, toY: 2, color: 0 }],
   },
-  { sha: "c0", parents: [], author: "", email: "", time: 0, subject: "", lane: 0, color: 0, width: 1, segments: [{ fromLane: 0, fromY: 0, toLane: 0, toY: 1, color: 0 }] },
+  { sha: "c0", parents: [], author: "", email: "", time: 0, coAuthors: [], subject: "", lane: 0, color: 0, width: 1, segments: [{ fromLane: 0, fromY: 0, toLane: 0, toY: 1, color: 0 }] },
 ];
 
 describe("metroColors", () => {

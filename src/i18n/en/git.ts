@@ -203,4 +203,10 @@ export default {
   "태그 {name}": "Tag {name}",
   "세션이 시작된 브랜치": "branch the session started on",
   "세션 시작": "session start",
+
+  // AI 공동 작성자 (Co-authored-by 트레일러)
+  "공동 작성자: {names}": "Co-authors: {names}",
+  "함께 쓴 AI: {names}": "Co-written with AI: {names}",
+  "공동 작성자": "Co-authors",
+  "커밋한 사람": "Committer",
 } satisfies Record<string, string>;

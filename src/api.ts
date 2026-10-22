@@ -89,6 +89,8 @@ export interface GraphRow {
   author: string;
   email: string;
   time: number;
+  /** 공동 작성자 "이름 <이메일>" (Co-authored-by 트레일러) */
+  coAuthors: string[];
   subject: string;
   lane: number;
   color: number;
@@ -144,6 +146,8 @@ export interface CommitDetail {
   time: number;
   committer: string;
   commitTime: number;
+  /** 공동 작성자 "이름 <이메일>" (Co-authored-by 트레일러) */
+  coAuthors: string[];
   message: string;
   files: StatusEntry[];
 }
