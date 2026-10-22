@@ -128,7 +128,7 @@ The coloured line under the title bar is the colour of the worktree you are look
 
 Turn on **File editing** in Settings → **Features** and files are **editable as soon as you open them** (the file viewer's **Content** becomes the editor; see differences in **Changes**). Turning it on shows a macOS confirmation once, since the app can then save files.
 
-- While it's on, files open as **tabs in the center pane** instead of the narrow area under the file tree. The first **Agents** tab takes you back to the conversation (terminals keep running); each tab shows its worktree colour and • for unsaved edits. Close with × or a middle click.
+- While it's on, files open as **tabs in the center pane** instead of the narrow area under the file tree. The first **Agents** tab takes you back to the conversation (terminals keep running); a tab shows • for unsaved edits (hover it to see which worktree). Close with × or a middle click.
 
 - `⌘S` save, `⌘F` find. Syntax colours follow light/dark mode.
 - When saving, **if an AI or another editor changed the file in the meantime it doesn't overwrite** and asks (reload / overwrite with mine). If you aren't editing, outside changes show up right away.

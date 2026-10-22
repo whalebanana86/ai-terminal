@@ -1,7 +1,6 @@
 // 파일 편집을 켜면 파일은 오른쪽 아래(좁음) 대신 가운데 칸 탭으로 연다.
 // 에이전트 화면(터미널)은 그대로 두고 그 위에 파일 화면을 덮어서, 탭을 오가도 터미널이 끊기거나 크기가 바뀌지 않는다.
 import { Bot, X } from "lucide-react";
-import { WtDot } from "../components/Overlays";
 import { dropDraft, useHasDraft } from "../extensions/editor/drafts";
 import { FileIcon } from "../fileIcons";
 import { t } from "../i18n";
@@ -57,7 +56,6 @@ function FileTabButton({ tab, on }: { tab: FileTab; on: boolean }) {
       title={`${baseName(tab.worktree)} / ${v.rel}${v.kind === "commit-file" ? ` @ ${v.sha.slice(0, 7)}` : ""}`}
       data-tab={v.rel}
     >
-      <WtDot path={tab.worktree} />
       <FileIcon name={name} />
       <span className="center-tab-name">{name}</span>
       {v.kind === "commit-file" && <code className="sha">{v.sha.slice(0, 7)}</code>}
