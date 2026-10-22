@@ -97,6 +97,7 @@ The coloured line under the title bar is the colour of the worktree you are look
 
 - The **hide list** button in the Agents header (or dragging the divider all the way up) folds the session list away so the terminal or chat gets the whole pane height; the state and heights are remembered.
 - The terminal font is **Haengbang Mono** (a modified D2Coding, OFL) whose Hangul is exactly two Latin cells wide, so Korean text has no gaps and more fits per line.
+- **Click a file path in terminal output to open it inside the app.** Links recognize relative and absolute paths, `file.ts:line:column`, quoted paths containing spaces or Korean characters, and long paths wrapped across terminal rows. Missing files and paths outside the worktree are not linked.
 
 ![Chat view: the agent asks permission to run the tests](docs/screenshots/chat.png)
 

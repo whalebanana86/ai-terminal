@@ -45,6 +45,23 @@ pub fn resolve_inside(worktree: &Path, rel: &str) -> Result<PathBuf> {
     Ok(real)
 }
 
+/// Existing regular files printed by a terminal, resolved relative to its launch directory or root.
+/// Return only canonical paths inside this worktree, including for absolute paths and symlinks.
+pub fn terminal_paths(worktree: &Path, cwd: &Path, paths: &[String]) -> Result<Vec<Option<String>>> {
+    let root = std::fs::canonicalize(worktree)?;
+    let cwd = std::fs::canonicalize(cwd).ok().filter(|p| p.starts_with(&root)).unwrap_or_else(|| root.clone());
+    Ok(paths.iter().take(64).map(|raw| {
+        if raw.len() > 4096 || raw.contains('\0') { return None; }
+        let path = Path::new(raw);
+        let options = if path.is_absolute() { vec![path.to_path_buf()] } else { vec![cwd.join(path), root.join(path)] };
+        options.into_iter().find_map(|p| {
+            let real = std::fs::canonicalize(p).ok()?;
+            if !real.starts_with(&root) || !real.is_file() { return None; }
+            Some(real.strip_prefix(&root).ok()?.to_string_lossy().replace('\\', "/"))
+        })
+    }).collect())
+}
+
 pub fn list_dir(worktree: &Path, rel: &str) -> Result<Vec<DirEntry>> {
     let dir = resolve_inside(worktree, rel)?;
     let mut out = Vec::new();
@@ -390,5 +407,29 @@ mod tests {
         let fifo = d.path().join("pipe");
         assert!(std::process::Command::new("mkfifo").arg(&fifo).status().unwrap().success());
         assert!(read_file(d.path(), "pipe").is_err(), "FIFO must not block");
+    }
+}
+
+#[cfg(test)]
+mod terminal_link_tests {
+    use super::*;
+    #[test]
+    fn terminal_files_are_existing_and_inside_the_worktree() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("src")).unwrap();
+        std::fs::write(root.path().join("src/한글 file.ts"), "x").unwrap();
+        std::fs::write(root.path().join("README.md"), "x").unwrap();
+        std::fs::write(outside.path().join("secret.txt"), "x").unwrap();
+        std::os::unix::fs::symlink(outside.path(), root.path().join("out")).unwrap();
+        let paths = vec!["한글 file.ts".into(), "src/한글 file.ts".into(), "../README.md".into(), root.path().join("README.md").to_string_lossy().into(), outside.path().join("secret.txt").to_string_lossy().into(), "out/secret.txt".into(), "missing.ts".into(), "src".into()];
+        let actual = terminal_paths(root.path(), &root.path().join("src"), &paths).unwrap();
+        assert_eq!(actual,vec![Some("src/한글 file.ts".into()),Some("src/한글 file.ts".into()),Some("README.md".into()),Some("README.md".into()),None,None,None,None]);
+    }
+    #[test]
+    fn outside_cwd_is_not_used_to_read_another_repository() {
+        let root=tempfile::tempdir().unwrap(); let outside=tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("other.txt"),"x").unwrap();
+        assert_eq!(terminal_paths(root.path(),outside.path(), &["other.txt".into()]).unwrap(),vec![None]);
     }
 }

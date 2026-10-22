@@ -8,6 +8,8 @@ import { useEffect, useRef } from "react";
 import { api } from "../api";
 import { attachHangulInput } from "../hangulInput";
 import { t } from "../i18n";
+import { useStore } from "../store";
+import { fileLinkProvider } from "../terminalLinks";
 import { currentTheme, onThemeChange, type Theme } from "../theme";
 import { termPasters } from "../termPaste";
 
@@ -105,6 +107,17 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
       macOptionIsMeta: true,
       theme: themeFor(currentTheme()),
     });
+    const links = term.registerLinkProvider(fileLinkProvider(term, () => {
+      const state = useStore.getState();
+      const exec = state.execs.find(e => e.id === execId);
+      if (!exec) return null;
+      const root = exec.worktreePath ?? state.repos.flatMap(r => r.worktrees).filter(w => exec.cwd === w.path || exec.cwd.startsWith(`${w.path}/`)).sort((a, b) => b.path.length - a.path.length)[0]?.path;
+      return root ? { worktree: root, cwd: exec.cwd } : null;
+    }, (ctx, paths) => api.fsTerminalPaths(ctx.worktree, ctx.cwd, paths), (ctx, rel) => {
+      const state = useStore.getState();
+      if (state.focus?.worktreePath !== ctx.worktree) state.setFocusWorktree(ctx.worktree);
+      useStore.getState().openViewer({ kind: "file", rel, mode: "preview" });
+    }));
     const fit = new FitAddon();
     term.loadAddon(fit);
     const uni = new Unicode11Addon();
@@ -172,6 +185,7 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
       detachHangul();
       ro.disconnect();
       onData.dispose();
+      links.dispose();
       if (sinkId !== null) void api.execDetach(execId, sinkId);
       registry.delete(execId);
       termPasters.delete(execId);

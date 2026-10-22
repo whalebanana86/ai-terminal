@@ -341,6 +341,7 @@ export const api = {
   commit: (path: string, paths: string[], message: string) => invoke<string>("git_commit", { path, paths, message }),
   checkout: (path: string, target: string, kind: "branch" | "remote" | "commit") =>
     invoke<string>("git_checkout", { path, target, kind }),
+  fsTerminalPaths: (worktree: string, cwd: string, paths: string[]) => invoke<(string | null)[]>("fs_terminal_paths", { worktree, cwd, paths }),
   fsList: (worktree: string, rel: string) => invoke<DirEntry[]>("fs_list", { worktree, rel }),
   setLang: (lang: string) => invoke<void>("set_lang", { lang }),
   fsRead: (worktree: string, rel: string) => invoke<FileContent>("fs_read", { worktree, rel }),

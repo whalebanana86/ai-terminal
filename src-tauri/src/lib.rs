@@ -132,6 +132,7 @@ pub fn run() {
             commands::git_checkout,
             commands::fs_list,
             commands::fs_read,
+            commands::fs_terminal_paths,
             commands::set_lang,
             commands::fs_read_image,
             commands::fs_read_for_edit,

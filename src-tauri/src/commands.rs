@@ -235,6 +235,15 @@ pub async fn fs_read(state: State<'_, AppState>, worktree: String, rel: String) 
     .await
 }
 
+#[tauri::command]
+pub async fn fs_terminal_paths(state: State<'_, AppState>, worktree: String, cwd: String, paths: Vec<String>) -> Res<Vec<Option<String>>> {
+    let core = state.core.clone();
+    blocking(move || {
+        core.ensure_known(&worktree)?;
+        crate::files::terminal_paths(Path::new(&worktree), Path::new(&cwd), &paths)
+    }).await
+}
+
 // ───────────── 확장 기능(설정 → 기능) ─────────────
 
 #[tauri::command]
