@@ -3,6 +3,8 @@ import type { GitRef, GraphData, GraphRow, Worktree } from "../api";
 import { baseName, laneColor, relativeTime } from "../logic";
 import { colorOf, metroColors, useWtColors } from "../wtColors";
 import { t } from "../i18n";
+import { AI_NAME, aiAgentsIn } from "../aiAuthors";
+import { AiMark } from "../components/AiMark";
 
 const ROW_H = 26;
 const LANE_W = 13;
@@ -158,7 +160,7 @@ function Row(props: {
         props.onContextMenu?.(row.sha, e.clientX, e.clientY);
       }}
       data-sha={row.sha}
-      title={`${row.sha.slice(0, 10)} · ${row.author}`}
+      title={`${row.sha.slice(0, 10)} · ${row.author}${row.coAuthors.length ? `\n${t("공동 작성자: {names}", { names: row.coAuthors.join(", ") })}` : ""}`}
     >
       <svg width={props.graphW} height={ROW_H} className="glanes" aria-hidden>
         {row.segments.map((s, i) => {
@@ -220,9 +222,22 @@ function Row(props: {
         </span>
         <span className="gsubject">{row.subject}</span>
       </div>
+      <AiCell coAuthors={row.coAuthors} />
       <div className="gauthor">{row.author}</div>
       <div className="gtime">{relativeTime(row.time * 1000, props.now)}</div>
     </div>
+  );
+}
+
+/** 공동 작성자 중 AI 가 있으면 작은 로봇, 없으면 같은 폭의 빈 칸(작성자 칸이 줄 맞게) */
+function AiCell({ coAuthors }: { coAuthors: string[] }) {
+  const ais = aiAgentsIn(coAuthors);
+  if (!ais.length) return <span className="gai" />;
+  const label = t("함께 쓴 AI: {names}", { names: ais.map((a) => AI_NAME[a]).join(", ") });
+  return (
+    <span className="gai" title={label} role="img" aria-label={label}>
+      <AiMark agent={ais[0]} />
+    </span>
   );
 }
 

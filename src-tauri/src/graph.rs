@@ -34,6 +34,8 @@ pub struct GraphRow {
     pub author: String,
     pub email: String,
     pub time: i64,
+    /// 공동 작성자 "이름 <이메일>" (AI 와 함께 쓴 커밋 표시)
+    pub co_authors: Vec<String>,
     pub subject: String,
     pub lane: usize,
     pub color: usize,
@@ -132,6 +134,7 @@ pub fn layout(commits: &[Commit]) -> Vec<GraphRow> {
             author: c.author.clone(),
             email: c.email.clone(),
             time: c.time,
+            co_authors: c.co_authors.clone(),
             subject: c.subject.clone(),
             lane,
             color,
@@ -169,6 +172,7 @@ mod tests {
             author: String::new(),
             email: String::new(),
             time: 0,
+            co_authors: Vec::new(),
             subject: sha.into(),
         }
     }
@@ -222,6 +226,18 @@ mod tests {
         assert!(rows[1].segments.contains(&Segment { from_lane: 1, from_y: 1, to_lane: 1, to_y: 2, color: rows[1].color }));
         assert!(rows[2].segments.contains(&Segment { from_lane: 1, from_y: 0, to_lane: 0, to_y: 1, color: rows[1].color }));
         assert_eq!(rows[2].width, 2);
+    }
+
+    #[test]
+    fn rows_carry_co_authors_to_screen() {
+        let mut a = c("a", &[]);
+        a.co_authors = vec!["Claude <noreply@anthropic.com>".into()];
+        let rows = layout(&[c("b", &["a"]), a]);
+        assert!(rows[0].co_authors.is_empty());
+        assert_eq!(rows[1].co_authors, vec!["Claude <noreply@anthropic.com>"]);
+        // 화면은 camelCase 이름으로 받는다
+        let v = serde_json::to_value(&rows[1]).unwrap();
+        assert_eq!(v["coAuthors"][0], "Claude <noreply@anthropic.com>");
     }
 
     #[test]
