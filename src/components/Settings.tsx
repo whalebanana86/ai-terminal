@@ -1,10 +1,14 @@
 import { listen } from "@tauri-apps/api/event";
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { api, errorText, type EditorApp } from "../api";
+import { EXTENSIONS, useExtensions, type ExtensionId } from "../extensions";
+import { getExternalEditor, setExternalEditor } from "../externalEditor";
 import { lang, setLang, t } from "../i18n";
+import { useStore } from "../store";
 import { getThemePref, setThemePref, type ThemePref } from "../theme";
 
-/** 설정 창(언어·화면 모드). 맥 메뉴 막대의 "코드행방 → 설정… (⌘,)" 이 open-settings 를 보내면 열린다. */
+/** 설정 창(언어·화면 모드·기능·외부 편집기). 맥 메뉴 막대의 "코드행방 → 설정… (⌘,)" 이 open-settings 를 보내면 열린다. */
 export function SettingsDialog() {
   const [open, setOpen] = useState(false);
   const [theme, setTheme] = useState<ThemePref>(getThemePref);
@@ -59,7 +63,67 @@ export function SettingsDialog() {
             ))}
           </div>
         </div>
+        <ExternalEditorRow />
+        <div className="settings-section">
+          <h4>{t("기능")}</h4>
+          {EXTENSIONS.map((e) => (
+            <FeatureRow key={e.id} id={e.id} title={e.title()} description={e.description()} />
+          ))}
+        </div>
       </div>
+    </div>
+  );
+}
+
+/** 기능 하나 켜고 끄기. 파일 편집은 켤 때 맥 확인창이 뜨고, 취소하면 꺼진 채로 남는다. */
+function FeatureRow({ id, title, description }: { id: ExtensionId; title: string; description: string }) {
+  const on = useExtensions((s) => s.enabled[id]);
+  const setOn = useExtensions((s) => s.set);
+  const [busy, setBusy] = useState(false);
+  const toggle = async () => {
+    setBusy(true);
+    try {
+      await setOn(id, !on);
+    } catch (e) {
+      useStore.getState().toast("error", errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <label className="feature-row" data-feature={id}>
+      <span className="feature-text">
+        <span className="feature-title">{title}</span>
+        <span className="feature-desc">{description}</span>
+      </span>
+      <input type="checkbox" className="switch" role="switch" checked={on} disabled={busy} onChange={() => void toggle()} aria-label={title} />
+    </label>
+  );
+}
+
+function ExternalEditorRow() {
+  const [apps, setApps] = useState<EditorApp[] | null>(null);
+  const [pick, setPick] = useState(getExternalEditor);
+  useEffect(() => {
+    api.editorsInstalled().then(setApps, () => setApps([]));
+  }, []);
+  const choose = (id: string) => {
+    setPick(id);
+    setExternalEditor(id);
+  };
+  // 고른 편집기를 지웠으면 목록에 없으니 자동처럼 보여 준다
+  const value = pick === "auto" || apps?.some((a) => a.id === pick) ? pick : "auto";
+  return (
+    <div className="settings-row">
+      <span className="settings-label">{t("외부 편집기")}</span>
+      <select className="settings-select" value={value} onChange={(e) => choose(e.target.value)} aria-label={t("외부 편집기")} data-testid="external-editor">
+        <option value="auto">{t("자동 (설치된 편집기)")}</option>
+        {(apps ?? []).map((a) => (
+          <option key={a.id} value={a.id}>
+            {a.name}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }

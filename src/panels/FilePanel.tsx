@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FolderOpen, Trash2 } from "lucide-react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { ExternalLink, FolderOpen, Trash2 } from "lucide-react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { api, errorText, type ChangeKind, type DirEntry, type FileContent, type FileDiff, type WorktreeStatus } from "../api";
 import { Empty, WtDot } from "../components/Overlays";
+import { useFileModes, type FileModeSlot } from "../extensions";
+import { openExternal } from "../externalEditor";
 import { FileIcon, imageMime } from "../fileIcons";
+import { useFileTick } from "../fileTick";
 import { escapeHtml, highlightLines } from "../highlight";
 import { t } from "../i18n";
 import { baseName, decorationMap, kindLabel, kindLetter } from "../logic";
@@ -222,7 +225,11 @@ function FileViewer({ worktree }: { worktree: string }) {
   const [diff, setDiff] = useState<FileDiff[] | null>(null);
   const [lines, setLines] = useState<string[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const mode = viewer.kind === "commit-file" ? "diff" : viewer.mode;
+  const extModes = useFileModes();
+  const wanted = viewer.kind === "commit-file" ? "diff" : viewer.mode;
+  // 확장 탭이 꺼졌으면 내용 보기로
+  const ext = extModes.find((m) => m.key === wanted) ?? null;
+  const mode = wanted.startsWith("ext:") && !ext ? "preview" : wanted;
   // 그림 파일은 글자 대신 그림으로(내용 = 지금 그림, 변경 = 마지막 커밋과 나란히)
   const isImage = imageMime(viewer.rel) !== null;
   const key = viewer.kind === "commit-file" ? `${viewer.sha}:${viewer.rel}` : `${viewer.rel}:${mode}`;
@@ -240,8 +247,8 @@ function FileViewer({ worktree }: { worktree: string }) {
         } else if (mode === "diff") {
           const d = await api.diffFile(worktree, viewer.rel);
           if (alive) setDiff(d);
-        } else if (mode === "stage") {
-          // StageView 가 직접 읽는다
+        } else if (mode === "stage" || ext) {
+          // StageView·확장 탭이 직접 읽는다
         } else {
           const c = await api.fsRead(worktree, viewer.rel);
           if (!alive) return;
@@ -283,7 +290,17 @@ function FileViewer({ worktree }: { worktree: string }) {
                 {t("일부 담기")}
               </button>
             )}
+            {extModes
+              .filter((m) => m.available({ rel: viewer.rel, isImage }))
+              .map((m) => (
+                <ModeTab key={m.key} slot={m} worktree={worktree} rel={viewer.rel} on={mode === m.key} onClick={() => openViewer({ ...viewer, mode: m.key })} />
+              ))}
           </div>
+        )}
+        {viewer.kind === "file" && !isImage && (
+          <button className="icon-btn ghost" onClick={() => void openExternal(worktree, viewer.rel)} title={t("외부 편집기로 열기")} aria-label={t("외부 편집기로 열기")} data-action="open-external">
+            <ExternalLink size={14} aria-hidden />
+          </button>
         )}
         <button className="btn btn-ghost btn-small" onClick={() => openViewer(null)} aria-label={t("닫기")}>
           ✕
@@ -302,6 +319,10 @@ function FileViewer({ worktree }: { worktree: string }) {
           ) : (
             <ImageBox worktree={worktree} rel={viewer.rel} label={t("지금")} />
           )
+        ) : ext && viewer.kind === "file" ? (
+          <Suspense fallback={<div className="loading">…</div>}>
+            <ext.View key={`${worktree}:${viewer.rel}`} worktree={worktree} rel={viewer.rel} />
+          </Suspense>
         ) : mode === "stage" && viewer.kind === "file" ? (
           <StageView worktree={worktree} rel={viewer.rel} />
         ) : mode === "diff" ? (
@@ -327,6 +348,17 @@ function FileViewer({ worktree }: { worktree: string }) {
         )}
       </div>
     </div>
+  );
+}
+
+/** 확장 기능이 더한 탭. 저장하지 않은 수정처럼 표시할 게 있으면 • */
+function ModeTab({ slot, worktree, rel, on, onClick }: { slot: FileModeSlot; worktree: string; rel: string; on: boolean; onClick: () => void }) {
+  const badge = slot.useBadge?.(worktree, rel) ?? false;
+  return (
+    <button className={on ? "on" : ""} onClick={onClick} title={slot.title?.()} data-mode={slot.key}>
+      {slot.label()}
+      {badge && <span className="tab-dot" aria-label={t("저장 안 됨")} />}
+    </button>
   );
 }
 
@@ -390,15 +422,6 @@ function ImageBox({ worktree, rel, rev, label }: { worktree: string; rel: string
       </div>
     </figure>
   );
-}
-
-/** 이 파일이 바뀐 신호(또는 .git 변경)일 때만 값이 바뀐다 → 다른 파일 이벤트로는 다시 읽지 않는다. */
-function useFileTick(rel: string): number {
-  const fs = useStore((s) => (s.changedPaths.includes(rel) ? s.fsTick : -1));
-  const git = useStore((s) => s.gitTick);
-  const last = useRef(0);
-  if (fs >= 0) last.current = fs;
-  return last.current * 100000 + git;
 }
 
 /** 한 파일의 바뀐 부분(hunk)을 담기·빼기·버리기. 깃 패널 '변경 사항' 아래와 오른쪽 보기에서 함께 쓴다. */

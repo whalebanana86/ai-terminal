@@ -121,6 +121,77 @@ pub fn worktree_prune(repo: &Path) -> Result<String> {
     run(repo, &["worktree", "prune", "-v"])
 }
 
+/// 사용자가 직접 고칠 워크트리. AI 가 일하는 워크트리(브랜치 B)는 그대로 두고, 옆 폴더에 `edit/B` 브랜치로 연다.
+/// 이미 있으면 그 경로를, 브랜치만 있으면 그 브랜치로, 없으면 B 의 지금 커밋에서 새로 만든다.
+/// AI 가 아직 커밋하지 않은 변경은 새 워크트리에 없다(커밋 기준).
+pub fn ensure_edit_worktree(agent_wt: &Path) -> Result<String> {
+    let list = git::worktrees(agent_wt)?;
+    let canon = std::fs::canonicalize(agent_wt)?.to_string_lossy().into_owned();
+    let w = list.iter().find(|w| w.path == canon).ok_or_else(|| anyhow!(tr!("이 저장소의 워크트리가 아닙니다: {canon}", "Not a worktree of this repository: {canon}")))?;
+    let Some(branch) = w.branch.clone() else {
+        bail!(tr!("브랜치가 없는 상태(detached)의 워크트리에서는 내 수정 워크트리를 만들 수 없어요", "Can't make an edit worktree from a detached worktree"));
+    };
+    if branch.starts_with(EDIT_PREFIX) {
+        bail!(tr!("이미 내 수정 워크트리예요", "This is already an edit worktree"));
+    }
+    let edit = format!("{EDIT_PREFIX}{branch}");
+    if let Some(found) = list.iter().find(|w| w.branch.as_deref() == Some(edit.as_str())) {
+        return Ok(found.path.clone());
+    }
+    let main = list.iter().find(|w| w.is_main).map(|w| w.path.clone()).unwrap_or(canon.clone());
+    let main = Path::new(&main);
+    let parent = main.parent().ok_or_else(|| anyhow!(tr!("저장소 폴더를 찾을 수 없습니다", "Repository folder not found")))?;
+    let repo_name = main.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let slug: String = branch.chars().map(|c| if c.is_ascii_alphanumeric() || "._-".contains(c) { c } else { '-' }).collect();
+    let path = (1..100)
+        .map(|i| parent.join(if i == 1 { format!("{repo_name}-edit-{slug}") } else { format!("{repo_name}-edit-{slug}-{i}") }))
+        .find(|p| !p.exists())
+        .ok_or_else(|| anyhow!(tr!("새 폴더 이름을 정하지 못했습니다", "Couldn't choose a folder name")))?;
+    let path = path.to_string_lossy().into_owned();
+    let exists = run_raw(agent_wt, &["rev-parse", "--verify", "--quiet", &format!("refs/heads/{edit}")], None, READ_TIMEOUT)?.code == 0;
+    if exists {
+        worktree_add(agent_wt, &path, None, Some(&edit))?;
+    } else {
+        worktree_add(agent_wt, &path, Some(&edit), Some(&branch))?;
+    }
+    let after = git::worktrees(agent_wt)?;
+    Ok(after.into_iter().find(|w| w.branch.as_deref() == Some(edit.as_str())).map(|w| w.path).unwrap_or(path))
+}
+
+/// 내 수정 워크트리의 브랜치 이름 앞머리
+pub const EDIT_PREFIX: &str = "edit/";
+
+// ───────────────────────────── 저장소 시작 ─────────────────────────────
+
+/// Git 이 아닌 폴더에서 저장소를 시작할 수 있는지. 안 되면 이유.
+pub fn init_refusal(path: &Path) -> Result<Option<String>> {
+    if !path.is_absolute() || !path.is_dir() {
+        return Ok(Some(tr!("폴더가 없습니다", "Folder not found")));
+    }
+    let canon = std::fs::canonicalize(path)?;
+    if git::locate(&canon)?.is_some() {
+        return Ok(Some(tr!("이미 Git 저장소 안에 있는 폴더입니다", "This folder is already inside a Git repository")));
+    }
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from).and_then(|h| std::fs::canonicalize(h).ok());
+    // 임시 폴더(/private/var/folders, /private/tmp)는 허용한다
+    let system = ["/System", "/Library", "/Applications", "/usr", "/bin", "/sbin", "/opt", "/cores", "/dev", "/private/etc", "/private/var/db", "/private/var/root"];
+    let is_system = system.iter().any(|s| canon.starts_with(s)) || ["/Volumes", "/private", "/private/var", "/Users"].iter().any(|s| canon == Path::new(s));
+    let too_wide = canon == Path::new("/")
+        || home.as_ref().is_some_and(|h| h.starts_with(&canon) || canon.starts_with(h.join("Library")));
+    if is_system || too_wide {
+        return Ok(Some(tr!("홈 폴더나 시스템 폴더에서는 Git 을 시작하지 않아요. 프로젝트 폴더를 고르세요.", "Git isn't started in your home folder or system folders. Pick a project folder.")));
+    }
+    Ok(None)
+}
+
+/// 사용자가 확인한 뒤 `git init`. 기본 브랜치 이름 등은 사용자의 git 설정을 따른다.
+pub fn init_repo(path: &Path) -> Result<String> {
+    if let Some(reason) = init_refusal(path)? {
+        bail!(reason);
+    }
+    run(path, &["init"])
+}
+
 // ───────────────────────────── 스테이징 ─────────────────────────────
 
 /// 한 파일 diff 원문을 (헤더, hunk 원문들) 로 나눈다. hunk 원문의 지문은 parse_unified_diff 의 id 와 같다.
@@ -437,6 +508,48 @@ mod tests {
         sh(&r, &["add", "."]);
         sh(&r, &["commit", "-qm", "base"]);
         (t, r)
+    }
+
+    #[test]
+    fn edit_worktree_is_made_once_next_to_the_repo() {
+        let (t, r) = repo();
+        let base = std::fs::canonicalize(t.path()).unwrap();
+        let agent = base.join("r-agent");
+        sh(&r, &["worktree", "add", "-q", "-b", "feature/x", agent.to_str().unwrap()]);
+        let p = ensure_edit_worktree(&agent).unwrap();
+        assert_eq!(p, base.join("r-edit-feature-x").to_string_lossy());
+        assert_eq!(sh(Path::new(&p), &["branch", "--show-current"]), "edit/feature/x");
+        assert_eq!(sh(Path::new(&p), &["rev-parse", "HEAD"]), sh(&agent, &["rev-parse", "HEAD"]), "AI 브랜치의 지금 커밋에서 시작");
+        assert_eq!(ensure_edit_worktree(&agent).unwrap(), p, "두 번째는 같은 워크트리");
+        assert!(ensure_edit_worktree(Path::new(&p)).is_err(), "내 수정 워크트리에서 또 만들지 않는다");
+        // 워크트리만 지우고 브랜치가 남아 있으면 그 브랜치로 다시 연다(내 커밋 유지)
+        std::fs::write(Path::new(&p).join("mine.txt"), "x").unwrap();
+        sh(Path::new(&p), &["add", "."]);
+        sh(Path::new(&p), &["commit", "-qm", "mine"]);
+        sh(&r, &["worktree", "remove", &p]);
+        let again = ensure_edit_worktree(&agent).unwrap();
+        assert!(Path::new(&again).join("mine.txt").exists());
+        sh(&agent, &["checkout", "-q", "--detach"]);
+        assert!(ensure_edit_worktree(&agent).is_err(), "detached 는 거부");
+    }
+
+    #[test]
+    fn init_only_plain_project_folders() {
+        let t = tempfile::tempdir().unwrap();
+        let dir = std::fs::canonicalize(t.path()).unwrap().join("proj");
+        std::fs::create_dir(&dir).unwrap();
+        assert!(init_refusal(&dir).unwrap().is_none());
+        init_repo(&dir).unwrap();
+        assert!(git::locate(&dir).unwrap().is_some());
+        assert!(init_refusal(&dir).unwrap().is_some(), "이미 저장소");
+        std::fs::create_dir(dir.join("sub")).unwrap();
+        assert!(init_refusal(&dir.join("sub")).unwrap().is_some(), "저장소 안의 폴더");
+        assert!(init_refusal(Path::new("/")).unwrap().is_some());
+        assert!(init_refusal(Path::new("/Applications")).unwrap().is_some());
+        if let Some(h) = std::env::var_os("HOME") {
+            assert!(init_refusal(Path::new(&h)).unwrap().is_some(), "홈 폴더");
+        }
+        assert!(init_refusal(Path::new("relative")).unwrap().is_some());
     }
 
     #[test]

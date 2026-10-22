@@ -5,7 +5,9 @@ pub mod chat;
 pub mod commands;
 pub mod core;
 pub mod db;
+pub mod editors;
 pub mod env;
+pub mod extensions;
 pub mod files;
 pub mod git;
 pub mod gitops;
@@ -132,6 +134,15 @@ pub fn run() {
             commands::fs_read,
             commands::set_lang,
             commands::fs_read_image,
+            commands::fs_read_for_edit,
+            commands::fs_save,
+            commands::editors_installed,
+            commands::open_in_editor,
+            commands::extensions_list,
+            commands::extension_set,
+            commands::repo_probe,
+            commands::repo_init,
+            commands::git_edit_worktree,
             commands::sessions_list,
             commands::session_transcript,
             commands::exec_start,

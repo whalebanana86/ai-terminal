@@ -8,7 +8,7 @@ use tauri::State;
 
 use crate::core::{AppCore, ExecInfo, GraphData, LinkedSession, RepoSummary, StartRequest};
 use crate::db::RepoRow;
-use crate::files::{DirEntry, FileContent};
+use crate::files::{DirEntry, EditableFile, FileContent, SaveOutcome};
 use crate::git::{self, CommitDetail, FileDiff, Worktree, WorktreeStatus};
 use crate::sessions::Transcript;
 use crate::watch::WorkspaceWatcher;
@@ -235,6 +235,149 @@ pub async fn fs_read(state: State<'_, AppState>, worktree: String, rel: String) 
     .await
 }
 
+// ───────────── 확장 기능(설정 → 기능) ─────────────
+
+#[tauri::command]
+pub fn extensions_list(state: State<'_, AppState>) -> Vec<crate::extensions::ExtState> {
+    crate::extensions::list(&state.core.db)
+}
+
+/// 기능을 켜고 끈다. 파일 편집처럼 위험한 기능은 켤 때 맥 확인창을 띄워 사용자가 직접 눌러야 켜진다.
+#[tauri::command]
+pub async fn extension_set(app: tauri::AppHandle, state: State<'_, AppState>, id: String, enabled: bool) -> Res<Vec<crate::extensions::ExtState>> {
+    let core = state.core.clone();
+    blocking(move || {
+        if crate::extensions::needs_confirm(&id, enabled)? && !confirm_native(&app, &id) {
+            return Ok(crate::extensions::list(&core.db));
+        }
+        crate::extensions::set(&core.db, &id, enabled)?;
+        Ok(crate::extensions::list(&core.db))
+    })
+    .await
+}
+
+/// 자동화 테스트 빌드는 확인창 없이 켠다(테스트가 맥 창을 누를 수 없으므로).
+#[cfg(feature = "automation")]
+fn confirm_native(_app: &tauri::AppHandle, _id: &str) -> bool {
+    true
+}
+
+#[cfg(not(feature = "automation"))]
+fn confirm_native(app: &tauri::AppHandle, _id: &str) -> bool {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+    app.dialog()
+        .message(tr!(
+            "파일 보기에 '편집' 탭이 생기고, 코드행방이 워크트리 안의 파일을 저장할 수 있게 됩니다.\n\n저장할 때 그사이 AI 나 다른 편집기가 파일을 바꿨으면 덮어쓰지 않고 먼저 물어봐요.",
+            "An 'Edit' tab appears in the file viewer and Code Whereabouts can save files inside your worktrees.\n\nIf an AI or another editor changed the file in the meantime, it asks before overwriting."
+        ))
+        .title(tr!("파일 편집 기능을 켤까요?", "Turn on file editing?"))
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom(tr!("켜기", "Turn on"), tr!("취소", "Cancel")))
+        .blocking_show()
+}
+
+// ───────────── 파일 편집(확장 기능) ─────────────
+
+#[tauri::command]
+pub async fn fs_read_for_edit(state: State<'_, AppState>, worktree: String, rel: String) -> Res<EditableFile> {
+    let core = state.core.clone();
+    blocking(move || {
+        core.ensure_known(&worktree)?;
+        crate::files::read_for_edit(Path::new(&worktree), &rel)
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveArgs {
+    pub worktree: String,
+    pub rel: String,
+    pub text: String,
+    pub crlf: bool,
+    pub bom: bool,
+    /// 불러올 때의 지문
+    pub expected: String,
+    /// 밖에서 바뀌었어도 덮어쓴다(사용자가 고른 경우)
+    pub force: bool,
+}
+
+/// 파일 저장. '파일 편집' 기능이 꺼져 있으면 거절한다(화면이 뚫려도 파일을 쓸 수 없게).
+#[tauri::command]
+pub async fn fs_save(state: State<'_, AppState>, args: SaveArgs) -> Res<SaveOutcome> {
+    let core = state.core.clone();
+    blocking(move || {
+        if !crate::extensions::enabled(&core.db, crate::extensions::EDITOR) {
+            anyhow::bail!(tr!("파일 편집 기능이 꺼져 있습니다. 설정 → 기능에서 켜세요.", "File editing is off. Turn it on in Settings → Features."));
+        }
+        core.ensure_known(&args.worktree)?;
+        crate::files::save_file(Path::new(&args.worktree), &args.rel, &args.text, args.crlf, args.bom, &args.expected, args.force)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn editors_installed() -> Res<Vec<crate::editors::EditorApp>> {
+    blocking(|| Ok(crate::editors::installed())).await
+}
+
+/// 외부 편집기로 파일 열기. editor 는 "auto" 또는 editors_installed 의 id.
+#[tauri::command]
+pub async fn open_in_editor(state: State<'_, AppState>, worktree: String, rel: String, editor: String) -> Res<()> {
+    let core = state.core.clone();
+    blocking(move || {
+        core.ensure_known(&worktree)?;
+        crate::editors::open_file(Path::new(&worktree), &rel, &editor)
+    })
+    .await
+}
+
+/// 내 수정 워크트리(edit/<AI 브랜치>)를 찾거나 만들어 경로를 돌려준다.
+#[tauri::command]
+pub async fn git_edit_worktree(state: State<'_, AppState>, path: String) -> Res<String> {
+    let core = state.core.clone();
+    blocking(move || {
+        core.ensure_known(&path)?;
+        crate::gitops::ensure_edit_worktree(Path::new(&path))
+    })
+    .await
+}
+
+// ───────────── Git 이 아닌 폴더 ─────────────
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoProbe {
+    pub is_repo: bool,
+    /// Git 저장소가 아닐 때 `git init` 을 제안해도 되는지
+    pub can_init: bool,
+    pub reason: Option<String>,
+}
+
+#[tauri::command]
+pub async fn repo_probe(path: String) -> Res<RepoProbe> {
+    blocking(move || {
+        let p = Path::new(&path);
+        if git::locate(p)?.is_some() {
+            return Ok(RepoProbe { is_repo: true, can_init: false, reason: None });
+        }
+        let reason = crate::gitops::init_refusal(p)?;
+        Ok(RepoProbe { is_repo: false, can_init: reason.is_none(), reason })
+    })
+    .await
+}
+
+/// 사용자가 확인한 뒤 `git init` 하고 저장소 목록에 추가한다.
+#[tauri::command]
+pub async fn repo_init(state: State<'_, AppState>, path: String) -> Res<RepoRow> {
+    let core = state.core.clone();
+    blocking(move || {
+        crate::gitops::init_repo(Path::new(&path))?;
+        core.add_repo(&path)
+    })
+    .await
+}
+
 /// 화면 언어("ko"/"en"). 백엔드가 만드는 메시지(오류 등)도 이 언어로 쓴다.
 #[tauri::command]
 pub fn set_lang(app: tauri::AppHandle, lang: String) {
@@ -368,6 +511,10 @@ pub fn kv_get(state: State<'_, AppState>, key: String) -> Res<Option<String>> {
 
 #[tauri::command]
 pub fn kv_set(state: State<'_, AppState>, key: String, value: String) -> Res<()> {
+    // 기능 켜기/끄기는 extension_set 으로만(파일 편집은 맥 확인창을 거쳐야 켜진다)
+    if key.starts_with(crate::extensions::KV_PREFIX) {
+        return Err(tr!("이 값은 설정 → 기능에서만 바꿀 수 있습니다", "This can only be changed in Settings → Features"));
+    }
     state.core.db.kv_set(&key, &value).map_err(err)
 }
 

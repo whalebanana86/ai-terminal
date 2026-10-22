@@ -17,6 +17,20 @@
   --del: #f85149;
   --claude: #e7956a;
   --codex: #9aa7ff;
+  /* 앱 안 편집기(CodeMirror) 색: github-dark-default 와 맞춤 */
+  --cm-active-line: rgba(255, 255, 255, 0.035);
+  --cm-selection: rgba(76, 194, 255, 0.22);
+  --cm-match: rgba(255, 180, 84, 0.18);
+  --syn-keyword: #ff7b72;
+  --syn-string: #a5d6ff;
+  --syn-string2: #7ee787;
+  --syn-comment: #8b949e;
+  --syn-constant: #79c0ff;
+  --syn-function: #d2a8ff;
+  --syn-type: #ffa657;
+  --syn-property: #79c0ff;
+  --syn-tag: #7ee787;
+  --syn-variable: #ffa657;
   --mono: "SF Mono", Menlo, "D2Coding", "Apple SD Gothic Neo", monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Segoe UI", sans-serif;
   color-scheme: dark;
@@ -2260,7 +2274,7 @@ li:hover .hover-only,
 
 /* 설정 창(언어·화면 모드) — 맥 메뉴 막대 코드행방 → 설정… (⌘,) */
 .settings-modal {
-  width: min(380px, 92vw);
+  width: min(440px, 92vw);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -2283,10 +2297,162 @@ li:hover .hover-only,
   color: var(--fg-dim);
   font-size: 12px;
 }
+.settings-select {
+  background: var(--bg-2);
+  color: var(--fg);
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  padding: 3px 6px;
+  font-size: 12px;
+  max-width: 200px;
+}
+.settings-section {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.settings-section h4 {
+  margin: 0;
+  font-size: 12px;
+  color: var(--fg-dim);
+  font-weight: 600;
+}
+.feature-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+}
+.feature-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.feature-title {
+  font-size: 13px;
+  color: var(--fg);
+}
+.feature-desc {
+  font-size: 11.5px;
+  color: var(--fg-faint);
+  line-height: 1.4;
+}
+/* 켜기/끄기 스위치(체크박스 모양만 바꿈) */
+.switch {
+  appearance: none;
+  flex-shrink: 0;
+  width: 30px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: 9px;
+  background: var(--line-2);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s;
+}
+.switch:checked {
+  background: var(--accent-2);
+}
+.switch:checked::after {
+  transform: translateX(12px);
+}
+.switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.switch:disabled {
+  opacity: 0.6;
+}
+
+/* 확장 기능 "파일 편집" */
+.editor-pane {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.editor-host {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.editor-host[hidden] {
+  display: none;
+}
+.editor-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-1);
+  font-size: 11.5px;
+}
+.editor-state {
+  color: var(--fg-dim);
+}
+.editor-state.dirty {
+  color: var(--warn);
+}
+.editor-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  position: relative;
+}
+.editor-note:has(> .icon-btn) {
+  padding-right: 28px;
+}
+.editor-note > .icon-btn {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+}
+.editor-note > span {
+  flex: 1;
+  min-width: 160px;
+}
+.tab-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--warn);
+  vertical-align: middle;
+}
 
 /* ══════════════ 밝은 화면 (설정 → 화면 모드 → 밝게, 또는 시스템이 밝을 때) ══════════════
    색 변수를 바꾸고, 어두운 바탕을 전제로 고정해 둔 색(진한 바탕·연한 글자)만 다시 칠한다. */
 :root[data-theme="light"] {
+  --cm-active-line: rgba(10, 120, 194, 0.06);
+  --cm-selection: rgba(10, 120, 194, 0.2);
+  --cm-match: rgba(154, 103, 0, 0.16);
+  --syn-keyword: #cf222e;
+  --syn-string: #0a3069;
+  --syn-string2: #116329;
+  --syn-comment: #6e7781;
+  --syn-constant: #0550ae;
+  --syn-function: #8250df;
+  --syn-type: #953800;
+  --syn-property: #0550ae;
+  --syn-tag: #116329;
+  --syn-variable: #953800;
   --bg-0: #eceff3;
   --bg-1: #ffffff;
   --bg-2: #f6f7f9;

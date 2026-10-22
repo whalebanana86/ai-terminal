@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { lang, t } from "./i18n";
 import { api, errorText, type AppInfo, type ChatInfo, type ExecInfo, type LinkedSession, type LiveRun, type RepoSummary } from "./api";
 import { mergeSessions } from "./logic";
+import { useExtensions } from "./extensions";
 
 /** 세 패널이 바라보는 워크트리. 조회 전용이며 절대 체크아웃을 일으키지 않는다. */
 export interface Focus {
@@ -12,7 +13,8 @@ export interface Focus {
 }
 
 export type Viewer =
-  | { kind: "file"; rel: string; mode: "preview" | "diff" | "stage" }
+  /** mode 의 "ext:…" 는 확장 기능이 더한 탭(예: 파일 편집) */
+  | { kind: "file"; rel: string; mode: "preview" | "diff" | "stage" | `ext:${string}` }
   | { kind: "commit-file"; sha: string; rel: string }
   | null;
 
@@ -145,6 +147,7 @@ export const useStore = create<State>((set, get) => ({
     ]);
     set({ info });
     void api.setLang(lang).catch(() => {});
+    void useExtensions.getState().load();
     if (info?.automation || import.meta.env.DEV) {
       exposeForAutomation();
       const { exposeTerminals } = await import("./panels/TerminalView");
@@ -424,6 +427,7 @@ export function useSelectedSession(): LinkedSession | null {
 /** 테스트 자동화 빌드나 개발 모드에서만 화면 상태를 창 객체에 노출한다(배포 빌드에는 없음). */
 export function exposeForAutomation() {
   (window as unknown as { __aitermStore: typeof useStore }).__aitermStore = useStore;
+  (window as unknown as { __aitermExt: typeof useExtensions }).__aitermExt = useExtensions;
 }
 
 function rememberTab(path: string, selected?: string | null) {

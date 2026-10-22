@@ -237,7 +237,13 @@ async fn claude() -> Result<Vec<Window>, &'static str> {
 }
 static CACHE: OnceLock<Mutex<Option<(Instant, Vec<Quota>)>>> = OnceLock::new();
 #[tauri::command]
-pub async fn subscription_usage() -> Vec<Quota> {
+pub async fn subscription_usage(app: tauri::AppHandle) -> Vec<Quota> {
+    use tauri::Manager;
+    // 설정에서 '구독 한도 표시' 를 끄면 로그인 정보를 읽지 않는다
+    let on = app.try_state::<crate::commands::AppState>().is_some_and(|s| crate::extensions::enabled(&s.core.db, crate::extensions::USAGE));
+    if !on {
+        return Vec::new();
+    }
     let cache = CACHE.get_or_init(|| Mutex::new(None));
     if let Some((at, value)) = cache.lock().unwrap().as_ref() {
         if at.elapsed() < Duration::from_secs(120) {
