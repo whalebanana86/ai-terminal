@@ -197,6 +197,7 @@ export default {
   // 그래프
   "커밋 그래프": "Commit graph",
   "최근 {n}개 커밋만 표시합니다": "Showing only the latest {n} commits",
+  "작성자 정보 없음": "No author info",
   "지금 보는 워크트리가 가리키는 커밋": "Commit the current worktree points to",
   "다른 워크트리 {path} 가 가리키는 커밋": "Commit that worktree {path} points to",
   "로컬 브랜치 {name}": "Local branch {name}",

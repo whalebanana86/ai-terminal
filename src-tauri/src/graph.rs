@@ -293,6 +293,19 @@ mod tests {
     }
 
     #[test]
+    fn rows_carry_author_and_email() {
+        // 화면의 작성자 칸(머리글자·한 명 판단)이 쓰는 이름과 이메일을 그대로 넘긴다
+        let mut a = c("a", &[]);
+        a.author = "김정우".into();
+        a.email = "JW@Example.com".into();
+        let rows = layout(&[a]);
+        assert_eq!(rows[0].author, "김정우");
+        assert_eq!(rows[0].email, "JW@Example.com");
+        let json = serde_json::to_value(&rows[0]).unwrap();
+        assert_eq!(json["email"], "JW@Example.com");
+    }
+
+    #[test]
     fn first_parent_chain_follows_mainline() {
         let commits = [c("m", &["a2", "b2"]), c("b2", &["a1"]), c("a2", &["a1"]), c("a1", &[])];
         assert_eq!(first_parent_chain(&commits, "m", 10), vec!["m", "a2", "a1"]);
