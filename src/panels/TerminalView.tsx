@@ -78,6 +78,15 @@ const LIGHT = {
 };
 const themeFor = (t: Theme) => (t === "light" ? LIGHT : DARK);
 
+/** 한글이 영문 정확히 두 칸 폭인 글꼴을 먼저(SF Mono 두 칸은 한글보다 넓어 글자 사이가 벌어진다) */
+const TERM_FONT = '"Haengbang Mono", "SF Mono", Menlo, "Apple SD Gothic Neo", monospace';
+const TERM_FONT_SIZE = 13;
+/** 글꼴 파일을 다 불러온 뒤에 칸 크기를 재야 한다(먼저 재면 대신 쓴 글꼴 폭으로 굳는다) */
+const termFontReady: Promise<unknown> =
+  typeof document !== "undefined" && document.fonts
+    ? Promise.all([document.fonts.load(`${TERM_FONT_SIZE}px "Haengbang Mono"`), document.fonts.load(`bold ${TERM_FONT_SIZE}px "Haengbang Mono"`)]).catch(() => null)
+    : Promise.resolve();
+
 export function TerminalView({ execId, visible }: { execId: string; visible: boolean }) {
   const host = useRef<HTMLDivElement>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -86,8 +95,8 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
   useEffect(() => {
     const el = host.current!;
     const term = new Terminal({
-      fontFamily: '"SF Mono", Menlo, "D2Coding", "Apple SD Gothic Neo", monospace',
-      fontSize: 12.5,
+      fontFamily: TERM_FONT,
+      fontSize: TERM_FONT_SIZE,
       lineHeight: 1.15,
       cursorBlink: true,
       // 화면 메모리 절약: 이전 출력은 백엔드 버퍼(2MB)에도 남아 다시 붙을 때 재생된다.
@@ -150,6 +159,13 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
     const ro = new ResizeObserver(() => resize());
     ro.observe(el);
     resize();
+    // 글꼴을 늦게 불러왔으면 칸 크기를 다시 재고(옵션을 다시 넣어야 잰다) 터미널 크기를 맞춘다
+    void termFontReady.then(() => {
+      if (disposed) return;
+      term.options.fontFamily = "monospace";
+      term.options.fontFamily = TERM_FONT;
+      resize();
+    });
     return () => {
       disposed = true;
       offTheme();

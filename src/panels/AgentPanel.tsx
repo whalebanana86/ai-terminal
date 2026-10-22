@@ -1,8 +1,8 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import { Fragment, lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { Group, Panel, Separator } from "react-resizable-panels";
+import { createContext, Fragment, lazy, memo, Suspense, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Group, Panel, Separator, useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { api, errorText, externalRunning, type Agent, type ChatInfo, type LinkedSession, type LiveRun, type Transcript, type WorktreeStatus } from "../api";
-import { ChevronDown, GitBranch, Info, Play, Plus, RefreshCw, Square, X } from "lucide-react";
+import { ChevronDown, GitBranch, Info, PanelTopClose, PanelTopOpen, Play, Plus, RefreshCw, Square, X } from "lucide-react";
 import { AgentBadge, ContextMenu, Empty, WtDot } from "../components/Overlays";
 import { baseName, branchLabel, branchState, clientLabel, externalRunOf, kindLabel, kindLetter, relativeTime, relativeTo } from "../logic";
 import { useSelectedSession, useStore } from "../store";
@@ -45,30 +45,51 @@ async function withExternalConfirm<T>(fn: (force: boolean) => Promise<T>): Promi
   }
 }
 
+/** 세션 목록 접기/펼치기(접으면 아래 터미널이 칸 전체 높이를 쓴다) */
+const ListToggle = createContext<{ collapsed: boolean; toggle: () => void }>({ collapsed: false, toggle: () => {} });
+
 export function AgentPanel() {
   const setNewOpen = useStore((s) => s.setNewSessionOpen);
   const newOpen = useStore((s) => s.newSessionOpen);
+  // 목록·대화 높이와 접힘을 기억한다
+  const split = useDefaultLayout({ id: "agent-split", storage: localStorage, panelIds: ["list", "detail"] });
+  const listRef = usePanelRef();
+  const [listCollapsed, setListCollapsed] = useState(false);
+  const toggleList = () => (listRef.current?.isCollapsed() ? listRef.current.expand() : listRef.current?.collapse());
   // 파일 편집을 켜면 파일을 이 칸의 탭으로 연다(오른쪽 아래는 좁아서)
   const editorOn = useExtensionOn("editor");
   const fileTabs = useStore((s) => s.fileTabs.length > 0) && editorOn;
   return (
     <section className="panel" data-pane="2" tabIndex={-1}>
       <PanelHead title={t("에이전트")}>
+        <button
+          className="icon-btn ghost"
+          onClick={toggleList}
+          aria-pressed={listCollapsed}
+          title={listCollapsed ? t("세션 목록 펼치기") : t("세션 목록 접기 (터미널을 크게)")}
+          aria-label={listCollapsed ? t("세션 목록 펼치기") : t("세션 목록 접기 (터미널을 크게)")}
+          data-action="toggle-session-list"
+        >
+          {listCollapsed ? <PanelTopOpen size={14} aria-hidden /> : <PanelTopClose size={14} aria-hidden />}
+        </button>
         <button className="btn btn-small btn-primary" onClick={() => setNewOpen(true)} title={t("새 에이전트 대화 시작 (⌘N)")}>
           <Plus size={13} aria-hidden /> {t("새 세션")}
         </button>
       </PanelHead>
       {fileTabs && <CenterTabBar />}
       <div className="agent-body">
-        <Group orientation="vertical" className="agent-split">
-          <Panel id="list" defaultSize="34" minSize="15">
-            <SessionList />
-          </Panel>
-          <Separator className="sep sep-h" />
-          <Panel id="detail" defaultSize="66" minSize="25">
-            <SessionDetail />
-          </Panel>
-        </Group>
+        <ListToggle.Provider value={{ collapsed: listCollapsed, toggle: toggleList }}>
+          <Group orientation="vertical" className="agent-split" defaultLayout={split.defaultLayout} onLayoutChanged={split.onLayoutChanged}>
+            {/* 위로 끝까지 끌거나 머리줄 버튼을 누르면 접힌다 */}
+            <Panel id="list" defaultSize="34" minSize="15" collapsible panelRef={listRef} onResize={(size) => setListCollapsed(size.asPercentage < 1)}>
+              <SessionList />
+            </Panel>
+            <Separator className="sep sep-h" />
+            <Panel id="detail" defaultSize="66" minSize="25">
+              <SessionDetail />
+            </Panel>
+          </Group>
+        </ListToggle.Provider>
         {fileTabs && <CenterFileView />}
       </div>
       {newOpen && <NewSessionDialog onClose={() => setNewOpen(false)} />}
@@ -261,6 +282,7 @@ const defaultMode = (agent: Agent) => (agent === "codex" ? "workspace-write" : "
 
 function SessionDetail() {
   const session = useSelectedSession();
+  const list = useContext(ListToggle);
   const execs = useStore((s) => s.execs);
   const [tab, setTab] = useState<DetailTab>("talk");
   const toast = useStore((s) => s.toast);
@@ -326,7 +348,16 @@ function SessionDetail() {
   if (!session) {
     return (
       <div className="session-detail">
-        <Empty title={t("세션을 고르세요")}>{t("위 목록에서 대화를 고르면 왼쪽 Git 과 오른쪽 파일이 그 대화가 작업한 워크트리를 보여 줍니다.")}</Empty>
+        <Empty title={t("세션을 고르세요")}>
+          {t("위 목록에서 대화를 고르면 왼쪽 Git 과 오른쪽 파일이 그 대화가 작업한 워크트리를 보여 줍니다.")}
+          {list.collapsed && (
+            <div style={{ marginTop: 8 }}>
+              <button className="btn btn-small" onClick={list.toggle}>
+                <PanelTopOpen size={13} aria-hidden /> {t("세션 목록 펼치기")}
+              </button>
+            </div>
+          )}
+        </Empty>
       </div>
     );
   }

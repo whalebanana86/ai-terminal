@@ -95,6 +95,9 @@ The coloured line under the title bar is the colour of the worktree you are look
 
 ### Continuing a conversation
 
+- The **hide list** button in the Agents header (or dragging the divider all the way up) folds the session list away so the terminal or chat gets the whole pane height; the state and heights are remembered.
+- The terminal font is **Haengbang Mono** (a modified D2Coding, OFL) whose Hangul is exactly two Latin cells wide, so Korean text has no gaps and more fits per line.
+
 ![Chat view: the agent asks permission to run the tests](docs/screenshots/chat.png)
 
 - **Continue (이어가기)**, with ▾ to choose how:
