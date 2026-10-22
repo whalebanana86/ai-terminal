@@ -81,6 +81,8 @@ Then use **＋ 저장소 추가** (Add repository) at the top to pick a Git repo
 | Middle — **Agents** | Conversations that worked in the current worktree (today, yesterday, this week…), the selected conversation, Continue |
 | Right — **Files** | The worktree's real files with M/U/D marks; click for content, diff or image |
 
+In the graph, 🤖 marks a commit **co-written by an AI** (a `Co-authored-by` trailer from Claude, Codex, Copilot, Cursor or Gemini). Repositories with several authors show an initials circle per commit (hover for name and email); single-author repositories drop that column so commit subjects get the space. Clicking a commit shows the author's email, co-authors (AI or people) and the committer when different.
+
 The coloured line under the title bar is the colour of the worktree you are looking at. Graph lines, the worktree list and the file pane header use the same colour, so you always know where you are.
 
 ### Picking a session moves all three panes
