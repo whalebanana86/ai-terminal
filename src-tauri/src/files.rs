@@ -1,4 +1,4 @@
-//! 파일 탐색기: 워크트리 안의 실제 파일만 다룬다(읽기 전용).
+//! 파일 탐색기: 워크트리 안의 실제 파일만 다룬다. 쓰기는 '파일 편집' 기능을 켰을 때의 save_file 하나뿐이다.
 
 use anyhow::{bail, Result};
 use serde::Serialize;
@@ -142,9 +142,222 @@ pub fn read_image(worktree: &Path, rel: &str, rev: Option<&str>) -> Result<Vec<u
     Ok(std::fs::read(&p)?)
 }
 
+// ───────────────────────── 편집(확장 기능 "파일 편집") ─────────────────────────
+
+/// 앱 안에서 고칠 수 있는 파일 크기 상한
+pub const MAX_EDIT_BYTES: u64 = 2 * 1024 * 1024;
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct EditableFile {
+    pub rel: String,
+    /// 줄바꿈은 \n 으로 맞춘 내용. 편집할 수 없으면 None
+    pub text: Option<String>,
+    /// 불러온 바이트의 지문. 저장할 때 그사이 밖에서 바뀌었는지 확인한다
+    pub hash: String,
+    pub crlf: bool,
+    pub bom: bool,
+    /// 편집할 수 없는 이유
+    pub readonly: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveOutcome {
+    /// false 면 불러온 뒤 밖에서 바뀌어 저장하지 않았다
+    pub saved: bool,
+    /// 지금 디스크 내용의 지문
+    pub hash: String,
+}
+
+const BOM: &[u8] = b"\xEF\xBB\xBF";
+
+fn content_hash(bytes: &[u8]) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut h);
+    format!("{:016x}-{}", h.finish(), bytes.len())
+}
+
+/// 파일이 없을 때의 지문(밖에서 지워진 경우)
+const MISSING: &str = "missing";
+
+fn disk_hash(p: &Path) -> Result<String> {
+    match std::fs::read(p) {
+        Ok(b) => Ok(content_hash(&b)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(MISSING.into()),
+        Err(e) => Err(e.into()),
+    }
+}
+
+fn too_big() -> String {
+    tr!("2MB 보다 큰 파일은 앱에서 고치지 않아요. 외부 편집기를 쓰세요.", "Files over 2 MB aren't edited in the app. Use an external editor.")
+}
+
+fn editable_from(rel: &str, bytes: &[u8]) -> EditableFile {
+    let hash = content_hash(bytes);
+    let ro = |reason: String| EditableFile { rel: rel.to_string(), text: None, hash: hash.clone(), crlf: false, bom: false, readonly: Some(reason) };
+    if bytes.len() as u64 > MAX_EDIT_BYTES {
+        return ro(too_big());
+    }
+    if bytes[..bytes.len().min(8000)].contains(&0) {
+        return ro(tr!("바이너리 파일은 고칠 수 없어요", "Binary files can't be edited"));
+    }
+    let bom = bytes.starts_with(BOM);
+    let body = if bom { &bytes[BOM.len()..] } else { bytes };
+    let Ok(text) = std::str::from_utf8(body) else {
+        return ro(tr!("UTF-8 이 아닌 글자(예: EUC-KR)가 있어 고치지 않아요. 외부 편집기를 쓰세요.", "This file isn't UTF-8 (e.g. EUC-KR), so it isn't edited here. Use an external editor."));
+    };
+    let crlf_count = text.matches("\r\n").count();
+    let cr_count = text.matches('\r').count();
+    let lf_count = text.matches('\n').count();
+    // 홀로 쓴 \r 이 있거나 CRLF·LF 가 섞여 있으면 저장할 때 원래대로 되돌릴 수 없다
+    if cr_count != crlf_count || (crlf_count > 0 && crlf_count != lf_count) {
+        return ro(tr!("줄바꿈(CRLF·LF)이 섞여 있어 고치지 않아요. 외부 편집기를 쓰세요.", "Line endings (CRLF/LF) are mixed, so it isn't edited here. Use an external editor."));
+    }
+    let crlf = crlf_count > 0;
+    let text = if crlf { text.replace("\r\n", "\n") } else { text.to_string() };
+    EditableFile { rel: rel.to_string(), text: Some(text), hash, crlf, bom, readonly: None }
+}
+
+fn refuse_git_dir(rel: &str) -> Result<()> {
+    if Path::new(rel).components().any(|c| c.as_os_str() == ".git") {
+        bail!(tr!(".git 안의 파일은 고칠 수 없습니다", "Files inside .git can't be edited"));
+    }
+    Ok(())
+}
+
+pub fn read_for_edit(worktree: &Path, rel: &str) -> Result<EditableFile> {
+    refuse_git_dir(rel)?;
+    let p = resolve_inside(worktree, rel)?;
+    let meta = std::fs::metadata(&p)?;
+    if !meta.is_file() {
+        bail!(tr!("일반 파일이 아니라 고칠 수 없습니다", "Not a regular file, so it can't be edited"));
+    }
+    if meta.len() > MAX_EDIT_BYTES {
+        // 큰 파일은 지문을 만들려고 다 읽지 않는다(어차피 저장하지 않음)
+        return Ok(EditableFile { rel: rel.to_string(), text: None, hash: String::new(), crlf: false, bom: false, readonly: Some(too_big()) });
+    }
+    Ok(editable_from(rel, &std::fs::read(&p)?))
+}
+
+/// 고친 내용을 저장한다. 불러올 때의 지문(expected)과 지금 디스크가 다르면 force 가 아닌 한 저장하지 않는다.
+/// 같은 폴더의 임시 파일에 쓴 뒤 이름을 바꿔(원자적 저장) 중간에 깨진 파일이 보이지 않게 하고, 권한은 원래대로 둔다.
+pub fn save_file(worktree: &Path, rel: &str, text: &str, crlf: bool, bom: bool, expected: &str, force: bool) -> Result<SaveOutcome> {
+    use std::io::Write;
+    refuse_git_dir(rel)?;
+    let root = std::fs::canonicalize(worktree)?;
+    let p = resolve_inside(worktree, rel)?;
+    // 파일이 없어진 경우 resolve_inside 는 링크를 풀지 못하므로, 부모 폴더를 따로 확인한다
+    let parent = p.parent().ok_or_else(|| anyhow::anyhow!(tr!("올바르지 않은 경로: {rel}", "Invalid path: {rel}")))?;
+    let parent = std::fs::canonicalize(parent)?;
+    if !parent.starts_with(&root) {
+        bail!(tr!("워크트리 밖의 경로는 열 수 없습니다: {rel}", "Can't open a path outside the worktree: {rel}"));
+    }
+    let name = p.file_name().ok_or_else(|| anyhow::anyhow!(tr!("올바르지 않은 경로: {rel}", "Invalid path: {rel}")))?.to_owned();
+    let target = parent.join(&name);
+    let meta = std::fs::symlink_metadata(&target).ok();
+    if meta.as_ref().is_some_and(|m| !m.is_file()) {
+        bail!(tr!("일반 파일이 아니라 고칠 수 없습니다", "Not a regular file, so it can't be edited"));
+    }
+    let current = disk_hash(&target)?;
+    if current != expected && !force {
+        return Ok(SaveOutcome { saved: false, hash: current });
+    }
+    let body = text.replace("\r\n", "\n");
+    let body = if crlf { body.replace('\n', "\r\n") } else { body };
+    let mut bytes = Vec::with_capacity(body.len() + 3);
+    if bom {
+        bytes.extend_from_slice(BOM);
+    }
+    bytes.extend_from_slice(body.as_bytes());
+    if bytes.len() as u64 > MAX_EDIT_BYTES {
+        bail!(tr!("2MB 보다 큰 파일은 앱에서 저장하지 않아요", "Files over 2 MB aren't saved from the app"));
+    }
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(0);
+    let tmp = parent.join(format!(".{}.codehaengbang-{}-{nanos}.tmp", name.to_string_lossy(), std::process::id()));
+    let write = || -> Result<()> {
+        let mut f = std::fs::OpenOptions::new().write(true).create_new(true).open(&tmp)?;
+        f.write_all(&bytes)?;
+        f.sync_all()?;
+        if let Some(m) = &meta {
+            std::fs::set_permissions(&tmp, m.permissions())?;
+        }
+        std::fs::rename(&tmp, &target)?;
+        Ok(())
+    };
+    if let Err(e) = write() {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    Ok(SaveOutcome { saved: true, hash: content_hash(&bytes) })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn edit_round_trip_keeps_line_endings_bom_and_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tempfile::tempdir().unwrap();
+        let w = d.path();
+        std::fs::write(w.join("win.txt"), b"\xEF\xBB\xBFa\r\nb\r\n").unwrap();
+        std::fs::set_permissions(w.join("win.txt"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        let f = read_for_edit(w, "win.txt").unwrap();
+        assert_eq!(f.text.as_deref(), Some("a\nb\n"));
+        assert!(f.crlf && f.bom && f.readonly.is_none());
+        let out = save_file(w, "win.txt", "a\n한글\nb\n", f.crlf, f.bom, &f.hash, false).unwrap();
+        assert!(out.saved);
+        assert_eq!(std::fs::read(w.join("win.txt")).unwrap(), "\u{feff}a\r\n한글\r\nb\r\n".as_bytes());
+        assert_eq!(std::fs::metadata(w.join("win.txt")).unwrap().permissions().mode() & 0o777, 0o755, "권한 유지");
+        assert_eq!(read_for_edit(w, "win.txt").unwrap().hash, out.hash, "저장 후 지문이 디스크와 같다");
+        let leftovers: Vec<_> = std::fs::read_dir(w).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().ends_with(".tmp")).collect();
+        assert!(leftovers.is_empty(), "임시 파일이 남지 않는다");
+    }
+
+    #[test]
+    fn save_detects_outside_change_and_refuses_escape() {
+        let d = tempfile::tempdir().unwrap();
+        let w = d.path();
+        std::fs::write(w.join("a.ts"), "one\n").unwrap();
+        let f = read_for_edit(w, "a.ts").unwrap();
+        // 그사이 에이전트가 고침
+        std::fs::write(w.join("a.ts"), "agent\n").unwrap();
+        let out = save_file(w, "a.ts", "mine\n", false, false, &f.hash, false).unwrap();
+        assert!(!out.saved, "밖에서 바뀌면 덮어쓰지 않는다");
+        assert_eq!(std::fs::read_to_string(w.join("a.ts")).unwrap(), "agent\n");
+        assert!(save_file(w, "a.ts", "mine\n", false, false, &f.hash, true).unwrap().saved, "사용자가 고르면 덮어쓴다");
+        assert_eq!(std::fs::read_to_string(w.join("a.ts")).unwrap(), "mine\n");
+        // 밖에서 지워진 파일: 지문이 달라 묻고, 고르면 다시 만든다
+        std::fs::remove_file(w.join("a.ts")).unwrap();
+        assert!(!save_file(w, "a.ts", "x\n", false, false, &out.hash, false).unwrap().saved);
+        assert!(save_file(w, "a.ts", "x\n", false, false, &out.hash, true).unwrap().saved);
+        // 워크트리 밖·.git·밖을 가리키는 링크 폴더 거부
+        let outside = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(outside.path(), w.join("out")).unwrap();
+        std::fs::create_dir(w.join(".git")).unwrap();
+        assert!(save_file(w, "../x.txt", "x", false, false, MISSING, true).is_err());
+        assert!(save_file(w, "out/new.txt", "x", false, false, MISSING, true).is_err(), "링크 폴더를 거쳐 밖으로 쓰지 않는다");
+        assert!(!outside.path().join("new.txt").exists());
+        assert!(save_file(w, ".git/config", "x", false, false, MISSING, true).is_err());
+        assert!(read_for_edit(w, "../x").is_err());
+    }
+
+    #[test]
+    fn readonly_reasons() {
+        let d = tempfile::tempdir().unwrap();
+        let w = d.path();
+        std::fs::write(w.join("mixed.txt"), "a\r\nb\n").unwrap();
+        std::fs::write(w.join("euckr.txt"), [0xC7u8, 0xD1, 0xB1, 0xDB]).unwrap();
+        std::fs::write(w.join("bin"), [1u8, 0, 2]).unwrap();
+        std::fs::write(w.join("big.txt"), vec![b'a'; (MAX_EDIT_BYTES + 1) as usize]).unwrap();
+        for name in ["mixed.txt", "euckr.txt", "bin", "big.txt"] {
+            let f = read_for_edit(w, name).unwrap();
+            assert!(f.text.is_none() && f.readonly.is_some(), "{name} 은 읽기 전용");
+        }
+        assert!(read_for_edit(w, "").is_err(), "워크트리 자체는 파일이 아니다");
+    }
 
     #[test]
     fn reads_images_only_inside_and_from_head() {

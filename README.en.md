@@ -67,7 +67,7 @@ open "/Applications/코드행방.app"
 
 `pnpm install-app` rebuilds just the app; `AITERM_SKIP_APP=1 pnpm install` skips it.
 
-Then use **＋ 저장소 추가** (Add repository) at the top to pick a Git repository. Repositories you have used with an AI are found automatically.
+Then use **＋ 저장소 추가** (Add repository) at the top to pick a Git repository. Repositories you have used with an AI are found automatically. If you pick a folder that isn't a Git repository, it offers to start one there (`git init`; not in your home or system folders).
 
 > A `dmg` built by someone else is not notarized yet. If macOS blocks it, use **System Settings → Privacy & Security → Open Anyway**, or run `xattr -dr com.apple.quarantine "/Applications/코드행방.app"`. Apps you build yourself are fine.
 
@@ -122,6 +122,19 @@ The coloured line under the title bar is the colour of the worktree you are look
 - Content with syntax highlighting, diff against the last commit, or stage parts.
 - Images (png, jpg, gif, webp, svg…) are shown as images; a changed image is shown **next to its last committed version**. Click to toggle actual size.
 - Everything refreshes when an agent or editor changes files.
+- **↗** in the file viewer opens the file in your external editor (VS Code, Cursor, Zed…, chosen in Settings).
+
+### File editing (a feature, off by default)
+
+Turn on **File editing** in Settings → **Features** and files are **editable as soon as you open them** (the file viewer's **Content** becomes the editor; see differences in **Changes**). Turning it on shows a macOS confirmation once, since the app can then save files.
+
+- While it's on, files open as **tabs in the center pane** instead of the narrow area under the file tree. The first **Agents** tab takes you back to the conversation (terminals keep running); a tab shows • for unsaved edits (hover it to see which worktree). Close with × or a middle click; right-click a tab for **Close / Close other tabs / Close all**. With unsaved edits it asks **Save and close / Close without saving / Cancel** (files that changed outside in the meantime aren't saved and stay open).
+
+- `⌘S` save, `⌘F` find. Syntax colours follow light/dark mode.
+- When saving, **if an AI or another editor changed the file in the meantime it doesn't overwrite** and asks (reload / overwrite with mine). If you aren't editing, outside changes show up right away.
+- Unsaved edits stay when you move to another file and come back (• on the tab; gone when the app quits).
+- Line endings (CRLF), BOM and file permissions are kept; files are written to a temporary file and swapped in. Files over 2 MB, binary files and non-UTF-8 files say why and are shown read-only, with the external editor suggested.
+- **If an AI is working in that worktree** it tells you and offers **Edit in my own worktree**: the AI's worktree stays untouched and a sibling worktree opens on an `edit/<AI branch>` branch (changes the AI hasn't committed aren't there). Commit your edits and press **Merge into AI branch** to get the usual merge confirmation.
 
 | Key | Action |
 |---|---|
@@ -130,12 +143,14 @@ The coloured line under the title bar is the colour of the worktree you are look
 | `⌘[` / `⌘]` | Previous / next session |
 | `⌘1` `⌘2` `⌘3` | Focus Git / Agents / Files |
 | `⌘⏎` | Commit (in the message box), Start (in the new-session dialog) |
-| `⌘,` | Settings (language, appearance) |
+| `⌘,` | Settings (language, appearance, external editor, features) |
+| `⌘S` / `⌘F` | In file editing: save / find |
 
 ## Privacy
 
 - No account. Choosing Check for Updates contacts GitHub for release metadata and update files. No repository paths or conversation contents are sent (the UI remains locked down by CSP).
 - Claude Code and Codex logs are **read only**.
+- The app only writes your files when the **File editing** feature is on (off by default, a macOS confirmation to turn on).
 - The only traffic is what you start: Git remote actions, and the Claude Code / Codex CLIs you launch.
 - Hard-to-undo actions (checkout, pull, push, discard) always confirm, and warn about uncommitted changes or agents running in that worktree.
 
@@ -148,21 +163,21 @@ The coloured line under the title bar is the colour of the worktree you are look
 - **Logs read:** `~/.claude/projects/*/<id>.jsonl`, `~/.claude/sessions/<pid>.json`, `~/.codex/state_*.sqlite` (read-only), `~/.codex/sessions/**/rollout-*.jsonl[.zst]`, `~/.codex/thread-writer-locks/`. `CLAUDE_CONFIG_DIR` and `CODEX_HOME` are honoured.
 - **Linking a session to a worktree:** the last recorded cwd wins (resume always runs in the first cwd, because `claude --resume` looks up the log by its starting folder). Sessions started in a parent folder that is not a repository are linked to the repository folder they worked in most recently (from the cwd values in the last 2 MB of the log). Running sessions are detected with libproc, without spawning `ps` or `lsof`.
 - **Commands:** `claude --resume <id>`, `codex resume <id> -C <cwd>`; chat uses `claude -p --input-format stream-json --output-format stream-json --verbose --permission-prompts host --permission-prompt-tool stdio` and answers `can_use_tool` requests with the CLI's own input; Codex chat runs `codex exec --json` per turn.
-- **Security:** every Git/file command only accepts paths inside a registered worktree (`..`, absolute paths and symlinks pointing outside are refused). The automation socket used by tests exists only in `--features automation` builds.
+- **Security:** every Git/file command only accepts paths inside a registered worktree (`..`, absolute paths and symlinks pointing outside are refused). The only file write is `fs_save`, accepted only while File editing is on; features change only through `extension_set` (the UI's `kv_set` can't touch `ext.*`), and File editing turns on only after a person clicks the macOS dialog Rust shows, so the webview alone can't enable writes. External editors are limited to a known list; `git init` refuses home/system folders. The automation socket used by tests exists only in `--features automation` builds.
 - **Footprint:** CPU while an agent works 3.14% → 0.74%, memory 194 → 148 MB, session list 108 → 2 ms, UI bundle 11 MB → 3.5 MB; app 7.5 MB, dmg 3.8 MB.
 
 ```bash
 pnpm tauri dev            # dev mode
 pnpm check                # tsc + vitest + cargo test
 AITERM_AUTOMATION_SOCKET=/tmp/aiterm-auto.sock pnpm tauri dev --features automation
-scripts/e2e/regression.sh; scripts/e2e/features.sh; scripts/e2e/hangul.sh
+scripts/e2e/regression.sh; scripts/e2e/features.sh; scripts/e2e/hangul.sh; scripts/e2e/editor.sh
 scripts/make_screenshots.sh   # README images + demo video from sample data (needs ffmpeg)
 scripts/package_release.sh 0.1.0   # universal app → build/release/ DMG, zip, SHA256SUMS (a v* tag does this on GitHub Actions and publishes a Release)
 ```
 
-**Settings** (menu bar **Code Whereabouts → Settings…**, `⌘,`): language (한국어 / English, follows macOS at first) and appearance (system / light / dark; the terminal and code colours follow).
+**Settings** (menu bar **Code Whereabouts → Settings…**, `⌘,`): language (한국어 / English, follows macOS at first), appearance (system / light / dark; the terminal and code colours follow), external editor, and **Features**: File editing (off by default), Stickman (on), Subscription limits (on; when off, login details aren't read). Features that are off aren't loaded at all.
 
-Not yet: notarized builds, Intel check, line-level staging, 3-way merge editor, interactive rebase, stash.
+Not yet: notarized builds, Intel check, line-level staging, 3-way merge editor, interactive rebase, stash; in file editing, creating/renaming/deleting files, autocomplete (LSP), multiple file tabs.
 
 ## License
 

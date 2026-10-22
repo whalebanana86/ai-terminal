@@ -37,8 +37,8 @@ mkdir -p "$DEST"
 running=""
 # ps 의 실행 파일 경로로 찾는다. 파이프로 grep -q 하면 pipefail 때문에 찾아도 실패로 끝나므로 목록을 먼저 받아 둔다.
 procs=$(ps -A -o comm=)
-if grep -qF "$DEST/코드행방.app/Contents/MacOS/ai-terminal" <<<"$procs" ||
-   grep -qF "$DEST/AI Terminal.app/Contents/MacOS/ai-terminal" <<<"$procs"; then
+# ps 는 한글 앱 이름을 자모가 나뉜 꼴(NFD)로 보여 줘서 이름 글자로는 비교하지 않는다(코드행방·AI Terminal 둘 다 실행 파일은 ai-terminal).
+if grep -qE "^$DEST/[^/]+\.app/Contents/MacOS/ai-terminal\$" <<<"$procs"; then
   running=1
 fi
 # 기존 앱 이름만 옮긴다. 앱 식별자와 Application Support 데이터는 그대로 유지한다.

@@ -181,6 +181,38 @@ export interface FileContent {
   text: string | null;
 }
 
+/** 앱 안 편집용으로 읽은 파일(확장 기능 "파일 편집"). 편집할 수 없으면 text 가 null 이고 readonly 에 이유 */
+export interface EditableFile {
+  rel: string;
+  text: string | null;
+  hash: string;
+  crlf: boolean;
+  bom: boolean;
+  readonly: string | null;
+}
+
+export interface SaveOutcome {
+  /** false 면 불러온 뒤 밖에서 바뀌어 저장하지 않았다 */
+  saved: boolean;
+  hash: string;
+}
+
+export interface ExtState {
+  id: string;
+  enabled: boolean;
+}
+
+export interface EditorApp {
+  id: string;
+  name: string;
+}
+
+export interface RepoProbe {
+  isRepo: boolean;
+  canInit: boolean;
+  reason: string | null;
+}
+
 export interface TranscriptItem {
   kind: "user" | "assistant" | "tool";
   text: string;
@@ -324,6 +356,18 @@ export const api = {
   kvGet: (key: string) => invoke<string | null>("kv_get", { key }),
   kvSet: (key: string, value: string) => invoke<void>("kv_set", { key, value }),
   revealInFinder: (path: string) => invoke<void>("reveal_in_finder", { path }),
+  repoProbe: (path: string) => invoke<RepoProbe>("repo_probe", { path }),
+  repoInit: (path: string) => invoke<{ id: string; path: string; name: string; pinned: boolean }>("repo_init", { path }),
+
+  extensionsList: () => invoke<ExtState[]>("extensions_list"),
+  /** 파일 편집을 켤 때는 맥 확인창이 뜬다. 돌려받은 목록이 실제 상태(취소하면 그대로) */
+  extensionSet: (id: string, enabled: boolean) => invoke<ExtState[]>("extension_set", { id, enabled }),
+  readForEdit: (worktree: string, rel: string) => invoke<EditableFile>("fs_read_for_edit", { worktree, rel }),
+  saveFile: (args: { worktree: string; rel: string; text: string; crlf: boolean; bom: boolean; expected: string; force: boolean }) =>
+    invoke<SaveOutcome>("fs_save", { args }),
+  editorsInstalled: () => invoke<EditorApp[]>("editors_installed"),
+  openInEditor: (worktree: string, rel: string, editor: string) => invoke<void>("open_in_editor", { worktree, rel, editor }),
+  editWorktree: (path: string) => invoke<string>("git_edit_worktree", { path }),
 
   liveRuns: () => invoke<LiveRun[]>("live_runs"),
 

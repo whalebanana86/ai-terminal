@@ -3,8 +3,7 @@ import { Check, ChevronDown, FolderGit2, Plus, X } from "lucide-react";
 import { t } from "../i18n";
 import { baseName } from "../logic";
 import { useStore } from "../store";
-import { SubscriptionUsage } from "./SubscriptionUsage";
-import { StickBuddy } from "./StickBuddy";
+import { ExtensionSlot } from "../extensions";
 
 export function TopBar() {
   const focus = useStore((s) => s.focus);
@@ -39,7 +38,7 @@ export function TopBar() {
         <Plus size={14} aria-hidden /> {t("저장소 추가")}
       </button>
       <div className="spacer" data-tauri-drag-region />
-      <StickBuddy />
+      <ExtensionSlot name="topbar" />
     </header>
   );
 }
@@ -58,7 +57,7 @@ export function StatusBar() {
       {item("Claude Code", info?.claude)}
       {item("Codex", info?.codex)}
       {item("git", info?.git, info?.gitVersion)}
-      <SubscriptionUsage />
+      <ExtensionSlot name="statusbar" />
       <span className="spacer" />
       <span className="muted" title={t("이 앱은 대화·코드를 외부로 보내지 않습니다")}>
         {t("로컬 전용")}

@@ -9,6 +9,8 @@ import { useSelectedSession, useStore } from "../store";
 import { PanelHead } from "./GitPanel";
 import { ChatView } from "./ChatView";
 import { t } from "../i18n";
+import { useExtensionOn } from "../extensions";
+import { CenterFileView, CenterTabBar } from "./CenterTabs";
 // 터미널(xterm + WebGL, 약 460KB)은 실제로 띄울 때만 불러온다.
 const TerminalView = lazy(() => import("./TerminalView").then((m) => ({ default: m.TerminalView })));
 
@@ -46,6 +48,9 @@ async function withExternalConfirm<T>(fn: (force: boolean) => Promise<T>): Promi
 export function AgentPanel() {
   const setNewOpen = useStore((s) => s.setNewSessionOpen);
   const newOpen = useStore((s) => s.newSessionOpen);
+  // 파일 편집을 켜면 파일을 이 칸의 탭으로 연다(오른쪽 아래는 좁아서)
+  const editorOn = useExtensionOn("editor");
+  const fileTabs = useStore((s) => s.fileTabs.length > 0) && editorOn;
   return (
     <section className="panel" data-pane="2" tabIndex={-1}>
       <PanelHead title={t("에이전트")}>
@@ -53,15 +58,19 @@ export function AgentPanel() {
           <Plus size={13} aria-hidden /> {t("새 세션")}
         </button>
       </PanelHead>
-      <Group orientation="vertical" className="agent-split">
-        <Panel id="list" defaultSize="34" minSize="15">
-          <SessionList />
-        </Panel>
-        <Separator className="sep sep-h" />
-        <Panel id="detail" defaultSize="66" minSize="25">
-          <SessionDetail />
-        </Panel>
-      </Group>
+      {fileTabs && <CenterTabBar />}
+      <div className="agent-body">
+        <Group orientation="vertical" className="agent-split">
+          <Panel id="list" defaultSize="34" minSize="15">
+            <SessionList />
+          </Panel>
+          <Separator className="sep sep-h" />
+          <Panel id="detail" defaultSize="66" minSize="25">
+            <SessionDetail />
+          </Panel>
+        </Group>
+        {fileTabs && <CenterFileView />}
+      </div>
       {newOpen && <NewSessionDialog onClose={() => setNewOpen(false)} />}
     </section>
   );

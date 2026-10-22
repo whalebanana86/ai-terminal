@@ -40,6 +40,11 @@ export function ConfirmDialog() {
           <button className="btn" autoFocus={req.danger} onClick={() => req.resolve(false)}>
             {t("취소")}
           </button>
+          {req.altLabel && (
+            <button className="btn btn-danger" onClick={() => req.resolve("alt")} data-action="alt">
+              {req.altLabel}
+            </button>
+          )}
           <button ref={okRef} className={req.danger ? "btn btn-danger" : "btn btn-primary"} onClick={() => req.resolve(true)}>
             {req.confirmLabel ?? t("확인")}
           </button>

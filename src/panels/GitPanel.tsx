@@ -5,7 +5,7 @@ import { ArrowDownToLine, ArrowUpFromLine, Crosshair, RefreshCw, X } from "lucid
 import { ContextMenu, Empty, WtDot, type MenuItem } from "../components/Overlays";
 import * as ga from "../gitActions";
 import { baseName, branchLabel, branchState, kindLetter } from "../logic";
-import { useFocusRepo, useSelectedSession, useStore } from "../store";
+import { useFocusRepo, useSelectedSession, useShownViewer, useStore } from "../store";
 import { BranchesView, BranchSwitcher, WorktreesView } from "./GitBranches";
 import { ChangesView } from "./GitChanges";
 import { GraphView } from "./GraphView";
@@ -410,7 +410,7 @@ function CommitDetailView(props: { worktree: string; sha: string; graph: GraphDa
   const [d, setD] = useState<CommitDetail | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const openViewer = useStore((s) => s.openViewer);
-  const viewer = useStore((s) => s.viewer);
+  const viewer = useShownViewer(props.worktree);
   const repo = useFocusRepo();
   useEffect(() => {
     api.commitDetail(props.worktree, props.sha).then(setD, (e) => setErr(errorText(e)));
