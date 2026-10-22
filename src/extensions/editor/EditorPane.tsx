@@ -1,12 +1,11 @@
-// 확장 기능 "파일 편집": 파일 보기의 '편집' 탭. ⌘S 저장, ⌘F 찾기, Esc 로 내용 보기로.
+// 확장 기능 "파일 편집": 켜 두면 파일 보기의 '내용' 이 이 편집 화면이 된다(열면 바로 고치기). ⌘S 저장, ⌘F 찾기.
+// 고칠 수 없는 파일(바이너리·2MB 초과·UTF-8 아님)은 onUnavailable 로 알려 원래 내용 보기로 돌린다.
 // 저장할 때 불러온 뒤 밖(AI·다른 편집기)에서 바뀌었으면 덮어쓰지 않고 묻는다. 저장하지 않은 수정은 drafts 에 남는다.
 import { Text } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import { ExternalLink, GitMerge, Save, X } from "lucide-react";
+import { GitMerge, Save, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, errorText, type EditableFile } from "../../api";
-import { Empty } from "../../components/Overlays";
-import { openExternal } from "../../externalEditor";
 import { useFileTick } from "../../fileTick";
 import { countAgentsIn } from "../../gitActions";
 import { t } from "../../i18n";
@@ -17,7 +16,7 @@ import { isEditBranch, mergeIntoAgent, openInEditWorktree } from "./editWorktree
 
 type Outside = null | "changed" | "conflict";
 
-export default function EditorPane({ worktree, rel, setMode }: { worktree: string; rel: string; setMode: (mode: "preview") => void }) {
+export default function EditorPane({ worktree, rel, onUnavailable }: { worktree: string; rel: string; onUnavailable: (reason: string) => void }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   /** 마지막으로 디스크와 같았던 내용과 그때의 지문 */
@@ -33,7 +32,7 @@ export default function EditorPane({ worktree, rel, setMode }: { worktree: strin
   const fileTick = useFileTick(rel, worktree);
   const agents = useStore((s) => countAgentsIn(s, worktree));
   const branch = useStore((s) => s.repos.flatMap((r) => r.worktrees).find((w) => w.path === worktree)?.branch ?? null);
-  const actions = useRef({ save: (_force: boolean) => {}, leave: () => {} });
+  const actions = useRef({ save: (_force: boolean) => {} });
 
   const isDirty = () => !!view.current && !!saved.current.doc && !view.current.state.doc.eq(saved.current.doc);
   const remember = () => {
@@ -56,11 +55,11 @@ export default function EditorPane({ worktree, rel, setMode }: { worktree: strin
         const f = await api.readForEdit(worktree, rel);
         if (!alive) return;
         setFile(f);
+        if (f.readonly) return onUnavailable(f.readonly);
         if (f.text === null || !host.current) return;
         const draft = getDraft(worktree, rel);
         const { view: v, languageSlot } = createEditor(host.current, draft ? draft.doc.toString() : f.text, {
           onSave: () => actions.current.save(false),
-          onLeave: () => actions.current.leave(),
           onChange: () => {
             setDirty(isDirty());
             remember();
@@ -170,21 +169,13 @@ export default function EditorPane({ worktree, rel, setMode }: { worktree: strin
 
   actions.current = {
     save: (force) => void save(force),
-    leave: () => setMode("preview"),
   };
 
   const editWt = isEditBranch(branch);
   return (
     <div className="editor-pane" data-testid="editor-pane">
       {err && <div className="banner banner-error">{err}</div>}
-      {file?.readonly ? (
-        <Empty title={t("이 파일은 앱에서 고칠 수 없어요")}>
-          <div>{file.readonly}</div>
-          <button className="btn btn-small" style={{ marginTop: 8 }} onClick={() => void openExternal(worktree, rel)}>
-            <ExternalLink size={13} aria-hidden /> {t("외부 편집기로 열기")}
-          </button>
-        </Empty>
-      ) : (
+      {file?.readonly ? null : (
         <>
           {editWt ? (
             <div className="banner banner-ext editor-note" data-testid="edit-worktree-note">
@@ -238,7 +229,7 @@ export default function EditorPane({ worktree, rel, setMode }: { worktree: strin
             </span>
             {file && (file.crlf || file.bom) && <span className="muted">{[file.crlf && "CRLF", file.bom && "BOM"].filter(Boolean).join(" · ")}</span>}
             <span className="spacer" />
-            <span className="muted">{t("⌘F 찾기 · Esc 나가기")}</span>
+            <span className="muted">{t("⌘S 저장 · ⌘F 찾기")}</span>
             <button className="btn btn-small btn-primary" disabled={!dirty || saving} onClick={() => void save(false)} data-action="save-file" title={t("저장 (⌘S)")}>
               <Save size={13} aria-hidden /> {t("저장")}
             </button>

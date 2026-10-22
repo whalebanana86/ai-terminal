@@ -267,8 +267,8 @@ fn confirm_native(app: &tauri::AppHandle, _id: &str) -> bool {
     use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
     app.dialog()
         .message(tr!(
-            "파일 보기에 '편집' 탭이 생기고, 코드행방이 워크트리 안의 파일을 저장할 수 있게 됩니다.\n\n저장할 때 그사이 AI 나 다른 편집기가 파일을 바꿨으면 덮어쓰지 않고 먼저 물어봐요.",
-            "An 'Edit' tab appears in the file viewer and Code Whereabouts can save files inside your worktrees.\n\nIf an AI or another editor changed the file in the meantime, it asks before overwriting."
+            "파일을 열면 바로 고칠 수 있게 되고, 코드행방이 워크트리 안의 파일을 저장할 수 있게 됩니다.\n\n저장할 때 그사이 AI 나 다른 편집기가 파일을 바꿨으면 덮어쓰지 않고 먼저 물어봐요.",
+            "Files become editable as soon as you open them, and Code Whereabouts can save files inside your worktrees.\n\nIf an AI or another editor changed the file in the meantime, it asks before overwriting."
         ))
         .title(tr!("파일 편집 기능을 켤까요?", "Turn on file editing?"))
         .kind(MessageDialogKind::Warning)

@@ -34,7 +34,7 @@ const type = async (text) => {
 };
 const readDisk = async (rel, wt = REPO) => (await inv("fs_read", { worktree: wt, rel })).text;
 const openEdit = async (rel, wt = REPO) => {
-  st.getState().openViewer({ kind: "file", rel, mode: "ext:editor" });
+  st.getState().openViewer({ kind: "file", rel, mode: "preview" });
   return until(() => cm() && $(`[data-testid=editor-state]`) && cm().state.doc.length > 0 && cm());
 };
 const click = (sel) => {
@@ -63,7 +63,7 @@ try {
   if (prevExt.editor) await ext.getState().set("editor", false);
   st.getState().openViewer({ kind: "file", rel: "src/hello.ts", mode: "preview" });
   await wait(500);
-  check(!$('[data-mode="ext:editor"]'), "꺼져 있으면 편집 탭 없음");
+  check(!!(await until(() => $("[data-testid=file-preview]"))) && !$("[data-testid=editor-pane]"), "꺼져 있으면 내용은 읽기 전용");
   check(!!$('[data-action="open-external"]'), "외부 편집기 버튼은 늘 있음");
   let err = "";
   try {
@@ -85,16 +85,16 @@ try {
   check(!!(await openEdit("src/hello.ts")), "편집 탭이 열림");
   check(!!$("[data-testid=center-file]") && !!$('.center-tabs [data-tab="src/hello.ts"]'), "파일이 가운데 칸 탭으로 열림");
   check(!$(".file-split [data-testid=editor-pane]"), "오른쪽 아래에는 열지 않음");
-  check(!!$('[data-mode="ext:editor"].on'), "편집 탭 선택됨");
-  check(!!$(".cm-content .ͼp, .cm-content span[class]"), "코드 색칠");
+  check(!!$('[data-mode="preview"].on') && !$('[data-mode="ext:editor"]'), "'내용' 이 바로 편집 화면(따로 편집 탭 없음)");
+  check(!!(await until(() => $(".cm-content span[class]"))), "코드 색칠(언어는 처음 쓸 때 불러옴)");
   await type("// 한글 수정\n");
   await wait(100);
   check($("[data-testid=editor-state]").textContent.includes("저장 안 됨"), "고치면 '저장 안 됨'");
-  check(!!$('[data-mode="ext:editor"] .tab-dot'), "탭에 저장 안 됨 점");
+  check(!!$('[data-mode="preview"] .tab-dot'), "'내용' 탭에 저장 안 됨 점");
   click('[data-action="save-file"]');
   await until(() => $("[data-testid=editor-state]").textContent.includes("저장했어요"));
   check((await readDisk("src/hello.ts")) === 'export const hello = "hi";\n// 한글 수정\n', "디스크에 저장", await readDisk("src/hello.ts"));
-  check(!$('[data-mode="ext:editor"] .tab-dot'), "저장하면 점이 사라짐");
+  check(!$('[data-mode="preview"] .tab-dot'), "저장하면 점이 사라짐");
   await wait(800); // 내 저장이 만든 파일 변경 신호는 무시돼야 한다
   check(!$("[data-testid=outside-note]"), "내 저장은 '밖에서 바뀜'으로 치지 않음");
 
@@ -118,26 +118,24 @@ try {
 
   // 4. 저장하지 않은 수정은 탭을 옮겨도 남는다
   await type("// draft\n");
-  st.getState().openViewer({ kind: "file", rel: "src/hello.ts", mode: "preview" });
+  st.getState().openViewer({ kind: "file", rel: "src/hello.ts", mode: "diff" });
   await wait(500);
-  check(!!$('[data-mode="ext:editor"] .tab-dot'), "다른 탭에서도 저장 안 됨 점");
+  check(!!$('[data-mode="preview"] .tab-dot') && !$("[data-testid=editor-pane]"), "'변경' 탭에 가 있어도 저장 안 됨 점");
   await openEdit("src/hello.ts");
   check(cm().state.doc.toString().includes("// draft") && !!$("[data-testid=draft-note]"), "돌아오면 이어서 보여 줌");
   click("[data-testid=draft-note] .btn");
   await until(() => !cm().state.doc.toString().includes("// draft"));
   check(!cm().state.doc.toString().includes("// draft"), "수정 버리기");
 
-  // 5. Esc 로 내용 보기, ⌘S 단축키
+  // 5. ⌘S 단축키
   await type("// key\n");
   cm().contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key: "s", code: "KeyS", keyCode: 83, metaKey: true, bubbles: true, cancelable: true }));
   await until(() => $("[data-testid=editor-state]").textContent.includes("저장했어요"));
   check((await readDisk("src/hello.ts")).includes("// key"), "⌘S 로 저장");
-  cm().contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true, cancelable: true }));
-  await wait(300);
-  check(shown()?.mode === "preview", "Esc 로 내용 보기");
-  // 트리에서 파일을 누르면 가운데 탭, 에이전트 탭을 누르면 에이전트 화면
+  // 트리에서 파일을 누르면 가운데 탭에서 바로 편집, 에이전트 탭을 누르면 에이전트 화면
   click('.tree-row[data-rel="win.txt"]');
   check(!!(await until(() => $('.center-tabs [data-tab="win.txt"]'))), "트리에서 누른 파일도 가운데 탭으로");
+  check(!!(await until(() => shown()?.rel === "win.txt" && cm() && cm().state.doc.toString().startsWith("a\nb"))), "트리에서 열면 바로 편집 화면");
   click('.center-tabs [data-tab="agent"]');
   await wait(200);
   check(!$("[data-testid=center-file]") && st.getState().activeTab === null, "에이전트 탭으로 돌아감");
@@ -152,8 +150,8 @@ try {
   await until(() => $("[data-testid=editor-state]").textContent.includes("저장했어요"));
   const win = await inv("fs_read_for_edit", { worktree: REPO, rel: "win.txt" });
   check(win.crlf && win.text === "a\nb\nc\n", "CRLF 파일은 CRLF 로 저장", win);
-  st.getState().openViewer({ kind: "file", rel: "euckr.txt", mode: "ext:editor" });
-  check(!!(await until(() => [...document.querySelectorAll(".empty-title")].find((e) => e.textContent.includes("고칠 수 없어요")))), "UTF-8 아닌 파일은 읽기 전용 안내");
+  st.getState().openViewer({ kind: "file", rel: "euckr.txt", mode: "preview" });
+  check(!!(await until(() => $("[data-testid=no-edit-note]") && $("[data-testid=file-preview]"))), "UTF-8 아닌 파일은 이유를 알리고 읽기 전용 내용 보기");
 
   // 7. AI 가 일하는 워크트리 → 내 수정 워크트리 → 커밋 → AI 브랜치에 합치기
   const fakeRun = { sessionId: "e2e", agent: "claude", pid: 999999, client: "cli", status: null, cwd: REPO, startedAt: Date.now(), ownedByApp: false };
@@ -200,7 +198,7 @@ try {
   await openEdit("src/hello.ts");
   await ext.getState().set("editor", false);
   await wait(300);
-  check(!$('[data-mode="ext:editor"]') && !$("[data-testid=editor-pane]"), "끄면 편집 탭이 사라지고 내용 보기로");
+  check(!!(await until(() => $("[data-testid=file-preview]"))) && !$("[data-testid=editor-pane]"), "끄면 읽기 전용 내용 보기로");
   await ext.getState().set("stickman", false);
   await ext.getState().set("usage", false);
   await wait(300);

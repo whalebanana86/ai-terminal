@@ -3,7 +3,7 @@ import { ExternalLink, FolderOpen, Trash2 } from "lucide-react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { api, errorText, type ChangeKind, type DirEntry, type FileContent, type FileDiff, type WorktreeStatus } from "../api";
 import { Empty, WtDot } from "../components/Overlays";
-import { useFileModes, type FileModeSlot } from "../extensions";
+import { useExtensionOn, useFileModes, type FileModeSlot } from "../extensions";
 import { openExternal } from "../externalEditor";
 import { FileIcon, imageMime } from "../fileIcons";
 import { useFileTick } from "../fileTick";
@@ -56,6 +56,8 @@ function FileTree({ worktree }: { worktree: string }) {
   const statusTick = useStore((s) => s.statusTick);
   const viewer = useShownViewer(worktree);
   const openViewer = useStore((s) => s.openViewer);
+  // 파일 편집을 켜 두면 바뀐 파일도 바로 고칠 수 있게 '내용'(편집)으로 연다
+  const editorOn = useExtensionOn("editor");
   const [children, setChildren] = useState<Map<string, DirEntry[]>>(new Map());
   const [expanded, setExpanded] = useState<Set<string>>(new Set([""]));
   const [status, setStatus] = useState<WorktreeStatus | null>(null);
@@ -117,7 +119,7 @@ function FileTree({ worktree }: { worktree: string }) {
   };
 
   const openFile = (rel: string, kind: ChangeKind | undefined) =>
-    openViewer({ kind: "file", rel, mode: kind && kind !== "untracked" ? "diff" : "preview" }, { keepMode: true });
+    openViewer({ kind: "file", rel, mode: !editorOn && kind && kind !== "untracked" ? "diff" : "preview" }, { keepMode: true });
 
   const renderDir = (rel: string, depth: number): React.ReactNode[] => {
     const list = children.get(rel);
@@ -199,7 +201,7 @@ function FileTree({ worktree }: { worktree: string }) {
           ? changed.map((e) => {
               const on = viewer?.kind === "file" && viewer.rel === e.path;
               return (
-                <li key={e.path} className={`tree-row file k-${e.kind}${on ? " on" : ""}`} style={{ paddingLeft: 10 }} onClick={() => openViewer({ kind: "file", rel: e.path, mode: "diff" }, { keepMode: true })} data-rel={e.path}>
+                <li key={e.path} className={`tree-row file k-${e.kind}${on ? " on" : ""}`} style={{ paddingLeft: 10 }} onClick={() => openViewer({ kind: "file", rel: e.path, mode: editorOn && e.kind !== "deleted" ? "preview" : "diff" }, { keepMode: true })} data-rel={e.path}>
                   <FileIcon name={baseName(e.path)} />
                   <span className="name">{e.path}</span>
                   <span className={`kind kind-${e.kind}`}>{kindLetter(e.kind)}</span>
@@ -226,14 +228,21 @@ export function FileViewer({ worktree, viewer, onViewer, wtDot }: { worktree: st
   const [diff, setDiff] = useState<FileDiff[] | null>(null);
   const [lines, setLines] = useState<string[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const extModes = useFileModes();
-  const wanted = viewer.kind === "commit-file" ? "diff" : viewer.mode;
-  // 확장 탭이 꺼졌으면 내용 보기로
-  const ext = extModes.find((m) => m.key === wanted) ?? null;
-  const mode = wanted.startsWith("ext:") && !ext ? "preview" : wanted;
   // 그림 파일은 글자 대신 그림으로(내용 = 지금 그림, 변경 = 마지막 커밋과 나란히)
   const isImage = imageMime(viewer.rel) !== null;
-  const key = viewer.kind === "commit-file" ? `${viewer.sha}:${viewer.rel}` : `${viewer.rel}:${mode}`;
+  const extModes = useFileModes();
+  // '내용' 을 대신하는 확장(파일 편집: 열면 바로 고치기). 고칠 수 없는 파일이면 원래 내용 보기로(noEdit)
+  const replacer = viewer.kind === "file" ? (extModes.find((m) => m.replaces === "preview" && m.available({ rel: viewer.rel, isImage })) ?? null) : null;
+  const [noEdit, setNoEdit] = useState<{ at: string; reason: string } | null>(null);
+  const noEditReason = noEdit?.at === `${worktree}:${viewer.rel}` ? noEdit.reason : null;
+  const tabModes = extModes.filter((m) => !m.replaces);
+  const asked = viewer.kind === "commit-file" ? "diff" : viewer.mode;
+  // 예전 '편집' 탭 주소는 '내용' 으로, 꺼진 확장 탭도 '내용' 으로
+  const wanted = extModes.find((m) => m.key === asked)?.replaces ?? asked;
+  const extTab = tabModes.find((m) => m.key === wanted) ?? null;
+  const mode = wanted.startsWith("ext:") && !extTab ? "preview" : wanted;
+  const ext = extTab ?? (mode === "preview" && replacer && !noEditReason ? replacer : null);
+  const key = viewer.kind === "commit-file" ? `${viewer.sha}:${viewer.rel}` : `${viewer.rel}:${mode}:${ext?.key ?? ""}`;
 
   useEffect(() => {
     let alive = true;
@@ -281,9 +290,13 @@ export function FileViewer({ worktree, viewer, onViewer, wtDot }: { worktree: st
         <span className="spacer" />
         {viewer.kind === "file" && (
           <div className="seg">
-            <button className={mode === "preview" ? "on" : ""} onClick={() => openViewer({ ...viewer, mode: "preview" })}>
-              {t("내용")}
-            </button>
+            {replacer ? (
+              <ModeTab slot={replacer} worktree={worktree} rel={viewer.rel} on={mode === "preview"} onClick={() => openViewer({ ...viewer, mode: "preview" })} dataMode="preview" />
+            ) : (
+              <button className={mode === "preview" ? "on" : ""} onClick={() => openViewer({ ...viewer, mode: "preview" })} data-mode="preview">
+                {t("내용")}
+              </button>
+            )}
             <button className={mode === "diff" ? "on" : ""} onClick={() => openViewer({ ...viewer, mode: "diff" })} title={t("마지막 커밋과 비교한 전체 변경")}>
               {t("변경")}
             </button>
@@ -292,7 +305,7 @@ export function FileViewer({ worktree, viewer, onViewer, wtDot }: { worktree: st
                 {t("일부 담기")}
               </button>
             )}
-            {extModes
+            {tabModes
               .filter((m) => m.available({ rel: viewer.rel, isImage }))
               .map((m) => (
                 <ModeTab key={m.key} slot={m} worktree={worktree} rel={viewer.rel} on={mode === m.key} onClick={() => openViewer({ ...viewer, mode: m.key })} />
@@ -323,7 +336,13 @@ export function FileViewer({ worktree, viewer, onViewer, wtDot }: { worktree: st
           )
         ) : ext && viewer.kind === "file" ? (
           <Suspense fallback={<div className="loading">…</div>}>
-            <ext.View key={`${worktree}:${viewer.rel}`} worktree={worktree} rel={viewer.rel} setMode={(m) => openViewer({ kind: "file", rel: viewer.rel, mode: m })} />
+            <ext.View
+              key={`${worktree}:${viewer.rel}`}
+              worktree={worktree}
+              rel={viewer.rel}
+              setMode={(m) => openViewer({ kind: "file", rel: viewer.rel, mode: m })}
+              onUnavailable={(reason) => setNoEdit({ at: `${worktree}:${viewer.rel}`, reason })}
+            />
           </Suspense>
         ) : mode === "stage" && viewer.kind === "file" ? (
           <StageView worktree={worktree} rel={viewer.rel} />
@@ -334,6 +353,14 @@ export function FileViewer({ worktree, viewer, onViewer, wtDot }: { worktree: st
             <Empty title={t("바이너리 파일")}>{(content.size / 1024).toFixed(1)} KB</Empty>
           ) : (
             <>
+              {noEditReason && mode === "preview" && (
+                <div className="banner editor-note" data-testid="no-edit-note">
+                  <span>{t("이 파일은 앱에서 고칠 수 없어요: {reason}", { reason: noEditReason })}</span>
+                  <button className="btn btn-small" onClick={() => void openExternal(worktree, viewer.rel)}>
+                    <ExternalLink size={13} aria-hidden /> {t("외부 편집기로 열기")}
+                  </button>
+                </div>
+              )}
               {content.truncated && <div className="banner">{t("처음 1MB 만 보여 줍니다")}</div>}
               <pre className="code" data-testid="file-preview">
                 {(lines ?? []).map((l, i) => (
@@ -354,10 +381,10 @@ export function FileViewer({ worktree, viewer, onViewer, wtDot }: { worktree: st
 }
 
 /** 확장 기능이 더한 탭. 저장하지 않은 수정처럼 표시할 게 있으면 • */
-function ModeTab({ slot, worktree, rel, on, onClick }: { slot: FileModeSlot; worktree: string; rel: string; on: boolean; onClick: () => void }) {
+function ModeTab({ slot, worktree, rel, on, onClick, dataMode }: { slot: FileModeSlot; worktree: string; rel: string; on: boolean; onClick: () => void; dataMode?: string }) {
   const badge = slot.useBadge?.(worktree, rel) ?? false;
   return (
-    <button className={on ? "on" : ""} onClick={onClick} title={slot.title?.()} data-mode={slot.key}>
+    <button className={on ? "on" : ""} onClick={onClick} title={slot.title?.()} data-mode={dataMode ?? slot.key}>
       {slot.label()}
       {badge && <span className="tab-dot" aria-label={t("저장 안 됨")} />}
     </button>

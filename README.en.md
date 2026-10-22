@@ -126,14 +126,14 @@ The coloured line under the title bar is the colour of the worktree you are look
 
 ### File editing (a feature, off by default)
 
-Turn on **File editing** in Settings → **Features** and the file viewer gets an **Edit** tab. Turning it on shows a macOS confirmation once, since the app can then save files.
+Turn on **File editing** in Settings → **Features** and files are **editable as soon as you open them** (the file viewer's **Content** becomes the editor; see differences in **Changes**). Turning it on shows a macOS confirmation once, since the app can then save files.
 
 - While it's on, files open as **tabs in the center pane** instead of the narrow area under the file tree. The first **Agents** tab takes you back to the conversation (terminals keep running); each tab shows its worktree colour and • for unsaved edits. Close with × or a middle click.
 
-- `⌘S` save, `⌘F` find, `Esc` back to the content view. Syntax colours follow light/dark mode.
+- `⌘S` save, `⌘F` find. Syntax colours follow light/dark mode.
 - When saving, **if an AI or another editor changed the file in the meantime it doesn't overwrite** and asks (reload / overwrite with mine). If you aren't editing, outside changes show up right away.
 - Unsaved edits stay when you move to another file and come back (• on the tab; gone when the app quits).
-- Line endings (CRLF), BOM and file permissions are kept; files are written to a temporary file and swapped in. Files over 2 MB, binary files and non-UTF-8 files aren't edited; it suggests the external editor.
+- Line endings (CRLF), BOM and file permissions are kept; files are written to a temporary file and swapped in. Files over 2 MB, binary files and non-UTF-8 files say why and are shown read-only, with the external editor suggested.
 - **If an AI is working in that worktree** it tells you and offers **Edit in my own worktree**: the AI's worktree stays untouched and a sibling worktree opens on an `edit/<AI branch>` branch (changes the AI hasn't committed aren't there). Commit your edits and press **Merge into AI branch** to get the usual merge confirmation.
 
 | Key | Action |
@@ -144,7 +144,7 @@ Turn on **File editing** in Settings → **Features** and the file viewer gets a
 | `⌘1` `⌘2` `⌘3` | Focus Git / Agents / Files |
 | `⌘⏎` | Commit (in the message box), Start (in the new-session dialog) |
 | `⌘,` | Settings (language, appearance, external editor, features) |
-| `⌘S` / `⌘F` / `Esc` | In file editing: save / find / leave |
+| `⌘S` / `⌘F` | In file editing: save / find |
 
 ## Privacy
 

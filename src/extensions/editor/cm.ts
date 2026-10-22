@@ -153,7 +153,6 @@ export async function languageFor(rel: string): Promise<Extension | null> {
 
 export interface EditorHooks {
   onSave: () => void;
-  onLeave: () => void;
   onChange: () => void;
 }
 
@@ -185,8 +184,6 @@ export function createEditor(parent: HTMLElement, doc: string, hooks: EditorHook
         ...defaultKeymap,
         ...historyKeymap,
         indentWithTab,
-        // 찾기 창이 열려 있으면 찾기 창이 먼저 닫힌다(searchKeymap 이 앞에 있음)
-        { key: "Escape", run: () => (hooks.onLeave(), true) },
       ]),
       EditorView.updateListener.of((u) => u.docChanged && hooks.onChange()),
     ],

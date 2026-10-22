@@ -5,20 +5,19 @@ export default {
   "외부 편집기": "External editor",
   "자동 (설치된 편집기)": "Automatic (installed editor)",
   "파일 편집": "File editing",
-  "파일 보기에 '편집' 탭을 더하고, 파일을 가운데 칸 탭으로 크게 열어요. 켜면 앱이 워크트리 안 파일을 저장할 수 있어요.":
-    "Adds an 'Edit' tab and opens files as large tabs in the center pane. When on, the app can save files inside your worktrees.",
+  "파일을 열면 바로 고칠 수 있어요(가운데 칸 탭으로 크게). 켜면 앱이 워크트리 안 파일을 저장할 수 있어요.":
+    "Files are editable as soon as you open them (as large tabs in the center pane). When on, the app can save files inside your worktrees.",
   스틱맨: "Stickman",
   "위쪽 막대 오른쪽에서 요청 종류마다 동작하고 오늘 요청 수를 세요.": "Acts out each kind of request at the right of the top bar and counts today's requests.",
   "구독 한도 표시": "Subscription limits",
   "아래 상태줄에 Claude·Codex 의 5시간·주간 한도 사용률을 보여 줘요. 끄면 로그인 정보를 읽지 않아요.":
     "Shows Claude and Codex 5-hour and weekly limit usage in the status bar. When off, login details aren't read.",
   // 파일 보기
-  편집: "Edit",
-  "이 파일을 앱에서 고치기 (⌘S 저장)": "Edit this file in the app (⌘S to save)",
+  "열면 바로 고칠 수 있어요 (⌘S 저장)": "Editable right away (⌘S to save)",
   "외부 편집기로 열기": "Open in external editor",
   "외부 편집기로 열지 못했어요: {error}": "Couldn't open in the external editor: {error}",
   // 편집 화면
-  "이 파일은 앱에서 고칠 수 없어요": "This file can't be edited in the app",
+  "이 파일은 앱에서 고칠 수 없어요: {reason}": "This file can't be edited in the app: {reason}",
   "저장하지 못했어요: {error}": "Couldn't save: {error}",
   "저장하지 않았어요. 불러온 뒤 밖(AI·다른 편집기)에서 이 파일이 바뀌었어요.": "Not saved. This file was changed outside (by an AI or another editor) after you opened it.",
   "밖(AI·다른 편집기)에서 이 파일이 바뀌었어요. 내 수정은 아직 그대로예요.": "This file was changed outside (by an AI or another editor). Your edits are still here.",
@@ -30,7 +29,7 @@ export default {
   "저장 안 됨": "Unsaved",
   저장했어요: "Saved",
   "고칠 수 있어요": "Editable",
-  "⌘F 찾기 · Esc 나가기": "⌘F find · Esc leave",
+  "⌘S 저장 · ⌘F 찾기": "⌘S save · ⌘F find",
   "저장 (⌘S)": "Save (⌘S)",
   저장: "Save",
   // 가운데 칸 파일 탭

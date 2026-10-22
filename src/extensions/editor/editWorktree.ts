@@ -4,7 +4,6 @@ import { merge } from "../../gitActions";
 import { t } from "../../i18n";
 import { baseName } from "../../logic";
 import { useStore } from "../../store";
-import { EDIT_MODE } from "..";
 
 export const EDIT_PREFIX = "edit/";
 
@@ -38,7 +37,7 @@ export async function openInEditWorktree(worktree: string, rel: string) {
     const path = await api.editWorktree(worktree);
     await st().refreshRepos();
     st().setFocusWorktree(path);
-    st().openViewer({ kind: "file", rel, mode: EDIT_MODE });
+    st().openViewer({ kind: "file", rel, mode: "preview" });
     st().toast("success", t("내 수정 워크트리를 열었어요: {path}", { path: baseName(path) }));
   } catch (e) {
     st().toast("error", t("내 수정 워크트리를 열지 못했어요: {error}", { error: errorText(e) }));

@@ -19,8 +19,12 @@ export interface FileModeSlot {
   available: (f: { rel: string; isImage: boolean }) => boolean;
   /** 탭 옆에 • 를 찍을지(예: 저장하지 않은 수정) */
   useBadge?: (worktree: string, rel: string) => boolean;
-  /** setMode: 같은 파일의 다른 보기로(예: Esc → "preview") */
-  View: LazyExoticComponent<ComponentType<{ worktree: string; rel: string; setMode: (mode: "preview" | "diff" | "stage" | `ext:${string}`) => void }>>;
+  /** "preview" 면 따로 탭을 더하지 않고 '내용' 을 이 화면으로 바꾼다(파일 편집: 열면 바로 고치기) */
+  replaces?: "preview";
+  /** setMode: 같은 파일의 다른 보기로. onUnavailable: 이 파일은 못 다룸 → 원래 화면으로(이유 표시) */
+  View: LazyExoticComponent<
+    ComponentType<{ worktree: string; rel: string; setMode: (mode: "preview" | "diff" | "stage" | `ext:${string}`) => void; onUnavailable: (reason: string) => void }>
+  >;
 }
 
 export interface ExtensionDef {
@@ -40,13 +44,14 @@ export const EXTENSIONS: ExtensionDef[] = [
   {
     id: "editor",
     title: () => t("파일 편집"),
-    description: () => t("파일 보기에 '편집' 탭을 더하고, 파일을 가운데 칸 탭으로 크게 열어요. 켜면 앱이 워크트리 안 파일을 저장할 수 있어요."),
+    description: () => t("파일을 열면 바로 고칠 수 있어요(가운데 칸 탭으로 크게). 켜면 앱이 워크트리 안 파일을 저장할 수 있어요."),
     defaultEnabled: false,
     fileModes: [
       {
         key: EDIT_MODE,
-        label: () => t("편집"),
-        title: () => t("이 파일을 앱에서 고치기 (⌘S 저장)"),
+        label: () => t("내용"),
+        title: () => t("열면 바로 고칠 수 있어요 (⌘S 저장)"),
+        replaces: "preview",
         available: (f) => !f.isImage,
         useBadge: useHasDraft,
         View: lazy(() => import("./editor/EditorPane")),

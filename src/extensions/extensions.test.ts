@@ -41,9 +41,11 @@ describe("확장 기능", () => {
     expect(useExtensions.getState().enabled).toEqual({ editor: true, stickman: false, usage: true });
   });
 
-  it("편집기만 파일 보기 탭을, 스틱맨은 위쪽 막대를, 구독 한도는 상태줄을 쓴다", () => {
+  it("편집기는 파일 보기의 '내용' 을, 스틱맨은 위쪽 막대를, 구독 한도는 상태줄을 쓴다", () => {
     const by = Object.fromEntries(EXTENSIONS.map((e) => [e.id, e]));
     expect(by.editor.fileModes?.map((m) => m.key)).toEqual(["ext:editor"]);
+    // 따로 탭을 더하지 않고 '내용' 을 편집 화면으로 바꾼다
+    expect(by.editor.fileModes?.[0].replaces).toBe("preview");
     expect(by.editor.fileModes?.[0].available({ rel: "a.png", isImage: true })).toBe(false);
     expect(by.stickman.topbar).toBeTruthy();
     expect(by.usage.statusbar).toBeTruthy();
