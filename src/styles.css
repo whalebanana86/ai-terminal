@@ -992,6 +992,7 @@ button.center-tab {
   padding: 4px 0 0 6px;
 }
 .term-host {
+  visibility: hidden; /* Revealed after the terminal renderer has drawn at its final size. */
   width: 100%;
   height: 100%;
 }
