@@ -9,6 +9,7 @@ import { useSelectedSession, useStore } from "../store";
 import { PanelHead } from "./GitPanel";
 import { ChatView } from "./ChatView";
 import { t } from "../i18n";
+import { currentTheme } from "../theme";
 import { useExtensionOn } from "../extensions";
 import { CenterFileView, CenterTabBar } from "./CenterTabs";
 // 터미널(xterm + WebGL, 약 460KB)은 실제로 띄울 때만 불러온다.
@@ -312,7 +313,7 @@ function SessionDetail() {
   const resume = async () => {
     if (!session) return;
     try {
-      const r = await withExternalConfirm((force) => api.execStart({ agent: session.agent, mode: "resume", sessionId: session.id, cols: 100, rows: 30, force }));
+      const r = await withExternalConfirm((force) => api.execStart({ agent: session.agent, mode: "resume", sessionId: session.id, cols: 100, rows: 30, force, theme: currentTheme() }));
       if (!r) return;
       localStorage.setItem(PREF_KEY, "terminal");
       await refreshExecs();
@@ -747,7 +748,7 @@ function NewSessionDialog({ onClose }: { onClose: () => void }) {
         st.selectSession(c.sessionId ?? `chat:${c.id}`);
         if (prompt.trim()) await api.chatSend(c.id, prompt.trim());
       } else {
-        const e = await api.execStart({ agent, mode: "new", cwd, cols: 100, rows: 30, prompt: prompt.trim() || undefined });
+        const e = await api.execStart({ agent, mode: "new", cwd, cols: 100, rows: 30, prompt: prompt.trim() || undefined, theme: currentTheme() });
         await st.refreshExecs();
         // 목록에 임시 항목으로 들어가 있으므로 고르면 그 워크트리로 포커스가 옮겨진다.
         st.selectSession(e.sessionId ?? `exec:${e.id}`);

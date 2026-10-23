@@ -96,6 +96,8 @@ pub struct StartRequest {
     pub force: bool,
     /// 새 세션의 첫 지시(있으면 CLI 인자로 넘긴다)
     pub prompt: Option<String>,
+    /// 앱 터미널 바탕의 밝기(dark | light). Claude 테마를 여기에 맞춘다.
+    pub theme: Option<String>,
 }
 
 pub struct AppCore {
@@ -519,6 +521,14 @@ impl AppCore {
             }
             _ => bail!(tr!("지원하지 않는 실행 요청입니다", "Unsupported launch request")),
         };
+        // Claude 테마를 앱 터미널 바탕에 맞춘다. 사용자의 Claude 테마가 반대 밝기면(예: 밝은 테마에 어두운 바탕)
+        // 색을 직접 정한 글자가 검정으로 칠해져 바탕에 묻힌다. 이 실행에만 적용되고 사용자 설정 파일은 건드리지 않는다.
+        if program == "claude" {
+            if let Some(base) = req.theme.as_deref().filter(|t| matches!(*t, "dark" | "light")) {
+                args.push("--settings".into());
+                args.push(json!({ "theme": claude_theme(base, configured_claude_theme().as_deref()) }).to_string());
+            }
+        }
         // 첫 지시: `--` 뒤에 두어 '-' 로 시작해도 옵션으로 해석되지 않게 한다(셸을 거치지 않으므로 따옴표 문제 없음).
         if req.mode == "new" {
             if let Some(p) = req.prompt.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
@@ -696,11 +706,38 @@ impl AppCore {
     }
 }
 
+/// 사용자가 Claude 에 정해 둔 테마. 색약용·ANSI 같은 종류를 살리려고 읽는다.
+fn configured_claude_theme() -> Option<String> {
+    let read = |p: PathBuf| -> Option<String> {
+        let v: Value = serde_json::from_slice(&std::fs::read(p).ok()?).ok()?;
+        v.get("theme")?.as_str().map(String::from)
+    };
+    let dir = sessions::claude_dir();
+    read(dir.join("settings.json")).or_else(|| read(dir.join(".claude.json"))).or_else(|| read(crate::env::home_dir().join(".claude.json")))
+}
+
+/// 앱 바탕 밝기(base: dark | light)에 맞춘 Claude 테마. 사용자 테마의 종류(-daltonized, -ansi)는 살린다.
+fn claude_theme(base: &str, configured: Option<&str>) -> String {
+    match configured {
+        Some(c) if c.ends_with("-daltonized") => format!("{base}-daltonized"),
+        Some(c) if c.ends_with("-ansi") => format!("{base}-ansi"),
+        _ => base.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     //! 실제 git 저장소와 가짜 HOME 을 써서 세션 ↔ 워크트리 연결을 검증하는 통합 테스트.
     use super::*;
     use std::process::Command;
+
+    #[test]
+    fn claude_theme_follows_app_background_and_keeps_variant() {
+        assert_eq!(claude_theme("dark", Some("light")), "dark");
+        assert_eq!(claude_theme("light", None), "light");
+        assert_eq!(claude_theme("dark", Some("light-daltonized")), "dark-daltonized");
+        assert_eq!(claude_theme("light", Some("dark-ansi")), "light-ansi");
+    }
 
     fn sh(dir: &Path, args: &[&str]) -> String {
         let out = Command::new("git").args(args).current_dir(dir).env("GIT_AUTHOR_NAME", "t").env("GIT_AUTHOR_EMAIL", "t@t").env("GIT_COMMITTER_NAME", "t").env("GIT_COMMITTER_EMAIL", "t@t").output().unwrap();
@@ -890,7 +927,7 @@ mod tests {
         let core = AppCore::new(Db::open_in_memory().unwrap(), Arc::new(|_, _| {}));
         core.list_sessions().unwrap();
         let info = core
-            .start(StartRequest { agent: "claude".into(), mode: "resume".into(), session_id: Some("claude:c9".into()), cwd: None, cols: 80, rows: 24, force: false, prompt: None })
+            .start(StartRequest { agent: "claude".into(), mode: "resume".into(), session_id: Some("claude:c9".into()), cwd: None, cols: 80, rows: 24, force: false, prompt: None, theme: None })
             .unwrap();
         assert_eq!(info.branch_at_start.as_deref(), Some("feature"));
         assert_eq!(info.worktree_path.as_deref(), Some(wt.to_str().unwrap()));
@@ -908,7 +945,7 @@ mod tests {
 
         // 새 세션의 첫 지시는 `--` 뒤 인자로 넘어간다
         let first = core
-            .start(StartRequest { agent: "claude".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false, prompt: Some("-v 로 시작하는 지시".into()) })
+            .start(StartRequest { agent: "claude".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false, prompt: Some("-v 로 시작하는 지시".into()), theme: Some("dark".into()) })
             .unwrap();
         let mut out = String::new();
         for _ in 0..100 {
@@ -919,10 +956,12 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
         assert!(out.contains("-- -v 로 시작하는 지시"), "{out}");
+        // 앱 바탕에 맞춘 테마는 첫 지시(`--`)보다 앞에 붙는다
+        assert!(out.contains(r#"--settings {"theme":"dark"} -- "#), "{out}");
 
         // Codex 새 실행: 시작 후 같은 cwd 에 생긴 스레드와 연결된다
         let info = core
-            .start(StartRequest { agent: "codex".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false, prompt: None })
+            .start(StartRequest { agent: "codex".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false, prompt: None, theme: None })
             .unwrap();
         assert!(info.session_id.is_none());
         write_codex(&home, "fresh", &main, "main");
@@ -937,7 +976,7 @@ mod tests {
 
         // 같은 폴더에서 두 번째 새 실행: 이미 연결된 스레드를 다시 가져가지 않는다.
         let second = core
-            .start(StartRequest { agent: "codex".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false, prompt: None })
+            .start(StartRequest { agent: "codex".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false, prompt: None, theme: None })
             .unwrap();
         core.list_sessions().unwrap();
         let e2 = core.exec_list().into_iter().find(|e| e.id == second.id).unwrap();

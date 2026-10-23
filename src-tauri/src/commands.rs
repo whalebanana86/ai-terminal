@@ -435,6 +435,7 @@ pub struct StartArgs {
     #[serde(default)]
     pub force: bool,
     pub prompt: Option<String>,
+    pub theme: Option<String>,
 }
 
 #[tauri::command]
@@ -450,6 +451,7 @@ pub async fn exec_start(state: State<'_, AppState>, args: StartArgs) -> Res<Exec
             rows: args.rows,
             force: args.force,
             prompt: args.prompt,
+            theme: args.theme,
         })
     })
     .await
