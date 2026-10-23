@@ -322,6 +322,13 @@ impl PtyManager {
 }
 
 impl PtyExec {
+    /// 실행 시작 직후, UI 구독 전에 안내를 화면 기록 맨 앞에 남긴다. CLI 입력에는 쓰지 않는다.
+    pub fn prepend_notice(&self, notice: &str) {
+        let mut inner = self.inner.lock();
+        for byte in notice.bytes().rev() { inner.buffer.push_front(byte); }
+        inner.buffer.truncate(SCROLLBACK_BYTES);
+    }
+
     pub fn info(&self) -> PtyInfo {
         let inner = self.inner.lock();
         PtyInfo { id: self.id.clone(), pid: self.pid, exited: inner.exited, exit_code: inner.exit_code }

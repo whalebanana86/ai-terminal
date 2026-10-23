@@ -457,6 +457,7 @@ pub struct StartArgs {
     #[serde(default)]
     pub force: bool,
     pub prompt: Option<String>,
+    pub model_mode: Option<String>,
     pub theme: Option<String>,
 }
 
@@ -473,6 +474,7 @@ pub async fn exec_start(state: State<'_, AppState>, args: StartArgs) -> Res<Exec
             rows: args.rows,
             force: args.force,
             prompt: args.prompt,
+            model_mode: args.model_mode,
             theme: args.theme,
         })
     })
@@ -627,12 +629,12 @@ pub fn chat_detach(state: State<'_, AppState>, id: String, sink_id: u64) {
 }
 
 #[tauri::command]
-pub async fn chat_send(app: tauri::AppHandle, state: State<'_, AppState>, id: String, text: String) -> Res<()> {
+pub async fn chat_send(app: tauri::AppHandle, state: State<'_, AppState>, id: String, text: String, model_mode: Option<String>) -> Res<()> {
     use tauri::Emitter;
     let core = state.core.clone();
     blocking(move || {
         let app2 = app.clone();
-        core.chats.send(&id, &text, std::sync::Arc::new(move |info| {
+        core.chats.send_with_model(&id, &text, model_mode.as_deref(), std::sync::Arc::new(move |info| {
             let _ = app2.emit("chat-changed", info);
         }))
     })

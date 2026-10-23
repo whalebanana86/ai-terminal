@@ -25,6 +25,7 @@ pub enum ChatEvent {
     /// 세션 id 확정(새 Codex 대화 등)
     #[serde(rename_all = "camelCase")]
     Session { session_id: String },
+    ModelSelected { route: crate::codex_models::ModelRoute },
     User { text: String },
     Assistant { text: String },
     #[serde(rename_all = "camelCase")]
@@ -56,6 +57,7 @@ pub struct ChatInfo {
     pub mode: String,
     pub alive: bool,
     pub pid: Option<u32>,
+    pub model_route: Option<crate::codex_models::ModelRoute>,
 }
 
 pub type Sink = Box<dyn Fn(&ChatEvent) -> bool + Send>;
@@ -74,6 +76,7 @@ struct State {
     alive: bool,
     /// 답을 기다리는 승인 요청: request_id → 도구 원본 입력. 허용할 때 이 값만 돌려준다(화면이 바꿔치기 못 함).
     pending: HashMap<String, Value>,
+    model_route: Option<crate::codex_models::ModelRoute>,
 }
 
 pub struct Chat {
@@ -244,6 +247,7 @@ impl Chat {
             mode: self.mode.clone(),
             alive: st.alive,
             pid: st.pid,
+            model_route: st.model_route.clone(),
         }
     }
 
@@ -473,6 +477,7 @@ impl ChatManager {
                 pid: None,
                 alive: true,
                 pending: HashMap::new(),
+                model_route: None,
             }),
             stdin: Mutex::new(None),
         });
@@ -539,10 +544,16 @@ impl ChatManager {
     }
 
     pub fn send(&self, id: &str, text: &str, on_change: Arc<dyn Fn(&ChatInfo) + Send + Sync>) -> Result<()> {
+        self.send_with_model(id, text, None, on_change)
+    }
+
+    pub fn send_with_model(&self, id: &str, text: &str, model_mode: Option<&str>, on_change: Arc<dyn Fn(&ChatInfo) + Send + Sync>) -> Result<()> {
         let chat = self.get(id).ok_or_else(|| anyhow!(tr!("채팅을 찾을 수 없습니다", "Chat not found")))?;
         if text.trim().is_empty() {
             bail!(tr!("보낼 내용을 입력하세요", "Enter a message to send"));
         }
+        let previous = chat.state.lock().model_route.clone();
+        let route = if chat.agent == "codex" { crate::codex_models::route(text, model_mode, previous.as_ref().map(|r| r.task)).map_err(anyhow::Error::msg)? } else { None };
         // busy 확인과 설정을 한 잠금 안에서: 두 번 눌러도 턴이 하나만 시작된다.
         let turn = {
             let mut st = chat.state.lock();
@@ -570,17 +581,24 @@ impl ChatManager {
         let sandbox = if chat.mode == "workspace-write" { "workspace-write" } else { "read-only" };
         let mut cmd = base_command("codex", &chat.cwd).map_err(fail)?;
         let resume = chat.state.lock().session_id.clone().and_then(|s| s.strip_prefix("codex:").map(str::to_string));
+        let model_args = route.as_ref().map(|r| r.cli_args()).unwrap_or_default();
         match resume {
             Some(r) => {
-                cmd.args(["exec", "resume", "--json", "--skip-git-repo-check", "-c"]).arg(format!("sandbox_mode=\"{sandbox}\"")).args([r.as_str(), "-"]);
+                cmd.args(["exec", "resume", "--json", "--skip-git-repo-check", "-c"]).arg(format!("sandbox_mode=\"{sandbox}\"")).args(&model_args).args([r.as_str(), "-"]);
             }
             None => {
-                cmd.args(["exec", "--json", "--skip-git-repo-check", "-s", sandbox, "-C", &chat.cwd, "-"]);
+                cmd.args(["exec", "--json", "--skip-git-repo-check", "-s", sandbox, "-C", &chat.cwd]).args(&model_args).arg("-");
             }
         }
         let mut child = cmd.spawn().map_err(|e| fail(anyhow!(tr!("codex 를 실행하지 못했습니다: {e}", "Failed to start codex: {e}"))))?;
         let mut stdin = child.stdin.take().unwrap();
-        chat.state.lock().pid = Some(child.id());
+        {
+            let mut state = chat.state.lock();
+            state.pid = Some(child.id());
+            state.model_route = route.clone();
+        }
+        if let Some(route) = route { chat.push_turn(ChatEvent::ModelSelected { route }, Some(turn)); }
+        on_change(&chat.info());
         // 프롬프트를 쓰고 닫는다(EOF = 프롬프트 끝). 쓰기는 잠금 밖에서 한다.
         let write = stdin.write_all(text.as_bytes());
         drop(stdin);
@@ -905,6 +923,24 @@ echo '{{"type":"turn.completed"}}'"#,
         assert_eq!(m.get(&info.id).unwrap().info().session_id.as_deref(), Some("codex:t-1"));
         m.send(&info.id, "둘째", Arc::new(|_| {})).unwrap();
         assert!(wait_for(&got, |e| e.iter().filter(|x| matches!(x, ChatEvent::TurnEnd { .. })).count() == 2));
+        for (index, text, mode, model, effort) in [
+            (3, "git pull", None, "gpt-6-luna", "low"),
+            (4, "동시성 버그를 고쳐줘", None, "gpt-6.1-sol", "medium"),
+            (5, "계속해", None, "gpt-6.1-sol", "medium"),
+            (6, "동시성 버그를 고쳐줘", Some("simple"), "gpt-6-luna", "low"),
+        ] {
+            m.send_with_model(&info.id, text, mode, Arc::new(|_| {})).unwrap();
+            assert!(wait_for(&got, |e| e.iter().filter(|x| matches!(x, ChatEvent::TurnEnd { .. })).count() == index));
+            let args = std::fs::read_to_string(&log).unwrap();
+            let last = args.lines().last().unwrap();
+            assert!(last.contains(&format!("--model {model}")), "{last}");
+            assert!(last.contains(&format!("model_reasoning_effort=\"{effort}\"")), "{last}");
+            assert!(last.contains("exec resume --json") && last.contains("t-1"), "same conversation: {last}");
+            assert_eq!(m.get(&info.id).unwrap().info().model_route.unwrap().model, model);
+        }
+        m.send_with_model(&info.id,"git pull",Some("inherit"),Arc::new(|_| {})).unwrap();
+        assert!(wait_for(&got, |e| e.iter().filter(|x| matches!(x, ChatEvent::TurnEnd { .. })).count() == 7));
+        assert!(!std::fs::read_to_string(&log).unwrap().lines().last().unwrap().contains("--model"));
         let args = std::fs::read_to_string(&log).unwrap();
         let lines: Vec<&str> = args.lines().collect();
         assert!(lines[0].starts_with("exec --json") && lines[0].contains("-s workspace-write"), "{args}");

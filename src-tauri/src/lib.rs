@@ -2,6 +2,7 @@
 pub mod i18n;
 pub mod brand;
 pub mod chat;
+pub mod codex_models;
 pub mod commands;
 pub mod core;
 pub mod db;
@@ -120,6 +121,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
+            codex_models::codex_model_route,
             usage::subscription_usage,
             updates::check_update,
             updates::install_update,

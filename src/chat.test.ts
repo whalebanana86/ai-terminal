@@ -3,6 +3,10 @@ import type { ChatEvent } from "./api";
 import { foldChatEvents } from "./panels/ChatView";
 
 describe("foldChatEvents", () => {
+  it("records the actual selected Codex model in conversation history", () => {
+    const items = foldChatEvents([{kind:"modelSelected",route:{task:"complex",model:"gpt-6.1-sol",effort:"medium"}}]);
+    expect(items).toEqual([{kind:"note",text:"선택한 모델: GPT-6.1 Sol Medium · 복잡한 개발"}]);
+  });
   it("merges tool start and result by id and marks permission resolution", () => {
     const ev: ChatEvent[] = [
       { kind: "user", text: "만들어 줘" },

@@ -93,6 +93,12 @@ The coloured line under the title bar is the colour of the worktree you are look
 - If the branch at the start of the session differs from the current branch, it shows `feature/tags → main`.
 - Sessions currently open outside the app (another terminal, the Codex app…) are marked "running in Terminal", and opening them here asks first.
 
+### Automatic Codex model selection
+
+Codex requests default to local, wording-based task classification: simple maintenance and copy edits use **GPT-6 Luna Low**, general development uses **GPT-6.1 Sol Low**, and complex architecture, concurrency or rendering work uses **GPT-6.1 Sol Medium**. No classification API is called. The composer previews the choice and lets you override it or keep your CLI settings.
+
+App chat selects a model for each message, preserving its previous selection for short continuations such as “continue”. The original CLI terminal selects its initial model from the first instruction; subsequent terminal input is managed by the CLI and can be changed with `/model`. An empty first instruction defaults to general development; resuming an existing terminal session preserves CLI settings. Only per-run model and reasoning flags change: user configuration files and permission scopes remain intact. Unavailable models surface Codex's error rather than triggering a silent retry with a different model.
+
 ### Continuing a conversation
 
 - The **hide list** button in the Agents header (or dragging the divider all the way up) folds the session list away so the terminal or chat gets the whole pane height; the state and heights are remembered.
