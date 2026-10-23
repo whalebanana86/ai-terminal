@@ -18,7 +18,7 @@ export type Viewer =
   | { kind: "commit-file"; sha: string; rel: string }
   | null;
 
-/** 가운데 칸 탭으로 연 파일(파일 편집 기능을 켰을 때). 워크트리를 옮겨도 남는다. */
+/** 가운데 칸 탭으로 연 파일(파일 편집 기능을 켰을 때). 탭은 연 저장소에서만 보이고, 다른 저장소에 갔다 오면 다시 보인다. */
 export interface FileTab {
   id: string;
   worktree: string;
@@ -92,6 +92,8 @@ interface State {
   fileTabs: FileTab[];
   /** 가운데 칸에서 보고 있는 파일 탭. null 이면 에이전트 */
   activeTab: string | null;
+  /** 저장소마다 마지막으로 보던 가운데 탭(다른 저장소에 갔다 오면 되살린다) */
+  tabMemory: Record<string, string | null>;
   /** 포커스 워크트리의 변경 신호 (값이 바뀌면 다시 읽는다)
    *  fsTick: 파일 내용/목록, statusTick: git status(파일 또는 git 변경), gitTick: HEAD·refs·워크트리(그래프) */
   fsTick: number;
@@ -160,6 +162,7 @@ export const useStore = create<State>((set, get) => ({
   viewer: null,
   fileTabs: [],
   activeTab: null,
+  tabMemory: {},
   fsTick: 0,
   statusTick: 0,
   watchNonce: 0,
@@ -265,6 +268,8 @@ export const useStore = create<State>((set, get) => ({
     if (s?.worktreePath && s.cwdExists && !keep) {
       if (get().focus?.worktreePath !== s.worktreePath) patch.viewer = null;
       patch.focus = { worktreePath: s.worktreePath, source: "session" };
+      const moved = tabsForMove(get(), s.worktreePath);
+      if (moved.tabMemory) patch.tabMemory = moved.tabMemory;
     }
     set(patch);
     if (!patch.focus && get().focus) rememberTab(get().focus!.worktreePath, id);
@@ -283,7 +288,7 @@ export const useStore = create<State>((set, get) => ({
       set({ selectedSessionId: null });
       persist("selectedSession", null);
     }
-    set({ focus, viewer: null, ...(same ? { gitTick: get().gitTick + 1, statusTick: get().statusTick + 1, fsTick: get().fsTick + 1, watchNonce: get().watchNonce + 1 } : {}) });
+    set({ ...tabsForMove(get(), path), focus, viewer: null, ...(same ? { gitTick: get().gitTick + 1, statusTick: get().statusTick + 1, fsTick: get().fsTick + 1, watchNonce: get().watchNonce + 1 } : {}) });
     persist("focus", focus);
     rememberTab(path);
   },
@@ -294,11 +299,14 @@ export const useStore = create<State>((set, get) => ({
     const target = available.find((w) => w.path === get().repoTabPaths[id]) ?? available.find((w) => w.isMain) ?? available[0];
     if (!target) return;
     get().setFocusWorktree(target.path);
+    // 세션을 고르면 에이전트 화면이 되므로, 이 저장소에서 보던 파일 탭이 있었으면 되살린다
+    const tab = get().activeTab;
     const belongs = (session: LinkedSession) => session.worktreePath === target.path || session.otherWorktrees?.includes(target.path);
     const remembered = get().sessions.find((session) => session.id === get().repoTabSessions[id] && belongs(session));
     const running = get().sessions.filter(belongs).filter((session) => session.runningExecId || get().liveRuns.some((r) => r.sessionId === session.externalId || r.sessionId === session.id) || get().chats.some((c) => c.alive && (c.sessionId === session.id || `chat:${c.id}` === session.id))).sort((a, b) => b.updatedAt - a.updatedAt)[0];
     const session = remembered ?? running;
     if (session) get().selectSession(session.id);
+    if (tab && get().fileTabs.some((x) => x.id === tab)) set({ activeTab: tab });
   },
   closeRepoTab: (id) => {
     const previous = get().openRepoIds;
@@ -510,9 +518,37 @@ export function useSelectedSession(): LinkedSession | null {
 export function useShownViewer(worktree: string | null | undefined): Viewer {
   return useStore((s) => {
     if (s.viewer) return s.viewer;
-    const tab = s.activeTab ? s.fileTabs.find((x) => x.id === s.activeTab) : undefined;
+    const tab = shownTab(s);
     return tab && tab.worktree === worktree ? tab.viewer : null;
   });
+}
+
+/** 경로가 속한 저장소. 가운데 파일 탭은 저장소마다 따로 보인다. 저장소가 아닌 폴더는 그 폴더 자체 */
+export function repoKeyOf(s: Pick<State, "repos">, path: string | null | undefined): string | null {
+  if (!path) return null;
+  return s.repos.find((r) => r.worktrees.some((w) => w.path === path))?.id ?? path;
+}
+
+/** 지금 저장소에서 연 가운데 파일 탭들 */
+export function visibleTabs(s: State): FileTab[] {
+  const repo = repoKeyOf(s, s.focus?.worktreePath);
+  return s.fileTabs.filter((x) => repoKeyOf(s, x.worktree) === repo);
+}
+
+/** 지금 보여 줄 파일 탭. 다른 저장소의 탭이면 없음(에이전트 화면) */
+export function shownTab(s: State): FileTab | undefined {
+  const tab = s.activeTab ? s.fileTabs.find((x) => x.id === s.activeTab) : undefined;
+  return tab && repoKeyOf(s, tab.worktree) === repoKeyOf(s, s.focus?.worktreePath) ? tab : undefined;
+}
+
+/** 다른 저장소로 옮길 때: 떠나는 저장소에서 보던 탭을 기억하고, 옮겨 간 저장소에서 마지막으로 보던 탭을 보여 준다 */
+function tabsForMove(s: State, next: string): Partial<State> {
+  const from = repoKeyOf(s, s.focus?.worktreePath);
+  const to = repoKeyOf(s, next);
+  if (from === to) return {};
+  const tabMemory = from ? { ...s.tabMemory, [from]: s.activeTab } : s.tabMemory;
+  const back = to ? tabMemory[to] : null;
+  return { tabMemory, activeTab: back && s.fileTabs.some((x) => x.id === back) ? back : null };
 }
 
 // 파일 편집을 끄면 가운데 탭을 닫고(지금 탭은 오른쪽 아래로), 켜면 오른쪽 아래에 열린 파일을 탭으로 옮긴다

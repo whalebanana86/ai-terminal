@@ -163,3 +163,34 @@ describe("탭 여러 개 닫기", () => {
     expect(s().toasts.some((x) => x.kind === "error" && x.text.includes("b"))).toBe(true);
   });
 });
+
+describe("저장소마다 따로 보이는 탭", () => {
+  const wt = (path: string, isMain = true) => ({ path, head: null, branch: "main", detached: false, bare: false, isMain, locked: null, prunable: null, exists: true });
+  const repo = (id: string, ...paths: string[]) => ({ id, path: paths[0], name: id, pinned: false, addedAt: 0, exists: true, worktrees: paths.map((p, i) => wt(p, i === 0)), error: null });
+  const s = () => useStore.getState();
+  const shown = () => (s().activeTab && s().fileTabs.some((x) => x.id === s().activeTab) ? s().activeTab : null);
+  beforeEach(() => {
+    editor(true);
+    useStore.setState({ viewer: null, fileTabs: [], activeTab: null, tabMemory: {}, focus: null, sessions: [], selectedSessionId: null, repos: [repo("A", "/a", "/a-wt"), repo("B", "/b")] });
+  });
+
+  it("다른 저장소에서 연 탭은 숨기고, 돌아오면 마지막으로 보던 탭을 다시 보여 준다", async () => {
+    const { visibleTabs, shownTab } = await import("./store");
+    s().setFocusWorktree("/a");
+    s().openViewer({ kind: "file", rel: "Makefile", mode: "preview" });
+    const aTab = s().activeTab;
+    s().setFocusWorktree("/b");
+    expect(visibleTabs(s())).toEqual([]);
+    expect(shownTab(s())).toBeUndefined();
+    expect(shown()).toBeNull();
+    s().openViewer({ kind: "file", rel: "README.md", mode: "preview" });
+    expect(visibleTabs(s()).map((x) => x.viewer.rel)).toEqual(["README.md"]);
+    s().setFocusWorktree("/a");
+    expect(visibleTabs(s()).map((x) => x.viewer.rel)).toEqual(["Makefile"]);
+    expect(s().activeTab).toBe(aTab);
+    // 같은 저장소의 다른 워크트리로 옮겨도 탭은 그대로
+    s().setFocusWorktree("/a-wt");
+    expect(visibleTabs(s()).map((x) => x.viewer.rel)).toEqual(["Makefile"]);
+    expect(s().activeTab).toBe(aTab);
+  });
+});

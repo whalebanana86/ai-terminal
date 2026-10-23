@@ -5,7 +5,7 @@ import { api, errorText, externalRunning, type Agent, type ChatInfo, type Linked
 import { ChevronDown, GitBranch, Info, PanelTopClose, PanelTopOpen, Play, Plus, RefreshCw, Square, X } from "lucide-react";
 import { AgentBadge, ContextMenu, Empty, WtDot } from "../components/Overlays";
 import { baseName, branchLabel, branchState, clientLabel, externalRunOf, kindLabel, kindLetter, relativeTime, relativeTo } from "../logic";
-import { useSelectedSession, useStore } from "../store";
+import { useSelectedSession, useStore, visibleTabs } from "../store";
 import { PanelHead } from "./GitPanel";
 import { ChatView } from "./ChatView";
 import { t } from "../i18n";
@@ -58,7 +58,7 @@ export function AgentPanel() {
   const toggleList = () => (listRef.current?.isCollapsed() ? listRef.current.expand() : listRef.current?.collapse());
   // 파일 편집을 켜면 파일을 이 칸의 탭으로 연다(오른쪽 아래는 좁아서)
   const editorOn = useExtensionOn("editor");
-  const fileTabs = useStore((s) => s.fileTabs.length > 0) && editorOn;
+  const fileTabs = useStore((s) => visibleTabs(s).length > 0) && editorOn;
   return (
     <section className="panel" data-pane="2" tabIndex={-1}>
       <PanelHead title={t("에이전트")}>
