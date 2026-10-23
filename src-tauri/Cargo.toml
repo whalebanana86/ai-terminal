@@ -1,6 +1,6 @@
 [package]
 name = "ai-terminal"
-version = "0.9.1"
+version = "0.9.2"
 description = "Code Whereabouts - See where AI works and what it changes"
 authors = ["AI Terminal contributors"]
 license = "MIT"
