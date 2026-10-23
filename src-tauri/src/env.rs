@@ -219,3 +219,12 @@ mod tests {
         assert_eq!(p.matches(":/usr/bin").count() + usize::from(p.starts_with("/usr/bin")), 1);
     }
 }
+
+/// 끝을 기다리지 않는 짧은 명령(`open` 등)을 띄운다. 끝나면 거둬서 좀비 프로세스로 남지 않게 한다.
+pub fn spawn_reaped(cmd: &mut Command) -> std::io::Result<()> {
+    let mut child = cmd.spawn()?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}

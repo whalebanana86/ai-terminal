@@ -537,7 +537,7 @@ pub fn reveal_in_finder(state: State<'_, AppState>, path: String) -> Res<()> {
     if !p.exists() {
         return Err(tr!("경로가 없습니다: {path}", "Path not found: {path}"));
     }
-    std::process::Command::new("/usr/bin/open").arg("-R").arg(&p).spawn().map_err(|e| e.to_string())?;
+    crate::env::spawn_reaped(std::process::Command::new("/usr/bin/open").arg("-R").arg(&p)).map_err(|e| e.to_string())?;
     Ok(())
 }
 
