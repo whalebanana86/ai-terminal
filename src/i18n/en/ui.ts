@@ -111,7 +111,7 @@ export default {
   "새 버전 {version}을 사용할 수 있어요.": "Version {version} is available.",
   "최신 버전입니다. (현재 {version})": "You are up to date. (Current version: {version})",
   "현재 버전: {version}": "Current version: {version}",
-  "설치 후 앱이 다시 시작됩니다. 실행 중인 에이전트를 먼저 종료해 주세요.": "The app will restart after installation. Stop running agents first.",
+  "설치 후 앱이 다시 시작됩니다. 터미널에서 실행 중인 에이전트는 끊기지 않고 새 버전에서 이어집니다.": "The app will restart after installation. Agents running in a terminal keep going in the new version.",
   "이 버전은 다운로드 페이지에서 DMG를 받아 설치해 주세요.": "Download the DMG from the release page to install this version.",
   "업데이트를 설치하는 중… 완료되면 앱이 다시 시작됩니다.": "Installing the update… The app will restart when finished.",
   "다운로드 진행률": "Download progress",

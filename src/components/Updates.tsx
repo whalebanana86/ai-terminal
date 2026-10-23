@@ -80,7 +80,7 @@ export function UpdateDialog() {
           {info && !installing && <>
             <p>{info.available ? t("새 버전 {version}을 사용할 수 있어요.", { version: info.version }) : t("최신 버전입니다. (현재 {version})", { version: info.currentVersion })}</p>
             {info.available && <p className="muted">{t("현재 버전: {version}", { version: info.currentVersion })}</p>}
-            {info.available && <p>{info.automatic ? t("설치 후 앱이 다시 시작됩니다. 실행 중인 에이전트를 먼저 종료해 주세요.") : t("이 버전은 다운로드 페이지에서 DMG를 받아 설치해 주세요.")}</p>}
+            {info.available && <p>{info.automatic ? t("설치 후 앱이 다시 시작됩니다. 터미널에서 실행 중인 에이전트는 끊기지 않고 새 버전에서 이어집니다.") : t("이 버전은 다운로드 페이지에서 DMG를 받아 설치해 주세요.")}</p>}
             {info.available && info.notes && <pre className="update-notes">{info.notes}</pre>}
           </>}
           {installing && <>

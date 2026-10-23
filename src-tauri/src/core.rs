@@ -2,7 +2,7 @@
 
 use anyhow::{anyhow, bail, Result};
 use parking_lot::Mutex;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -67,7 +67,7 @@ pub struct GraphData {
     pub head_branch: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExecInfo {
     pub id: String,
@@ -555,20 +555,10 @@ impl AppCore {
             ended_at: None,
             exit_code: None,
         };
-        let weak = Arc::downgrade(self);
         let exec = self.pty.spawn(
             id.clone(),
             SpawnSpec { program, args: std::mem::take(&mut args), cwd: cwd.clone(), cols: req.cols, rows: req.rows, extra_env: vec![] },
-            move |eid, code| {
-                if let Some(core) = weak.upgrade() {
-                    let _ = core.db.finish_execution(eid, code);
-                    if let Some(e) = core.execs.lock().get_mut(eid) {
-                        e.exited = true;
-                        e.exit_code = code;
-                    }
-                    core.emit("exec-exit", json!({ "id": eid, "code": code }));
-                }
-            },
+            self.on_exec_exit(),
         )?;
         self.db.insert_execution(&row)?;
         let info = ExecInfo {
@@ -587,6 +577,30 @@ impl AppCore {
         };
         self.execs.lock().insert(id, info.clone());
         Ok(info)
+    }
+
+    /// 실행이 끝났을 때: 기록에 남기고 화면에 알린다.
+    fn on_exec_exit(self: &Arc<Self>) -> impl FnOnce(&str, Option<i32>) + Send + 'static {
+        let weak = Arc::downgrade(self);
+        move |eid, code| {
+            if let Some(core) = weak.upgrade() {
+                let _ = core.db.finish_execution(eid, code);
+                if let Some(e) = core.execs.lock().get_mut(eid) {
+                    e.exited = true;
+                    e.exit_code = code;
+                }
+                core.emit("exec-exit", json!({ "id": eid, "code": code }));
+            }
+        }
+    }
+
+    /// 이전 버전 앱이 업데이트하며 넘겨준 실행을 같은 실행 id·기록으로 이어서 연다.
+    pub fn adopt_exec(self: &Arc<Self>, info: ExecInfo, master: std::os::fd::OwnedFd, buffer: Vec<u8>) -> Result<()> {
+        self.pty.adopt(info.id.clone(), info.pid, master, buffer, self.on_exec_exit())?;
+        // 앱을 열 때 '끝나지 않은 실행' 을 비정상 종료로 보고 끝냈으니 되돌린다
+        let _ = self.db.reopen_execution(&info.id);
+        self.execs.lock().insert(info.id.clone(), ExecInfo { exited: false, exit_code: None, ..info });
+        Ok(())
     }
 
     /// 같은 대화를 두 곳에서 동시에 쓰면 기록이 꼬인다. 앱 안의 터미널·채팅은 막고,

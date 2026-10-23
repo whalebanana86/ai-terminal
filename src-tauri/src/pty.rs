@@ -6,6 +6,8 @@ use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize}
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use crate::env::shell_env;
@@ -14,6 +16,7 @@ use crate::env::shell_env;
 const SCROLLBACK_BYTES: usize = 2 * 1024 * 1024;
 
 pub type Sink = Box<dyn Fn(&[u8]) -> bool + Send>;
+type OnExit = Box<dyn FnOnce(&str, Option<i32>) + Send>;
 
 struct Inner {
     buffer: VecDeque<u8>,
@@ -35,6 +38,23 @@ pub struct PtyExec {
     started: std::time::Instant,
     child: Mutex<Box<dyn Child + Send + Sync>>,
     inner: Mutex<Inner>,
+    /// 끝났을 때 한 번 부른다. 업데이트로 넘기다 실패해 다시 읽기 시작해도 남아 있게 여기 둔다.
+    on_exit: Mutex<Option<OnExit>>,
+    /// 읽기 스레드를 멈추는 신호(파이프의 쓰는 쪽). 업데이트 때 PTY 를 새 앱에 넘기기 전에 쓴다.
+    wake: Mutex<Option<OwnedFd>>,
+    reader: Mutex<Option<std::thread::JoinHandle<()>>>,
+    /// 새 버전 앱으로 넘겼다: 이 앱이 꺼질 때 끝내지 않는다.
+    handed_off: AtomicBool,
+    /// 이전 버전 앱이 넘겨준 실행: 내 자식 프로세스가 아니라 종료 코드를 알 수 없다.
+    adopted: bool,
+}
+
+/// 업데이트로 새 앱에 넘길 실행 하나: 화면 기록과 PTY 복제본(실행 파일을 띄울 때만 물려준다)
+pub struct Handed {
+    pub id: String,
+    pub pid: Option<u32>,
+    pub master: OwnedFd,
+    pub buffer: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -102,7 +122,6 @@ impl PtyManager {
         let child = pair.slave.spawn_command(cmd).with_context(|| tr!("{} 실행 실패", "Failed to run {}", program.display()))?;
         drop(pair.slave);
         let pid = child.process_id();
-        let reader = pair.master.try_clone_reader()?;
         let writer = pair.master.take_writer()?;
         let exec = Arc::new(PtyExec {
             id: id.clone(),
@@ -112,27 +131,91 @@ impl PtyManager {
             started: std::time::Instant::now(),
             child: Mutex::new(child),
             inner: Mutex::new(Inner { buffer: VecDeque::new(), sinks: Vec::new(), exit_code: None, exited: false }),
+            on_exit: Mutex::new(Some(Box::new(on_exit))),
+            wake: Mutex::new(None),
+            reader: Mutex::new(None),
+            handed_off: AtomicBool::new(false),
+            adopted: false,
         });
         self.execs.lock().insert(id.clone(), exec.clone());
-
-        let reader_exec = exec.clone();
-        std::thread::Builder::new().name(format!("pty-{id}")).spawn(move || {
-            pump(reader, &reader_exec);
-            // 출력이 끝났다 = 프로세스 종료(또는 PTY 닫힘). 종료 코드를 기다린다.
-            let code = reader_exec.child.lock().wait().ok().map(|s| s.exit_code() as i32);
-            {
-                let mut inner = reader_exec.inner.lock();
-                inner.exited = true;
-                inner.exit_code = code;
-                inner.sinks.clear();
-            }
-            // PTY 장치를 바로 반납한다(오래 켜 두어도 장치 한도에 걸리지 않게).
-            reader_exec.writer.lock().take();
-            reader_exec.master.lock().take();
-            on_exit(&reader_exec.id, code);
-        })?;
+        start_reader(&exec)?;
         self.prune_exited();
         Ok(exec)
+    }
+
+    /// 이전 버전 앱이 업데이트하며 넘겨준 실행을 이어받는다. 화면 기록(buffer)은 넘기기 전까지의 출력.
+    pub fn adopt(
+        &self,
+        id: String,
+        pid: Option<u32>,
+        master: OwnedFd,
+        buffer: Vec<u8>,
+        on_exit: impl FnOnce(&str, Option<i32>) + Send + 'static,
+    ) -> Result<Arc<PtyExec>> {
+        let master = AdoptedMaster { fd: master };
+        let writer = master.take_writer()?;
+        let mut buffer = VecDeque::from(buffer);
+        let over = buffer.len().saturating_sub(SCROLLBACK_BYTES);
+        buffer.drain(..over);
+        let exec = Arc::new(PtyExec {
+            id: id.clone(),
+            pid,
+            master: Mutex::new(Some(Box::new(master))),
+            writer: Mutex::new(Some(writer)),
+            started: std::time::Instant::now(),
+            child: Mutex::new(Box::new(AdoptedChild { pid })),
+            inner: Mutex::new(Inner { buffer, sinks: Vec::new(), exit_code: None, exited: false }),
+            on_exit: Mutex::new(Some(Box::new(on_exit))),
+            wake: Mutex::new(None),
+            reader: Mutex::new(None),
+            handed_off: AtomicBool::new(false),
+            adopted: true,
+        });
+        self.execs.lock().insert(id, exec.clone());
+        start_reader(&exec)?;
+        Ok(exec)
+    }
+
+    /// 업데이트로 새 버전 앱에 넘길 실행들. 읽기 스레드를 멈추고(그 뒤 출력은 PTY 에 쌓여 기다린다)
+    /// 화면 기록과 PTY 복제본을 돌려준다. 넘긴 실행은 이 앱이 꺼질 때 끝내지 않는다.
+    /// 하나라도 멈출 수 없으면 다시 읽기 시작하고 오류를 낸다.
+    pub fn detach_for_handoff(&self) -> Result<Vec<Handed>> {
+        let running: Vec<Arc<PtyExec>> = self.execs.lock().values().filter(|e| !e.inner.lock().exited).cloned().collect();
+        let mut out = Vec::new();
+        for e in &running {
+            let stopped = (|| -> Result<Handed> {
+                let wake = e.wake.lock().take().ok_or_else(|| anyhow!(tr!("터미널 읽기를 멈출 수 없습니다", "Can't pause reading the terminal")))?;
+                e.handed_off.store(true, Ordering::SeqCst);
+                // SAFETY: 우리가 연 파이프에 한 바이트 쓴다.
+                unsafe { libc::write(wake.as_raw_fd(), b"x".as_ptr().cast(), 1) };
+                if let Some(h) = e.reader.lock().take() {
+                    let _ = h.join();
+                }
+                let fd = e.master.lock().as_ref().and_then(|m| m.as_raw_fd()).ok_or_else(|| anyhow!(tr!("터미널이 닫혔습니다", "The terminal is closed")))?;
+                let inner = e.inner.lock();
+                let (a, b) = inner.buffer.as_slices();
+                Ok(Handed { id: e.id.clone(), pid: e.pid, master: dup_cloexec(fd)?, buffer: [a, b].concat() })
+            })();
+            match stopped {
+                Ok(h) => out.push(h),
+                Err(err) => {
+                    self.resume_handoff();
+                    return Err(err);
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// 넘기기를 그만두고 이 앱이 다시 읽는다(맡김 프로세스를 띄우지 못했을 때).
+    pub fn resume_handoff(&self) {
+        let list: Vec<Arc<PtyExec>> = self.execs.lock().values().filter(|e| e.handed_off.load(Ordering::SeqCst)).cloned().collect();
+        for e in list {
+            e.handed_off.store(false, Ordering::SeqCst);
+            if let Err(err) = start_reader(&e) {
+                eprintln!("[pty] {} 를 다시 읽지 못했습니다: {err:#}", e.id);
+            }
+        }
     }
 
     /// 끝난 실행은 최근 것 몇 개만 남긴다(출력 버퍼 메모리 회수).
@@ -214,7 +297,8 @@ impl PtyManager {
     /// 앱 종료 때: 모든 실행의 프로세스 그룹에 SIGHUP → 잠시 뒤 남은 것에 SIGKILL.
     pub fn kill_all(&self) {
         let list: Vec<Arc<PtyExec>> = self.execs.lock().values().cloned().collect();
-        let alive: Vec<Arc<PtyExec>> = list.into_iter().filter(|e| !e.inner.lock().exited).collect();
+        // 새 버전 앱에 넘긴 실행은 끝내지 않는다(맡김 프로세스가 PTY 를 쥐고 있다)
+        let alive: Vec<Arc<PtyExec>> = list.into_iter().filter(|e| !e.inner.lock().exited && !e.handed_off.load(Ordering::SeqCst)).collect();
         for e in &alive {
             signal_group(e, libc::SIGHUP);
         }
@@ -270,9 +354,69 @@ fn terminate(exec: &Arc<PtyExec>) {
     });
 }
 
-fn pump(mut reader: Box<dyn Read + Send>, exec: &PtyExec) {
+/// PTY 를 읽는 스레드를 띄운다. 프로세스가 끝나면 정리하고 on_exit 를 부른다.
+/// 업데이트로 넘길 때는 wake 신호로 멈추고 아무것도 정리하지 않는다(새 앱이 이어서 읽는다).
+fn start_reader(exec: &Arc<PtyExec>) -> Result<()> {
+    let (reader, fd) = {
+        let m = exec.master.lock();
+        let m = m.as_ref().ok_or_else(|| anyhow!(tr!("터미널이 닫혔습니다", "The terminal is closed")))?;
+        (m.try_clone_reader()?, m.as_raw_fd())
+    };
+    // select 로 기다릴 수 있으면 멈춤 신호를 단다(fd 번호가 FD_SETSIZE 를 넘으면 못 멈추고 넘기지도 못한다)
+    let wake_read = match fd {
+        Some(fd) if (fd as usize) < libc::FD_SETSIZE => {
+            let (r, w) = pipe_cloexec()?;
+            if (r.as_raw_fd() as usize) < libc::FD_SETSIZE {
+                *exec.wake.lock() = Some(w);
+                Some((fd, r))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
+    let e = exec.clone();
+    let handle = std::thread::Builder::new().name(format!("pty-{}", exec.id)).spawn(move || {
+        pump(reader, wake_read.as_ref().map(|(fd, r)| (*fd, r.as_raw_fd())), &e);
+        if e.handed_off.load(Ordering::SeqCst) {
+            return;
+        }
+        // 출력이 끝났다 = 프로세스 종료(또는 PTY 닫힘). 종료 코드를 기다린다.
+        let code = if e.adopted {
+            wait_gone(e.pid);
+            None
+        } else {
+            e.child.lock().wait().ok().map(|s| s.exit_code() as i32)
+        };
+        {
+            let mut inner = e.inner.lock();
+            inner.exited = true;
+            inner.exit_code = code;
+            inner.sinks.clear();
+        }
+        // PTY 장치를 바로 반납한다(오래 켜 두어도 장치 한도에 걸리지 않게).
+        e.writer.lock().take();
+        e.master.lock().take();
+        e.wake.lock().take();
+        if let Some(f) = e.on_exit.lock().take() {
+            f(&e.id, code);
+        }
+    })?;
+    *exec.reader.lock() = Some(handle);
+    Ok(())
+}
+
+/// `wake` = (PTY fd, 멈춤 신호 fd). 있으면 읽기 전에 select 로 둘 중 먼저 온 쪽을 본다.
+/// macOS 의 poll·kqueue 는 PTY 같은 장치를 제대로 지원하지 않아 select 를 쓴다.
+fn pump(mut reader: Box<dyn Read + Send>, wake: Option<(RawFd, RawFd)>, exec: &PtyExec) {
     let mut buf = vec![0u8; 64 * 1024];
     loop {
+        if let Some((fd, stop)) = wake {
+            match wait_readable(fd, stop) {
+                Ok(true) | Err(_) => break,
+                Ok(false) => {}
+            }
+        }
         let n = match reader.read(&mut buf) {
             Ok(0) | Err(_) => break,
             Ok(n) => n,
@@ -285,6 +429,152 @@ fn pump(mut reader: Box<dyn Read + Send>, exec: &PtyExec) {
             inner.buffer.drain(..over);
         }
         inner.sinks.retain(|(_, send)| send(chunk));
+    }
+}
+
+/// fd 를 읽을 수 있으면 false, 멈춤 신호가 오면 true.
+fn wait_readable(fd: RawFd, stop: RawFd) -> std::io::Result<bool> {
+    loop {
+        // SAFETY: 두 fd 모두 FD_SETSIZE 보다 작다(start_reader 에서 확인). fd_set 은 0 으로 채워 시작한다.
+        let (r, stopped) = unsafe {
+            let mut set: libc::fd_set = std::mem::zeroed();
+            libc::FD_ZERO(&mut set);
+            libc::FD_SET(fd, &mut set);
+            libc::FD_SET(stop, &mut set);
+            let r = libc::select(fd.max(stop) + 1, &mut set, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut());
+            (r, r > 0 && libc::FD_ISSET(stop, &set))
+        };
+        if r < 0 {
+            let err = std::io::Error::last_os_error();
+            if err.kind() == std::io::ErrorKind::Interrupted {
+                continue;
+            }
+            return Err(err);
+        }
+        return Ok(stopped);
+    }
+}
+
+/// 다른 프로세스에 물려주지 않는 파이프 (읽는 쪽, 쓰는 쪽)
+fn pipe_cloexec() -> std::io::Result<(OwnedFd, OwnedFd)> {
+    let mut fds = [0; 2];
+    // SAFETY: fds 는 2칸. 성공하면 두 fd 를 소유한다.
+    unsafe {
+        if libc::pipe(fds.as_mut_ptr()) != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        for fd in fds {
+            libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC);
+        }
+        Ok((OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])))
+    }
+}
+
+/// 다른 프로세스에 물려주지 않는 fd 복제본
+pub fn dup_cloexec(fd: RawFd) -> std::io::Result<OwnedFd> {
+    // SAFETY: 성공하면 새 fd 를 소유한다.
+    let new = unsafe { libc::fcntl(fd, libc::F_DUPFD_CLOEXEC, 0) };
+    if new < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(unsafe { OwnedFd::from_raw_fd(new) })
+}
+
+/// 넘겨받은 실행은 내 자식이 아니라 기다릴(waitpid) 수 없다. 프로세스가 사라질 때까지 잠깐 본다.
+fn wait_gone(pid: Option<u32>) {
+    let Some(pid) = pid else { return };
+    for _ in 0..40 {
+        // SAFETY: 신호 0 은 존재 확인만 한다.
+        let gone = unsafe { libc::kill(pid as libc::pid_t, 0) } != 0 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH);
+        if gone {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
+
+/// 넘겨받은 PTY 마스터. portable-pty 가 연 것이 아니라 fd 로 직접 다룬다.
+struct AdoptedMaster {
+    fd: OwnedFd,
+}
+
+impl MasterPty for AdoptedMaster {
+    fn resize(&self, size: PtySize) -> Result<(), anyhow::Error> {
+        let ws = libc::winsize { ws_row: size.rows, ws_col: size.cols, ws_xpixel: size.pixel_width, ws_ypixel: size.pixel_height };
+        // SAFETY: 열린 PTY fd 와 올바른 winsize.
+        if unsafe { libc::ioctl(self.fd.as_raw_fd(), libc::TIOCSWINSZ, &ws) } != 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        Ok(())
+    }
+
+    fn get_size(&self) -> Result<PtySize, anyhow::Error> {
+        let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
+        // SAFETY: 열린 PTY fd 와 쓸 수 있는 winsize.
+        if unsafe { libc::ioctl(self.fd.as_raw_fd(), libc::TIOCGWINSZ, &mut ws) } != 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        Ok(PtySize { rows: ws.ws_row, cols: ws.ws_col, pixel_width: ws.ws_xpixel, pixel_height: ws.ws_ypixel })
+    }
+
+    fn try_clone_reader(&self) -> Result<Box<dyn Read + Send>, anyhow::Error> {
+        Ok(Box::new(std::fs::File::from(dup_cloexec(self.fd.as_raw_fd())?)))
+    }
+
+    fn take_writer(&self) -> Result<Box<dyn Write + Send>, anyhow::Error> {
+        Ok(Box::new(std::fs::File::from(dup_cloexec(self.fd.as_raw_fd())?)))
+    }
+
+    fn process_group_leader(&self) -> Option<libc::pid_t> {
+        // SAFETY: 열린 PTY fd.
+        let pg = unsafe { libc::tcgetpgrp(self.fd.as_raw_fd()) };
+        (pg > 0).then_some(pg)
+    }
+
+    fn as_raw_fd(&self) -> Option<RawFd> {
+        Some(self.fd.as_raw_fd())
+    }
+
+    fn tty_name(&self) -> Option<std::path::PathBuf> {
+        None
+    }
+}
+
+/// 넘겨받은 실행의 프로세스(내 자식이 아님)
+#[derive(Debug, Clone, Copy)]
+struct AdoptedChild {
+    pid: Option<u32>,
+}
+
+impl Child for AdoptedChild {
+    fn try_wait(&mut self) -> std::io::Result<Option<portable_pty::ExitStatus>> {
+        let Some(pid) = self.pid else { return Ok(Some(portable_pty::ExitStatus::with_exit_code(0))) };
+        // SAFETY: 신호 0 은 존재 확인만 한다.
+        let alive = unsafe { libc::kill(pid as libc::pid_t, 0) } == 0;
+        Ok((!alive).then(|| portable_pty::ExitStatus::with_exit_code(0)))
+    }
+
+    fn wait(&mut self) -> std::io::Result<portable_pty::ExitStatus> {
+        wait_gone(self.pid);
+        Ok(portable_pty::ExitStatus::with_exit_code(0))
+    }
+
+    fn process_id(&self) -> Option<u32> {
+        self.pid
+    }
+}
+
+impl portable_pty::ChildKiller for AdoptedChild {
+    fn kill(&mut self) -> std::io::Result<()> {
+        if let Some(pid) = self.pid {
+            // SAFETY: 단순 시스템 호출.
+            unsafe { libc::kill(pid as libc::pid_t, libc::SIGHUP) };
+        }
+        Ok(())
+    }
+
+    fn clone_killer(&self) -> Box<dyn portable_pty::ChildKiller + Send + Sync> {
+        Box::new(*self)
     }
 }
 

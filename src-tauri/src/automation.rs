@@ -51,6 +51,20 @@ pub fn start(app: AppHandle) {
                     app.exit(0);
                     return;
                 }
+                if req.get("handoffRestart").and_then(|v| v.as_bool()) == Some(true) {
+                    // 업데이트 없이 '에이전트 맡기기 → 다시 시작' 만 해 본다(.app 묶음으로 실행했을 때)
+                    let r = handoff_restart(&app);
+                    let _ = writeln!(writer, "{}", serde_json::json!({ "ok": r.is_ok(), "value": serde_json::to_string(&r.clone().unwrap_or_else(|e| e)).unwrap_or_default() }));
+                    if let Ok(n) = r.as_deref() {
+                        eprintln!("[automation] 맡김 {n}, 다시 시작");
+                        let app = app.clone();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(Duration::from_millis(200));
+                            app.exit(0);
+                        });
+                    }
+                    continue;
+                }
                 if let Some(f) = req.get("frame").and_then(|v| v.as_array()) {
                     // 스크린샷용: 창 위치·크기(포인트, 화면 왼쪽 위 기준) 맞추기
                     let n: Vec<f64> = f.iter().filter_map(|x| x.as_f64()).collect();
@@ -182,4 +196,31 @@ unsafe extern "C" {
 #[link(name = "CoreFoundation", kind = "framework")]
 unsafe extern "C" {
     fn CFRelease(cf: *mut std::ffi::c_void);
+}
+
+/// 시험용: 에이전트를 맡기고, 1초 뒤 같은 .app 을 다시 띄우게 해 둔다(시험 환경변수를 넘겨서).
+fn handoff_restart(app: &AppHandle) -> Result<String, String> {
+    use std::os::unix::process::CommandExt;
+    let state = app.state::<crate::commands::AppState>();
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let n = crate::handoff::prepare(&state.core, &data_dir).map_err(|e| format!("{e:#}"))?;
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let bundle = exe.ancestors().nth(3).filter(|p| p.extension().is_some_and(|x| x == "app")).ok_or("앱 묶음(.app)으로 실행해야 합니다")?.to_path_buf();
+    let mut cmd = std::process::Command::new("/bin/sh");
+    cmd.arg("-c").arg("sleep 1; exec /usr/bin/open -n \"$@\"").arg("sh");
+    for k in ["AITERM_AUTOMATION_SOCKET", "AITERM_HOME", "AITERM_CLAUDE_BIN", "AITERM_CODEX_BIN", "SIZE_LOG"] {
+        if let Ok(v) = std::env::var(k) {
+            cmd.arg("--env").arg(format!("{k}={v}"));
+        }
+    }
+    cmd.arg(bundle);
+    // SAFETY: fork 뒤 setsid 만 부른다.
+    unsafe {
+        cmd.pre_exec(|| {
+            libc::setsid();
+            Ok(())
+        });
+    }
+    cmd.spawn().map_err(|e| e.to_string())?;
+    Ok(n.to_string())
 }

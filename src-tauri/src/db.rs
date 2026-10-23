@@ -233,6 +233,12 @@ impl Db {
         Ok(())
     }
 
+    /// 업데이트로 넘겨받아 아직 실행 중인 기록을 다시 '실행 중' 으로
+    pub fn reopen_execution(&self, id: &str) -> Result<()> {
+        self.conn.lock().execute("UPDATE executions SET ended_at = NULL, exit_code = NULL WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
     pub fn finish_execution(&self, id: &str, exit_code: Option<i32>) -> Result<()> {
         self.conn.lock().execute(
             "UPDATE executions SET ended_at = ?2, exit_code = ?3 WHERE id = ?1 AND ended_at IS NULL",
