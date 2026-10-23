@@ -220,8 +220,8 @@ function Row(props: {
       </svg>
       <div className="gmsg">
         <span className="grefs">
-          {badges(props).map((b) => (
-            <span key={b.key} className={b.cls} title={b.title} style={b.color ? ({ "--wc": b.color } as React.CSSProperties) : undefined}>
+          {badges({ ...props, lineColor: props.nodeColor ?? color }).map((b) => (
+            <span key={b.key} className={b.cls} title={b.title} style={b.color ? ({ "--wc": b.color } as React.CSSProperties) : b.line ? ({ "--lc": b.line } as React.CSSProperties) : undefined}>
               {b.color && <i className="wt-dot" aria-hidden />}
               {b.label}
             </span>
@@ -256,12 +256,14 @@ interface Badge {
   rank: number;
   /** 워크트리 역 표시면 그 노선 색 */
   color?: string;
+  /** 브랜치면 그 커밋을 지나는 선의 색(그래프 선과 이름표 색을 맞춘다) */
+  line?: string;
 }
 
 const MAX_BADGES = 3;
 
 /** 보고 있는 HEAD·브랜치를 맨 앞에, 나머지는 개수가 많으면 "+N" 으로 접는다(제목이 가려지지 않게). */
-function badges(p: { refs: GitRef[]; worktrees: Worktree[]; colorFor: (path: string) => string; focusWorktree: string; headBranch: string | null; sessionStartBranch: string | null }): Badge[] {
+function badges(p: { refs: GitRef[]; worktrees: Worktree[]; colorFor: (path: string) => string; focusWorktree: string; headBranch: string | null; sessionStartBranch: string | null; lineColor: string }): Badge[] {
   const out: Badge[] = [];
   for (const w of p.worktrees) {
     const mine = w.path === p.focusWorktree;
@@ -279,12 +281,13 @@ function badges(p: { refs: GitRef[]; worktrees: Worktree[]; colorFor: (path: str
     const startBranch = r.kind === "branch" && r.short === p.sessionStartBranch && !focusBranch;
     out.push({
       key: r.name,
-      cls: `ref ref-${r.kind}${focusBranch ? " ref-focus" : ""}${startBranch ? " ref-start" : ""}`,
+      cls: `ref ref-${r.kind}${r.kind !== "tag" ? " ref-line" : ""}${focusBranch ? " ref-focus" : ""}${startBranch ? " ref-start" : ""}`,
       title:
         (r.kind === "branch" ? t("로컬 브랜치 {name}", { name: r.short }) : r.kind === "remote" ? t("원격 브랜치 {name}", { name: r.short }) : t("태그 {name}", { name: r.short })) +
         (r.track ? " " + r.track : "") +
         (startBranch ? " · " + t("세션이 시작된 브랜치") : ""),
       label: r.short + (startBranch ? ` (${t("세션 시작")})` : ""),
+      line: r.kind === "tag" ? undefined : p.lineColor,
       rank: focusBranch ? 1 : startBranch ? 2 : r.kind === "branch" ? 4 : r.kind === "remote" ? 5 : 6,
     });
   }

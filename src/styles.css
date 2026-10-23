@@ -595,6 +595,21 @@ code,
 .ref-start {
   outline: 1px dashed var(--warn);
 }
+/* 브랜치 이름표는 그 커밋을 지나는 그래프 선의 색(--lc). 원격 브랜치는 테두리만 */
+.ref-branch.ref-line {
+  background: color-mix(in srgb, var(--lc) 18%, transparent);
+  color: var(--lc);
+}
+.ref-remote.ref-line {
+  background: transparent;
+  color: var(--lc);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--lc) 55%, transparent);
+}
+.ref-focus.ref-line {
+  outline-color: var(--lc);
+  background: color-mix(in srgb, var(--lc) 32%, transparent);
+  color: #fff;
+}
 .graph-more {
   padding: 6px 10px;
   color: var(--fg-faint);
@@ -2667,6 +2682,10 @@ li:hover .hover-only,
 [data-theme="light"] .ref-remote { background: #e3e9fb; color: #3451b2; }
 [data-theme="light"] .ref-tag { background: #fbf0d2; color: #7a5600; }
 [data-theme="light"] .ref-focus { background: #d6eafb; color: #0b4a7a; }
+/* 선 색은 밝은 바탕에서 옅으니 글자는 진하게 섞는다 */
+[data-theme="light"] .ref-branch.ref-line { color: color-mix(in srgb, var(--lc) 65%, #000); background: color-mix(in srgb, var(--lc) 16%, #fff); }
+[data-theme="light"] .ref-remote.ref-line { color: color-mix(in srgb, var(--lc) 65%, #000); background: transparent; }
+[data-theme="light"] .ref-focus.ref-line { color: #111; background: color-mix(in srgb, var(--lc) 30%, #fff); }
 /* 워크트리 색은 밝은 바탕에서 옅으니 글자는 진하게 섞는다 */
 [data-theme="light"] .ref-wt { color: color-mix(in srgb, var(--wc, #8f6ee8) 65%, #000); background: color-mix(in srgb, var(--wc, #8f6ee8) 14%, #fff); }
 [data-theme="light"] .ref-wt-focus { color: #111; background: color-mix(in srgb, var(--wc) 30%, #fff); }
