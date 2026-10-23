@@ -15,6 +15,7 @@ import { attachFileDrop } from "./fileDrop";
 import { t } from "./i18n";
 import { useStore } from "./store";
 import { termPasters } from "./termPaste";
+import { runTransfer } from "./treeDrag";
 import { useWtColor } from "./wtColors";
 import "./styles.css";
 
@@ -78,17 +79,19 @@ export default function App() {
 
   useShortcuts();
 
-  // 파일(이미지 등)을 터미널·입력칸에 끌어다 놓으면 경로를 넣는다
+  // 파일(이미지 등)을 터미널·입력칸에 끌어다 놓으면 경로를 넣고, 파일 트리 폴더에 놓으면 복사(트리에서 끌어온 것은 이동)
   useEffect(
     () =>
-      attachFileDrop(
-        (execId, text) => {
+      attachFileDrop({
+        paste: (execId, text) => {
           const paste = termPasters.get(execId);
           paste?.(text);
           return !!paste;
         },
-        () => useStore.getState().toast("info", t("터미널이나 입력칸 위에 놓으면 파일 경로가 들어가요")),
-      ),
+        execCwd: (execId) => useStore.getState().execs.find((e) => e.id === execId)?.cwd ?? null,
+        transfer: (plan) => void runTransfer(plan),
+        onMiss: () => useStore.getState().toast("info", t("터미널·입력칸에 놓으면 경로가 들어가고, 파일 트리의 폴더에 놓으면 복사돼요")),
+      }),
     [],
   );
 

@@ -128,6 +128,7 @@ The coloured line under the title bar is the colour of the worktree you are look
 - Content with syntax highlighting, diff against the last commit, or stage parts.
 - Images (png, jpg, gif, webp, svg…) are shown as images; a changed image is shown **next to its last committed version**. Click to toggle actual size.
 - Everything refreshes when an agent or editor changes files.
+- **Drag and drop**: drag a file or folder from the tree onto a terminal or text field to insert its path (relative when it's inside the agent's working folder), onto another folder to move it, or out to Finder or another app to copy the real file. Drop files from Finder onto a tree folder to copy them in (a taken name becomes "name 2"; nothing is overwritten).
 - **↗** in the file viewer opens the file in your external editor (VS Code, Cursor, Zed…, chosen in Settings).
 
 ### File editing (a feature, off by default)

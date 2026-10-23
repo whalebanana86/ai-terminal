@@ -1,13 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "메인 창 권한: 이벤트 수신, 폴더 선택 대화상자, 상단 영역으로 창 이동",
+  "description": "메인 창 권한: 이벤트 수신, 폴더 선택 대화상자, 상단 영역으로 창 이동, 파일 트리에서 끌어 내보내기",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
     "dialog:allow-open",
-    "core:window:allow-start-dragging"
+    "core:window:allow-start-dragging",
+    "drag:default"
   ]
 }

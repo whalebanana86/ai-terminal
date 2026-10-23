@@ -244,6 +244,28 @@ pub async fn fs_terminal_paths(state: State<'_, AppState>, worktree: String, cwd
     }).await
 }
 
+/// Finder 등 밖에서 트리 폴더로 끌어온 파일·폴더를 복사한다(같은 이름이면 "이름 2" 로 비켜 놓음).
+#[tauri::command]
+pub async fn fs_copy_in(state: State<'_, AppState>, worktree: String, dest: String, sources: Vec<String>) -> Res<crate::files::TransferOutcome> {
+    let core = state.core.clone();
+    blocking(move || {
+        core.ensure_known(&worktree)?;
+        crate::files::copy_into(Path::new(&worktree), &dest, &sources)
+    })
+    .await
+}
+
+/// 트리 안에서 끌어 다른 폴더로 옮긴다(같은 이름이 있으면 거부).
+#[tauri::command]
+pub async fn fs_move(state: State<'_, AppState>, worktree: String, dest: String, rels: Vec<String>) -> Res<crate::files::TransferOutcome> {
+    let core = state.core.clone();
+    blocking(move || {
+        core.ensure_known(&worktree)?;
+        crate::files::move_into(Path::new(&worktree), &dest, &rels)
+    })
+    .await
+}
+
 // ───────────── 확장 기능(설정 → 기능) ─────────────
 
 #[tauri::command]

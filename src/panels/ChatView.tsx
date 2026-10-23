@@ -270,7 +270,8 @@ export function ChatView({ chat }: { chat: ChatInfo }) {
         {chat.busy && !pendingPermission && <div className="typing">{t("답하는 중…")}</div>}
         <div ref={bottom} />
       </div>
-      <div className="chat-input">
+      {/* data-cwd: 끌어다 놓은 파일이 이 작업 폴더 안이면 상대 경로로 넣는다(fileDrop.ts) */}
+      <div className="chat-input" data-cwd={chat.cwd}>
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}

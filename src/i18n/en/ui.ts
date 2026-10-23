@@ -101,7 +101,17 @@ export default {
 
   // 앱 알림
   "에이전트 프로세스가 종료되었습니다 (코드 {code})": "Agent process exited (code {code})",
-  "터미널이나 입력칸 위에 놓으면 파일 경로가 들어가요": "Drop onto a terminal or text field to insert the file path",
+  // 파일 끌어다 놓기(터미널·입력칸·파일 트리)
+  "터미널·입력칸에 놓으면 경로가 들어가고, 파일 트리의 폴더에 놓으면 복사돼요": "Drop onto a terminal or text field to insert the path, or onto a folder in the file tree to copy it there",
+  "끌기를 시작하지 못했어요: {error}": "Couldn't start dragging: {error}",
+  "{names} 외 {n}개": "{names} and {n} more",
+  "{dir} 폴더에 복사했어요: {names}": "Copied to {dir}: {names}",
+  "{dir} 폴더로 옮겼어요: {names}": "Moved to {dir}: {names}",
+  "같은 이름이 있어 새 이름으로 두었어요: {names}": "Name already taken, so saved as: {names}",
+  "특수 파일 {n}개는 건너뛰었어요": "Skipped {n} special file(s)",
+  "복사하지 못했어요: {name} — {reason}": "Couldn't copy {name}: {reason}",
+  "옮기지 못했어요: {name} — {reason}": "Couldn't move {name}: {reason}",
+  "(외 {n}개)": "(+{n} more)",
   "세션과 저장소를 읽는 중…": "Loading sessions and repositories…",
   "눌러서 스틱맨 동작 다시 보기": "Click to replay the stick figure's action",
   "줄을 누르면 스틱맨이 그 동작을 다시 해요.": "Click a row to replay its action.",
