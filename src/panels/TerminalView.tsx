@@ -4,7 +4,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { api } from "../api";
 import { attachHangulInput } from "../hangulInput";
 import { t } from "../i18n";
@@ -154,24 +154,50 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
     };
     let sinkId: number | null = null;
     let disposed = false;
+    let fontsReady = false;
+    let attachedReady = false;
+    let fitted = false;
+    let lastSize: string | null = null;
+    let repaintTimer: number | undefined;
     // 다시 붙을 때 앞선 출력을 재생하지만 재생한 화면은 실제와 다를 수 있다. 오래된 앞부분이 잘려 켜 두었던
     // 모드(스크롤 영역·커서 숨김 등)가 빠지고, 에이전트는 바뀐 곳만 다시 그려서 이미 그렸다고 아는 입력칸이 안 보이기도 한다.
     // PTY 크기가 그대로면 에이전트는 다시 그리지 않으니, 폭을 한 칸 줄였다 되돌려 화면 전체를 다시 그리게 한다.
     let needRepaint = false;
     let repainting = false;
+    const hide = () => { el.style.visibility = "hidden"; };
+    // RenderService fires after its renderer has drawn. Never expose the DOM fallback or a
+    // replay/nudged-width frame while the replacement WebGL renderer is still being prepared.
+    const onRender = term.onRender(() => {
+      if (!disposed && fontsReady && attachedReady && fitted && !needRepaint && !repainting && el.clientWidth >= 20 && el.clientHeight >= 20) {
+        el.style.visibility = "visible";
+      }
+    });
     const sendSize = () => {
-      // 다시 그리게 하는 중이면 끝날 때 지금 크기를 보낸다
-      if (!repainting) void api.execResize(execId, term.cols, term.rows).catch(() => {});
+      if (repainting) return;
+      const size = `${term.cols}:${term.rows}`;
+      if (lastSize === size) return;
+      lastSize = size;
+      void api.execResize(execId, term.cols, term.rows).catch(() => {
+        if (lastSize === size) lastSize = null;
+      });
     };
     const repaint = () => {
-      if (!needRepaint || disposed || el.clientWidth < 20 || el.clientHeight < 20) return; // 보일 때 한다
+      if (!needRepaint || disposed || !fontsReady || !attachedReady || !fitted || el.clientWidth < 20 || el.clientHeight < 20) return;
+      hide();
       needRepaint = false;
       repainting = true;
       void api.execResize(execId, Math.max(2, term.cols - 1), term.rows).catch(() => {});
-      // 바로 되돌리면 크기 바뀜 신호 둘을 한꺼번에 처리해 크기가 그대로로 보이므로 사이를 둔다
-      window.setTimeout(() => {
-        repainting = false;
-        if (!disposed) sendSize();
+      // Keep recovery frames hidden until the final PTY size and queued output are restored.
+      repaintTimer = window.setTimeout(() => {
+        if (disposed) return;
+        const cols = term.cols, rows = term.rows;
+        void api.execResize(execId, cols, rows).catch(() => {}).finally(() => {
+          if (disposed) return;
+          lastSize = `${cols}:${rows}`;
+          repainting = false;
+          resize();
+          term.write("", () => { if (!disposed) term.refresh(0, term.rows - 1); });
+        });
       }, 200);
     };
     api.execAttach(execId, ch).then(
@@ -179,9 +205,16 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
         if (disposed) return void api.execDetach(execId, a.sinkId);
         sinkId = a.sinkId;
         if (a.replayed > 0) needRepaint = true;
-        repaint();
+        term.write("", () => {
+          if (disposed) return;
+          attachedReady = true;
+          resize();
+        });
       },
-      (e) => term.write(`\r\n${t("[연결 실패]")} ${e}\r\n`),
+      (e) => {
+        attachedReady = true;
+        term.write(`\r\n${t("[연결 실패]")} ${e}\r\n`, resize);
+      },
     );
     const onData = term.onData((d) => void api.execWrite(execId, d).catch(() => {}));
     let retries = 0;
@@ -195,13 +228,16 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
           return;
         }
         retries = 0;
+        if (dims.cols !== term.cols || dims.rows !== term.rows) hide();
         fit.fit();
+        fitted = true;
       } catch {
         return;
       }
       // 다시 그리게 할 때는 크기 알림을 따로 보내지 않는다(두 요청의 처리 순서가 바뀌면 크기가 그대로로 보일 수 있다)
       if (needRepaint) repaint();
       else sendSize();
+      term.refresh(0, term.rows - 1);
     };
     fitRef.current = resize;
     // WebGL 은 보일 때만 쓴다. 숨은 터미널도 마지막 크기의 그리기 영역(레티나에서 하나에 약 11MB)을 쥐고 있고,
@@ -209,6 +245,8 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
     let gl: { addon: WebglAddon; canvas: HTMLCanvasElement | null } | null = null;
     const glOn = () => {
       if (gl || disposed) return;
+      hide();
+      fitted = false;
       try {
         const addon = new WebglAddon();
         // 다른 이유로 끊기면 기본 렌더러로 바뀌어 칸 크기가 달라지거나 화면이 어긋날 수 있으니,
@@ -228,6 +266,8 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
       }
     };
     const glOff = () => {
+      hide();
+      fitted = false;
       const g = gl;
       if (!g) return;
       gl = null;
@@ -243,12 +283,16 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
     // 글꼴을 늦게 불러왔으면 칸 크기를 다시 재고(옵션을 다시 넣어야 잰다) 터미널 크기를 맞춘다
     void termFontReady.then(() => {
       if (disposed) return;
+      fontsReady = true;
+      hide();
       term.options.fontFamily = "monospace";
       term.options.fontFamily = TERM_FONT;
       resize();
     });
     return () => {
       disposed = true;
+      window.clearTimeout(repaintTimer);
+      onRender.dispose();
       offTheme();
       detachHangul();
       ro.disconnect();
@@ -262,17 +306,15 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
     };
   }, [execId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!visible) {
       glRef.current.off();
       return;
     }
-    const t = window.setTimeout(() => {
-      glRef.current.on();
-      fitRef.current();
-      termRef.current?.focus();
-    }, 30);
-    return () => window.clearTimeout(t);
+    // Switch renderers and measure before the browser paints the newly visible host.
+    glRef.current.on();
+    fitRef.current();
+    termRef.current?.focus();
   }, [visible, execId]);
 
   return <div className="term-host" ref={host} style={{ display: visible ? "block" : "none" }} data-exec={execId} />;
