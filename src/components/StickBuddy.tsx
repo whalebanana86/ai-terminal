@@ -161,10 +161,12 @@ export function StickBuddy() {
     return () => document.removeEventListener("visibilitychange", on);
   }, []);
 
+  const awake = useAwake();
+
   // 평소에는 좌우로 서성인다. CSS 애니메이션은 WebKit 이 매 프레임 스타일을 다시 계산해 CPU 를 꽤 써서(측정 +6~11%),
-  // 타이머로 초당 몇 번만 자세(속성)를 바꾼다. 요청 동작 중이거나 창이 가려지면 멈춘다.
+  // 타이머로 초당 몇 번만 자세(속성)를 바꾼다. 요청 동작 중이거나 창이 가려지거나 사용자가 쉬는 동안에는 멈춘다.
   useEffect(() => {
-    if (act || hidden || reduced) return;
+    if (act || hidden || reduced || !awake) return;
     const svg = svgRef.current;
     if (!svg) return;
     const part = (c: string) => svg.querySelector<SVGGElement>(`.${c}`);
@@ -198,7 +200,7 @@ export function StickBuddy() {
       if (fig) fig.style.transform = "";
       limbs.forEach((l) => l && (l.style.transform = ""));
     };
-  }, [act, hidden, reduced]);
+  }, [act, hidden, reduced, awake]);
 
   const total = KINDS.reduce((n, k) => n + saved.counts[k.kind], 0);
   const now = Date.now();
@@ -312,4 +314,40 @@ export function StickBuddy() {
       )}
     </div>
   );
+}
+
+/** 사용자가 이 창을 쓰는 중인지: 창이 활성이고 마지막으로 손댄(마우스·키) 지 30초 안.
+ *  쉬는 동안 서성이기를 멈춘다. 0.23초마다 자세를 바꾸면 화면을 계속 다시 그려 아무것도 안 할 때도 CPU 를 쓴다(측정 약 1~2%). */
+function useAwake(ms = 30_000): boolean {
+  const [awake, setAwake] = useState(() => !document.hidden && document.hasFocus());
+  useEffect(() => {
+    let timer = 0;
+    let last = 0;
+    const sleep = () => {
+      window.clearTimeout(timer);
+      setAwake(false);
+    };
+    const wake = () => {
+      if (document.hidden || !document.hasFocus()) return sleep();
+      setAwake(true);
+      // 마우스를 움직이는 동안 매번 타이머를 다시 걸지 않게 1초에 한 번만
+      const now = Date.now();
+      if (now - last < 1000) return;
+      last = now;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(sleep, ms);
+    };
+    const events = ["pointermove", "pointerdown", "keydown", "wheel", "focus"] as const;
+    events.forEach((e) => window.addEventListener(e, wake, { capture: true, passive: true }));
+    window.addEventListener("blur", sleep);
+    document.addEventListener("visibilitychange", wake);
+    wake();
+    return () => {
+      window.clearTimeout(timer);
+      events.forEach((e) => window.removeEventListener(e, wake, { capture: true }));
+      window.removeEventListener("blur", sleep);
+      document.removeEventListener("visibilitychange", wake);
+    };
+  }, [ms]);
+  return awake;
 }
