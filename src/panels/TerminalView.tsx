@@ -89,7 +89,8 @@ const termFontReady: Promise<unknown> =
 
 export function TerminalView({ execId, visible }: { execId: string; visible: boolean }) {
   const host = useRef<HTMLDivElement>(null);
-  const fitRef = useRef<FitAddon | null>(null);
+  /** 칸에 맞춰 크기를 다시 재고 PTY 에 알린다 */
+  const fitRef = useRef<() => void>(() => {});
   const termRef = useRef<Terminal | null>(null);
 
   useEffect(() => {
@@ -111,17 +112,9 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
     term.loadAddon(uni);
     term.unicode.activeVersion = "11"; // 한글 등 전각 문자 폭
     term.open(el);
-    try {
-      const gl = new WebglAddon();
-      gl.onContextLoss(() => gl.dispose());
-      term.loadAddon(gl);
-    } catch {
-      /* WebGL 이 안 되면 기본 렌더러 */
-    }
     // macOS WebView 의 한글 입력기 바꿔치기 방식 처리(그대로 두면 첫 자모만 들어간다)
     const detachHangul = attachHangulInput(term, el);
     termRef.current = term;
-    fitRef.current = fit;
     // 화면 모드가 바뀌면 터미널 색도 바로 바꾼다
     const offTheme = onThemeChange((th) => (term.options.theme = themeFor(th)));
     registry.set(execId, term);
@@ -139,23 +132,70 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
     };
     let sinkId: number | null = null;
     let disposed = false;
+    // 다시 붙을 때 앞선 출력을 재생하지만 재생한 화면은 실제와 다를 수 있다. 오래된 앞부분이 잘려 켜 두었던
+    // 모드(스크롤 영역·커서 숨김 등)가 빠지고, 에이전트는 바뀐 곳만 다시 그려서 이미 그렸다고 아는 입력칸이 안 보이기도 한다.
+    // PTY 크기가 그대로면 에이전트는 다시 그리지 않으니, 폭을 한 칸 줄였다 되돌려 화면 전체를 다시 그리게 한다.
+    let needRepaint = false;
+    let repainting = false;
+    const sendSize = () => {
+      // 다시 그리게 하는 중이면 끝날 때 지금 크기를 보낸다
+      if (!repainting) void api.execResize(execId, term.cols, term.rows).catch(() => {});
+    };
+    const repaint = () => {
+      if (!needRepaint || disposed || el.clientWidth < 20 || el.clientHeight < 20) return; // 보일 때 한다
+      needRepaint = false;
+      repainting = true;
+      void api.execResize(execId, Math.max(2, term.cols - 1), term.rows).catch(() => {});
+      // 바로 되돌리면 크기 바뀜 신호 둘을 한꺼번에 처리해 크기가 그대로로 보이므로 사이를 둔다
+      window.setTimeout(() => {
+        repainting = false;
+        if (!disposed) sendSize();
+      }, 200);
+    };
     api.execAttach(execId, ch).then(
-      (id) => {
-        if (disposed) void api.execDetach(execId, id);
-        else sinkId = id;
+      (a) => {
+        if (disposed) return void api.execDetach(execId, a.sinkId);
+        sinkId = a.sinkId;
+        if (a.replayed > 0) needRepaint = true;
+        repaint();
       },
       (e) => term.write(`\r\n${t("[연결 실패]")} ${e}\r\n`),
     );
     const onData = term.onData((d) => void api.execWrite(execId, d).catch(() => {}));
+    let retries = 0;
     const resize = () => {
-      if (el.clientWidth < 20 || el.clientHeight < 20) return; // 숨겨진 상태
+      if (disposed || el.clientWidth < 20 || el.clientHeight < 20) return; // 숨겨진 상태
       try {
+        // 칸 크기를 아직 못 재면 맞추지 못한 기본 크기(80x24)를 알리게 되므로 조금 뒤 다시 한다
+        const dims = fit.proposeDimensions();
+        if (!dims || !(dims.cols > 0) || !(dims.rows > 0)) {
+          if (retries++ < 20) window.setTimeout(resize, 100);
+          return;
+        }
+        retries = 0;
         fit.fit();
-        void api.execResize(execId, term.cols, term.rows).catch(() => {});
       } catch {
-        /* 무시 */
+        return;
       }
+      // 다시 그리게 할 때는 크기 알림을 따로 보내지 않는다(두 요청의 처리 순서가 바뀌면 크기가 그대로로 보일 수 있다)
+      if (needRepaint) repaint();
+      else sendSize();
     };
+    fitRef.current = resize;
+    try {
+      const gl = new WebglAddon();
+      // 동시에 쓸 수 있는 WebGL 개수를 넘으면 오래된 것부터 끊긴다. 기본 렌더러로 바뀌면 칸 크기가 달라질 수 있고
+      // 끊기기 전 화면이 어긋나 보일 수 있으니, 크기를 다시 재고 에이전트가 화면 전체를 다시 그리게 한다.
+      gl.onContextLoss(() => {
+        gl.dispose();
+        if (disposed) return;
+        needRepaint = true;
+        resize();
+      });
+      term.loadAddon(gl);
+    } catch {
+      /* WebGL 이 안 되면 기본 렌더러 */
+    }
     const ro = new ResizeObserver(() => resize());
     ro.observe(el);
     resize();
@@ -182,16 +222,8 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
   useEffect(() => {
     if (!visible) return;
     const t = window.setTimeout(() => {
-      try {
-        fitRef.current?.fit();
-        const term = termRef.current;
-        if (term) {
-          void api.execResize(execId, term.cols, term.rows).catch(() => {});
-          term.focus();
-        }
-      } catch {
-        /* 무시 */
-      }
+      fitRef.current();
+      termRef.current?.focus();
     }, 30);
     return () => window.clearTimeout(t);
   }, [visible, execId]);

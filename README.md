@@ -222,7 +222,7 @@ Codex는 설치된 CLI의 `account/rateLimits/read`를 사용합니다. Claude�
 |---|---|
 | 앱 | Tauri 2 (Rust) + React + TypeScript, xterm.js(WebGL), Shiki(필요한 언어만) |
 | Git | `git` CLI 를 그대로 부른다(로그인·자격 증명·hooks 그대로). 그래프 레인 계산은 Rust 로 직접 구현 |
-| 터미널 | portable-pty. 출력은 실행마다 2MB 고리 버퍼에 두고 다시 붙을 때 재생 |
+| 터미널 | portable-pty. 출력은 실행마다 2MB 고리 버퍼에 두고 다시 붙을 때 재생(재생 뒤 에이전트가 화면을 다시 그리게 함) |
 | 파일 감시 | notify + debouncer. 무시된 폴더(`node_modules` 등)는 20초마다만 |
 | 저장 | SQLite(`~/Library/Application Support/dev.aiterminal.app/ai-terminal.sqlite3`): 저장소 목록, 세션↔워크트리 연결, 실행 이력. 대화 내용은 저장하지 않는다 |
 

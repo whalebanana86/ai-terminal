@@ -46,6 +46,14 @@ pub struct PtyInfo {
     pub exit_code: Option<i32>,
 }
 
+/// 화면에 붙은 결과: 구독 id 와 먼저 재생한 출력 양(바이트)
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Attached {
+    pub sink_id: u64,
+    pub replayed: usize,
+}
+
 pub struct SpawnSpec {
     pub program: String,
     pub args: Vec<String>,
@@ -149,8 +157,8 @@ impl PtyManager {
         self.execs.lock().values().map(|e| e.info()).collect()
     }
 
-    /// 지금까지의 출력을 먼저 보내고, 이후 출력을 계속 보낸다. 반환값은 구독 id.
-    pub fn attach(&self, id: &str, sink: Sink) -> Result<u64> {
+    /// 지금까지의 출력을 먼저 보내고, 이후 출력을 계속 보낸다.
+    pub fn attach(&self, id: &str, sink: Sink) -> Result<Attached> {
         let exec = self.get(id).ok_or_else(|| anyhow!(tr!("실행을 찾을 수 없습니다: {id}", "Run not found: {id}")))?;
         let sid = self.next_sink.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut inner = exec.inner.lock();
@@ -163,7 +171,7 @@ impl PtyManager {
             return Err(anyhow!(tr!("터미널 화면에 연결하지 못했습니다", "Failed to connect to the terminal view")));
         }
         inner.sinks.push((sid, sink));
-        Ok(sid)
+        Ok(Attached { sink_id: sid, replayed: snapshot.len() })
     }
 
     pub fn detach(&self, id: &str, sink_id: u64) {
@@ -309,11 +317,13 @@ mod tests {
         // 나중에 붙어도 앞선 출력이 재생된다
         let seen = Arc::new(Mutex::new(Vec::<u8>::new()));
         let s2 = seen.clone();
-        m.attach("t1", Box::new(move |b| {
-            s2.lock().extend_from_slice(b);
-            true
-        }))
-        .unwrap();
+        let attached = m
+            .attach("t1", Box::new(move |b| {
+                s2.lock().extend_from_slice(b);
+                true
+            }))
+            .unwrap();
+        assert!(attached.replayed > 0, "앞선 출력 양을 알려 준다");
         m.write("t1", b"abc\r").unwrap();
         let code = rx.recv_timeout(Duration::from_secs(5)).unwrap();
         assert_eq!(code, Some(3));

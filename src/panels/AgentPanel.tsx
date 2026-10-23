@@ -345,71 +345,76 @@ function SessionDetail() {
     if (ok) await api.execKill(exec.id).catch((e) => toast("error", errorText(e)));
   };
 
-  if (!session) {
-    return (
-      <div className="session-detail">
-        <Empty title={t("세션을 고르세요")}>
-          {t("위 목록에서 대화를 고르면 왼쪽 Git 과 오른쪽 파일이 그 대화가 작업한 워크트리를 보여 줍니다.")}
-          {list.collapsed && (
-            <div style={{ marginTop: 8 }}>
-              <button className="btn btn-small" onClick={list.toggle}>
-                <PanelTopOpen size={13} aria-hidden /> {t("세션 목록 펼치기")}
-              </button>
-            </div>
-          )}
-        </Empty>
-      </div>
-    );
-  }
-  const pending = session.id.startsWith("exec:") || session.id.startsWith("chat:");
+  const pending = !!session && (session.id.startsWith("exec:") || session.id.startsWith("chat:"));
+  // 세션을 고르지 않은 화면(다른 저장소로 갔을 때 등)에서도 터미널은 내리지 않는다.
+  // 내렸다가 다시 만들면 앞선 출력을 재생해 화면을 복원하는데, 재생한 화면은 실제와 어긋날 수 있다.
   return (
     <div className="session-detail">
-      <SessionHeader
-        s={session}
-        running={running}
-        chatOpen={!!chat}
-        ext={ext}
-        chat={chat}
-        canContinue={session.cwdExists && !pending}
-        onChat={openChat}
-        onTerminal={resume}
-        onStop={stop}
-        onCloseChat={closeChat}
-      />
-      {ext && !running && !chat && (
-        <div className="banner banner-ext" data-testid="external-banner">
-          {t("{client}에서 열려 있는 대화입니다 (PID {pid}). 여기서 동시에 이어가면 기록이 섞일 수 있어요.", { client: clientLabel(ext.client), pid: ext.pid })}
-        </div>
-      )}
-      <div className="tabs" role="tablist">
-        <button role="tab" aria-selected={tab === "talk"} className={tab === "talk" ? "on" : ""} onClick={() => setTab("talk")} data-tab="talk">
-          {t("대화")}
-        </button>
-        {live && (
-          <button role="tab" aria-selected={tab === "history"} className={tab === "history" ? "on" : ""} onClick={() => setTab("history")} data-tab="history">
-            {t("이전 기록")}
-          </button>
-        )}
-        <button role="tab" aria-selected={tab === "files"} className={tab === "files" ? "on" : ""} onClick={() => setTab("files")} data-tab="files">
-          {t("작업한 파일")}
-        </button>
-      </div>
-      <div className="detail-body">
-        <TerminalHost selectedExecId={tab === "talk" && !chat ? exec?.id ?? null : null} />
-        {tab === "talk" && chat && <ChatView chat={chat} />}
-        {tab === "talk" && !chat && exec?.exited && (
-          <div className="term-exit">
-            {t("에이전트가 끝났습니다 (코드 {code}).", { code: exec.exitCode ?? "?" })}{" "}
-            {!pending && (
-              <button className="btn btn-small" onClick={resume}>
-                {t("터미널로 다시 이어가기")}
+      {session && (
+        <>
+          <SessionHeader
+            s={session}
+            running={running}
+            chatOpen={!!chat}
+            ext={ext}
+            chat={chat}
+            canContinue={session.cwdExists && !pending}
+            onChat={openChat}
+            onTerminal={resume}
+            onStop={stop}
+            onCloseChat={closeChat}
+          />
+          {ext && !running && !chat && (
+            <div className="banner banner-ext" data-testid="external-banner">
+              {t("{client}에서 열려 있는 대화입니다 (PID {pid}). 여기서 동시에 이어가면 기록이 섞일 수 있어요.", { client: clientLabel(ext.client), pid: ext.pid })}
+            </div>
+          )}
+          <div className="tabs" role="tablist">
+            <button role="tab" aria-selected={tab === "talk"} className={tab === "talk" ? "on" : ""} onClick={() => setTab("talk")} data-tab="talk">
+              {t("대화")}
+            </button>
+            {live && (
+              <button role="tab" aria-selected={tab === "history"} className={tab === "history" ? "on" : ""} onClick={() => setTab("history")} data-tab="history">
+                {t("이전 기록")}
               </button>
             )}
+            <button role="tab" aria-selected={tab === "files"} className={tab === "files" ? "on" : ""} onClick={() => setTab("files")} data-tab="files">
+              {t("작업한 파일")}
+            </button>
           </div>
+        </>
+      )}
+      <div className="detail-body">
+        <TerminalHost selectedExecId={tab === "talk" && !chat ? exec?.id ?? null : null} />
+        {!session ? (
+          <Empty title={t("세션을 고르세요")}>
+            {t("위 목록에서 대화를 고르면 왼쪽 Git 과 오른쪽 파일이 그 대화가 작업한 워크트리를 보여 줍니다.")}
+            {list.collapsed && (
+              <div style={{ marginTop: 8 }}>
+                <button className="btn btn-small" onClick={list.toggle}>
+                  <PanelTopOpen size={13} aria-hidden /> {t("세션 목록 펼치기")}
+                </button>
+              </div>
+            )}
+          </Empty>
+        ) : (
+          <>
+            {tab === "talk" && chat && <ChatView chat={chat} />}
+            {tab === "talk" && !chat && exec?.exited && (
+              <div className="term-exit">
+                {t("에이전트가 끝났습니다 (코드 {code}).", { code: exec.exitCode ?? "?" })}{" "}
+                {!pending && (
+                  <button className="btn btn-small" onClick={resume}>
+                    {t("터미널로 다시 이어가기")}
+                  </button>
+                )}
+              </div>
+            )}
+            {tab === "talk" && !live && <HistoryView s={session} />}
+            {tab === "history" && <HistoryView s={session} />}
+            {tab === "files" && <TouchedFilesView s={session} />}
+          </>
         )}
-        {tab === "talk" && !live && <HistoryView s={session} />}
-        {tab === "history" && <HistoryView s={session} />}
-        {tab === "files" && <TouchedFilesView s={session} />}
       </div>
     </div>
   );

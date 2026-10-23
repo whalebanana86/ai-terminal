@@ -447,7 +447,7 @@ pub async fn exec_start(state: State<'_, AppState>, args: StartArgs) -> Res<Exec
 }
 
 #[tauri::command]
-pub fn exec_attach(state: State<'_, AppState>, id: String, on_data: Channel<InvokeResponseBody>) -> Res<u64> {
+pub fn exec_attach(state: State<'_, AppState>, id: String, on_data: Channel<InvokeResponseBody>) -> Res<crate::pty::Attached> {
     state
         .core
         .pty

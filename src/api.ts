@@ -350,7 +350,8 @@ export const api = {
   transcript: (id: string) => invoke<Transcript>("session_transcript", { id }),
   execStart: (args: { agent: Agent; mode: "new" | "resume"; sessionId?: string; cwd?: string; cols: number; rows: number; force?: boolean; prompt?: string }) =>
     invoke<ExecInfo>("exec_start", { args }),
-  execAttach: (id: string, onData: Channel<ArrayBuffer | number[] | string>) => invoke<number>("exec_attach", { id, onData }),
+  /** replayed: 붙자마자 재생한 앞선 출력 양(바이트) */
+  execAttach: (id: string, onData: Channel<ArrayBuffer | number[] | string>) => invoke<{ sinkId: number; replayed: number }>("exec_attach", { id, onData }),
   execDetach: (id: string, sinkId: number) => invoke<void>("exec_detach", { id, sinkId }),
   execWrite: (id: string, data: string) => invoke<void>("exec_write", { id, data }),
   execResize: (id: string, cols: number, rows: number) => invoke<void>("exec_resize", { id, cols, rows }),
