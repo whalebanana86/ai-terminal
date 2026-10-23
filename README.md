@@ -120,9 +120,15 @@ Codex는 설치된 CLI의 `account/rateLimits/read`를 사용합니다. Claude�
 | 기능 추가·일반적인 오류 수정 | GPT-6.1 Sol Low |
 | 구조 변경·동시성·렌더링 등 복잡한 개발 | GPT-6.1 Sol Medium |
 
-전송 전 선택 결과를 보여 주며, 같은 메뉴에서 직접 고르거나 **CLI 설정 유지**로 자동 선택을 끌 수 있습니다. 앱 채팅은 메시지마다 선택하고, “계속해” 같은 짧은 후속 지시는 해당 채팅의 직전 선택을 유지합니다. 문구 기반 분류라 맞지 않으면 수동 선택을 사용하세요.
+앱 채팅 입력창에서 전송 전 선택 결과를 보여 주며, 같은 메뉴에서 직접 고르거나 **CLI 설정 유지**로 자동 선택을 끌 수 있습니다. 앱 채팅은 메시지마다 선택하고, “계속해” 같은 짧은 후속 지시는 해당 채팅의 직전 선택을 유지합니다. 문구 기반 분류라 맞지 않으면 수동 선택을 사용하세요.
 
-원본 CLI 터미널은 **첫 지시로 시작 모델만** 선택합니다. 터미널에 직접 입력하는 후속 요청은 앱이 가로채지 않으며 `/model`로 변경할 수 있습니다. 첫 지시가 없으면 일반 개발 설정으로 시작하고, 기존 세션을 터미널로 이어갈 때는 기존 CLI 설정을 유지합니다. 모델·추론 강도만 해당 실행에 전달하며, 사용자 Codex 설정 파일과 기존 허락 범위는 바꾸지 않습니다. 계정에서 모델을 사용할 수 없다면 Codex 오류를 보여 주고 다른 모델로 몰래 재시도하지 않습니다.
+새 세션에서 **원본 CLI 터미널**을 고르면 기존 Codex CLI 화면을 그대로 사용할 수 있습니다. **자동 선택 터미널**은 별도 선택지로 제공됩니다.
+
+Codex의 **자동 선택 터미널**도 앱 안에서 요청을 받을 때마다 모델을 선택하고 같은 세션 ID로 이어갑니다. 새 세션에서 Codex → 자동 선택 터미널을 고르면 바로 쓸 수 있으며, 별도 명령 설치나 Python이 필요하지 않습니다. `/paste`로 여러 줄을 입력하고 `.`만 있는 줄로 마치며, `/status`로 세션을 확인하고 `/exit`로 종료합니다. 허락 범위는 선택한 읽기 전용·워크트리 쓰기 설정을 사용합니다. 사용자 Codex 설정 파일은 바꾸지 않고, 사용할 수 없는 모델은 오류를 표시하며 다른 모델로 재시도하지 않습니다. 이미 실행 중인 원본 터미널은 그대로 유지되므로 새로 열거나 다시 이어가면 적용됩니다.
+
+### 모든 저장소에서 쓰는 Codex 터미널
+
+`python3 scripts/install_cli.py`로 공용 `codewhere` 명령을 설치할 수 있습니다. 원하는 Git 저장소에서 `codewhere`를 실행하면 요청마다 모델을 선택하고 같은 대화를 이어갑니다. 일회성 요청은 `codewhere "요청"`, 실행 전 확인은 `codewhere --dry-run "요청"`을 사용하세요. [설치·사용법](docs/codex-terminal.md)
 
 ### 세 칸
 
@@ -263,8 +269,8 @@ Codex는 설치된 CLI의 `account/rateLimits/read`를 사용합니다. Claude�
 
 | 동작 | 명령 |
 |---|---|
-| 터미널로 이어가기 | `claude --resume <id>` (기록된 cwd 에서), `codex resume <id> -C <cwd>` |
-| 새 세션(터미널) | `claude --session-id <새 uuid> [-- 첫 지시]`, `codex -C <cwd> [-- 첫 지시]` |
+| 터미널로 이어가기 | Claude: `claude --resume <id>` (기록된 cwd), Codex: 앱 내 자동 선택 실행기가 `codex exec resume`을 요청마다 실행 |
+| 새 세션(터미널) | Claude: `claude --session-id <새 uuid> [-- 첫 지시]`, Codex: 앱 내 자동 선택 실행기가 첫 요청부터 `codex exec --json`으로 실행 |
 | 채팅(Claude) | `claude -p --input-format stream-json --output-format stream-json --verbose --permission-prompts host --permission-prompt-tool stdio --permission-mode <범위>` — 도구 쓰기 전 `can_use_tool` 요청을 받아 허락 카드로 보여 준다. 허락하면 **CLI 가 보낸 입력 그대로** 돌려준다 |
 | 채팅(Codex) | 턴마다 `codex exec --json -s <샌드박스> -C <cwd> -` / `codex exec resume --json -c sandbox_mode=… <id> -` (지시는 stdin 으로) |
 | Git | `GIT_OPTIONAL_LOCKS=0`, `GIT_TERMINAL_PROMPT=0`, `core.fsmonitor=false` 등으로 사용자 설정이 화면 해석을 바꾸지 않게 하고, 쓰기는 확인 창을 거친 뒤에만 |

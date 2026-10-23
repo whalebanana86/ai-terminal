@@ -1,7 +1,7 @@
 import { Channel } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, errorText, type ChatEvent, type ChatInfo, type Transcript } from "../api";
-import { CodexModelPicker, savedCodexModelMode, routeLabel, taskLabel } from "../components/CodexModelPicker";
+import { api, errorText, type ChatEvent, type ChatInfo, type Transcript, type CodexModelMode } from "../api";
+import { CodexModelPicker, routeLabel, taskLabel } from "../components/CodexModelPicker";
 import { useStore } from "../store";
 import { t } from "../i18n";
 
@@ -77,7 +77,7 @@ export function ChatView({ chat }: { chat: ChatInfo }) {
   const [events, setEvents] = useState<ChatEvent[]>([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
-  const [modelMode, setModelMode] = useState(savedCodexModelMode);
+  const [modelMode, setModelMode] = useState<CodexModelMode>("auto");
   const [open, setOpen] = useState<Set<string>>(new Set());
   const toast = useStore((s) => s.toast);
   const bottom = useRef<HTMLDivElement>(null);

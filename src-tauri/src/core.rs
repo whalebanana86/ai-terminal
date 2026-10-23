@@ -86,7 +86,7 @@ pub struct ExecInfo {
 
 pub struct StartRequest {
     pub agent: String,
-    /// new | resume
+    /// new | new-native | resume | resume-native
     pub mode: String,
     pub session_id: Option<String>,
     pub cwd: Option<String>,
@@ -96,7 +96,7 @@ pub struct StartRequest {
     pub force: bool,
     /// 새 세션의 첫 지시(있으면 CLI 인자로 넘긴다)
     pub prompt: Option<String>,
-    pub model_mode: Option<String>,
+    pub sandbox: Option<String>,
     /// 앱 터미널 바탕의 밝기(dark | light). Claude 테마를 여기에 맞춘다.
     pub theme: Option<String>,
 }
@@ -479,7 +479,13 @@ impl AppCore {
         v
     }
 
-    pub fn start(self: &Arc<Self>, req: StartRequest) -> Result<ExecInfo> {
+    pub fn start(self: &Arc<Self>, mut req: StartRequest) -> Result<ExecInfo> {
+        let native_terminal = matches!(req.mode.as_str(), "new-native" | "resume-native");
+        if req.mode == "new-native" {
+            req.mode = "new".into();
+        } else if req.mode == "resume-native" {
+            req.mode = "resume".into();
+        }
         let _open = self.open_lock.lock();
         let (program, mut args, cwd, session_id): (String, Vec<String>, String, Option<String>) = match (req.agent.as_str(), req.mode.as_str()) {
             (agent @ ("claude" | "codex"), "resume") => {
@@ -530,26 +536,38 @@ impl AppCore {
             args.push("--settings".into());
             args.push(json!({ "theme": claude_theme(base, configured_claude_theme().as_deref()) }).to_string());
         }
-        let mut model_notice = None;
-        if program == "codex" {
-            // With no new request on resume, preserve the model selected in that CLI session.
-            let mode = req.model_mode.as_deref().or(if req.mode == "resume" && req.prompt.as_deref().unwrap_or("").trim().is_empty() { Some("inherit") } else { None });
-            if let Some(route) = crate::codex_models::route(req.prompt.as_deref().unwrap_or(""), mode, None).map_err(anyhow::Error::msg)? {
-                model_notice = Some(format!("[Code Whereabouts] {}: {} · {}\r\n{}\r\n", tr!("시작 모델", "Starting model"), route.model, route.effort,
-                    tr!("이후 모델 변경은 Codex CLI에서 관리합니다 (/model).", "Subsequent model changes are managed by Codex CLI (/model).")));
-                args.extend(route.cli_args());
+        let program = if program == "codex" && !native_terminal {
+            // App-bundled request router; no Python/global command installation is needed.
+            let config = crate::codex_terminal::Config {
+                cwd: cwd.clone(),
+                resume_id: session_id.as_deref().and_then(|s| s.strip_prefix("codex:")).map(str::to_string),
+                prompt: req.prompt.clone(),
+                sandbox: req.sandbox.clone().unwrap_or_else(|| "workspace-write".into()),
+                english: crate::i18n::is_en(),
+            };
+            if !matches!(config.sandbox.as_str(), "workspace-write" | "read-only") { bail!("Invalid Codex sandbox"); }
+            args = vec![crate::codex_terminal::ARG.into(), serde_json::to_string(&config)?];
+            let executable = std::env::current_exe()?.to_string_lossy().into_owned();
+            #[cfg(debug_assertions)]
+            let executable = std::env::var("AITERM_ROUTER_BIN").unwrap_or(executable);
+            executable
+        } else {
+            // Original interactive CLI terminal and optional first instruction.
+            if req.mode == "new" {
+                if let Some(p) = req.prompt.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
+                    args.push("--".into());
+                    args.push(p.to_string());
+                }
             }
-        }
-        // 첫 지시: `--` 뒤에 두어 '-' 로 시작해도 옵션으로 해석되지 않게 한다(셸을 거치지 않으므로 따옴표 문제 없음).
-        if req.mode == "new" {
-            if let Some(p) = req.prompt.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
-                args.push("--".into());
-                args.push(p.to_string());
+            if program == "codex" {
+                let sandbox = req.sandbox.as_deref().unwrap_or("workspace-write");
+                if !matches!(sandbox, "workspace-write" | "read-only") { bail!("Invalid Codex sandbox"); }
+                args.splice(0..0, ["-s".into(), sandbox.into()]);
             }
-        }
-        // 테스트에서 실제 CLI 대신 가짜 프로그램을 쓸 수 있게 한다.
-        #[cfg(debug_assertions)]
-        let program = std::env::var(format!("AITERM_{}_BIN", program.to_uppercase())).unwrap_or(program);
+            #[cfg(debug_assertions)]
+            let program = std::env::var(if program == "codex" { "AITERM_CODEX_BIN" } else { "AITERM_CLAUDE_BIN" }).unwrap_or(program);
+            program
+        };
         let loc = self.locate_cached(&cwd);
         let (branch, head) = match &loc {
             Some(l) => {
@@ -581,7 +599,6 @@ impl AppCore {
             SpawnSpec { program, args: std::mem::take(&mut args), cwd: cwd.clone(), cols: req.cols, rows: req.rows, extra_env: vec![] },
             self.on_exec_exit(),
         )?;
-        if let Some(notice) = model_notice { exec.prepend_notice(&notice); }
         self.db.insert_execution(&row)?;
         let info = ExecInfo {
             id: id.clone(),
@@ -948,12 +965,13 @@ mod tests {
         unsafe {
             std::env::set_var("AITERM_CLAUDE_BIN", &fake);
             std::env::set_var("AITERM_CODEX_BIN", &fake);
+            std::env::set_var("AITERM_ROUTER_BIN", &fake);
         }
 
         let core = AppCore::new(Db::open_in_memory().unwrap(), Arc::new(|_, _| {}));
         core.list_sessions().unwrap();
         let info = core
-            .start(StartRequest { agent: "claude".into(), mode: "resume".into(), session_id: Some("claude:c9".into()), cwd: None, cols: 80, rows: 24, force: false, prompt: None, model_mode: None, theme: None })
+            .start(StartRequest { agent: "claude".into(), mode: "resume".into(), session_id: Some("claude:c9".into()), cwd: None, cols: 80, rows: 24, force: false, prompt: None, sandbox: None, theme: None })
             .unwrap();
         assert_eq!(info.branch_at_start.as_deref(), Some("feature"));
         assert_eq!(info.worktree_path.as_deref(), Some(wt.to_str().unwrap()));
@@ -971,7 +989,7 @@ mod tests {
 
         // 새 세션의 첫 지시는 `--` 뒤 인자로 넘어간다
         let first = core
-            .start(StartRequest { agent: "claude".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false, prompt: Some("-v 로 시작하는 지시".into()), model_mode: None, theme: Some("dark".into()) })
+            .start(StartRequest { agent: "claude".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false, prompt: Some("-v 로 시작하는 지시".into()), sandbox: None, theme: Some("dark".into()) })
             .unwrap();
         let mut out = String::new();
         for _ in 0..100 {
@@ -987,7 +1005,7 @@ mod tests {
 
         // Codex 새 실행: 시작 후 같은 cwd 에 생긴 스레드와 연결된다
         let info = core
-            .start(StartRequest { agent: "codex".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false, prompt: None, model_mode: None, theme: None })
+            .start(StartRequest { agent: "codex".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false, prompt: None, sandbox: None, theme: None })
             .unwrap();
         assert!(info.session_id.is_none());
         let mut output = String::new();
@@ -996,8 +1014,8 @@ mod tests {
             if output.contains("PWD:") { break; }
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
-        assert!(output.contains("--model gpt-6.1-sol -c model_reasoning_effort=\"low\""), "{output}");
-        assert!(output.contains("[Code Whereabouts]") && output.contains("/model"), "{output}");
+        assert!(output.contains(crate::codex_terminal::ARG), "{output}");
+        assert!(output.contains("workspace-write") && output.contains("resume_id"), "{output}");
         write_codex(&home, "fresh", &main, "main");
         // 기록 시각을 실행 이후로 맞춘다
         let dir = home.join(".codex/sessions/2026/10/01");
@@ -1010,7 +1028,7 @@ mod tests {
 
         // 같은 폴더에서 두 번째 새 실행: 이미 연결된 스레드를 다시 가져가지 않는다.
         let second = core
-            .start(StartRequest { agent: "codex".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false, prompt: None, model_mode: None, theme: None })
+            .start(StartRequest { agent: "codex".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false, prompt: None, sandbox: None, theme: None })
             .unwrap();
         core.list_sessions().unwrap();
         let e2 = core.exec_list().into_iter().find(|e| e.id == second.id).unwrap();
@@ -1022,10 +1040,25 @@ mod tests {
         core.list_sessions().unwrap();
         let e2 = core.exec_list().into_iter().find(|e| e.id == second.id).unwrap();
         assert_eq!(e2.session_id.as_deref(), Some("codex:fresh2"));
+        // The restored original terminal bypasses the router and preserves the first instruction.
+        let native = core
+            .start(StartRequest { agent: "codex".into(), mode: "new-native".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false, prompt: Some("-v instruction".into()), sandbox: Some("read-only".into()), theme: None })
+            .unwrap();
+        assert_eq!(native.kind, "new");
+        let mut output = String::new();
+        for _ in 0..100 {
+            output = core.pty.output_text(&native.id).unwrap();
+            if output.contains("PWD:") { break; }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(output.contains("ARGS:-s read-only -C "), "{output}");
+        assert!(output.contains("-- -v instruction"), "{output}");
+        assert!(!output.contains(crate::codex_terminal::ARG), "{output}");
         unsafe {
             std::env::remove_var("AITERM_HOME");
             std::env::remove_var("AITERM_CLAUDE_BIN");
             std::env::remove_var("AITERM_CODEX_BIN");
+            std::env::remove_var("AITERM_ROUTER_BIN");
         }
     }
 

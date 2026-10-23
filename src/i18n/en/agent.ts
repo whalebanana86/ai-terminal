@@ -1,5 +1,8 @@
 /** 영어 사전: agent (AgentPanel·ChatView) */
 export default {
+  "자동 선택 터미널": "Auto-select terminal",
+  "요청마다 모델 자동 선택": "Automatic model selection per request",
+  "자동 선택 터미널로 이어가기": "Continue in auto-select terminal",
   "선택 미리보기를 불러오지 못했습니다": "Could not load the model preview",
   "Codex 모델": "Codex model",
   "자동 선택 (요청 난이도)": "Auto (task complexity)",

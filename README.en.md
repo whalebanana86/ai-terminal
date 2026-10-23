@@ -97,7 +97,9 @@ The coloured line under the title bar is the colour of the worktree you are look
 
 Codex requests default to local, wording-based task classification: simple maintenance and copy edits use **GPT-6 Luna Low**, general development uses **GPT-6.1 Sol Low**, and complex architecture, concurrency or rendering work uses **GPT-6.1 Sol Medium**. No classification API is called. The composer previews the choice and lets you override it or keep your CLI settings.
 
-App chat selects a model for each message, preserving its previous selection for short continuations such as “continue”. The original CLI terminal selects its initial model from the first instruction; subsequent terminal input is managed by the CLI and can be changed with `/model`. An empty first instruction defaults to general development; resuming an existing terminal session preserves CLI settings. Only per-run model and reasoning flags change: user configuration files and permission scopes remain intact. Unavailable models surface Codex's error rather than triggering a silent retry with a different model.
+Choose **Original CLI terminal** in New Session to use the standard Codex CLI. **Auto-select terminal** is available as a separate option.
+
+Both app chat and the bundled **auto-select terminal** select a model per request and resume the same conversation ID. Choose Codex → Auto-select terminal in New Session; no Python or global CLI installation is required. Short continuations retain the previous category within the open conversation. Use `/paste` for multiline input (end with a line containing only `.`), `/status` for the session ID, and `/exit` to quit. The selected read-only/workspace-write sandbox is passed through. User configuration stays unchanged and unavailable models surface an error without retrying another model. Existing running original terminals keep running; open or resume a terminal to use the new router.
 
 ### Continuing a conversation
 
@@ -159,6 +161,10 @@ Turn on **File editing** in Settings → **Features** and files are **editable a
 | `⌘,` | Settings (language, appearance, external editor, features) |
 | `⌘S` / `⌘F` | In file editing: save / find |
 
+### Codex terminal for any repository
+
+Install the shared `codewhere` command with `python3 scripts/install_cli.py`. Run `codewhere` in any Git repository to select a model per request while continuing the same conversation. Use `codewhere "request"` for one request or `codewhere --dry-run "request"` to preview. See [installation and usage](docs/codex-terminal.md).
+
 ## Privacy
 
 - No account. Choosing Check for Updates contacts GitHub for release metadata and update files. No repository paths or conversation contents are sent (the UI remains locked down by CSP).
@@ -175,7 +181,7 @@ Turn on **File editing** in Settings → **Features** and files are **editable a
 - **Model:** Repository → Worktree → Branch/HEAD, linked to AgentSession (a CLI conversation) and AgentExecution (one run started by the app). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - **Logs read:** `~/.claude/projects/*/<id>.jsonl`, `~/.claude/sessions/<pid>.json`, `~/.codex/state_*.sqlite` (read-only), `~/.codex/sessions/**/rollout-*.jsonl[.zst]`, `~/.codex/thread-writer-locks/`. `CLAUDE_CONFIG_DIR` and `CODEX_HOME` are honoured.
 - **Linking a session to a worktree:** the last recorded cwd wins (resume always runs in the first cwd, because `claude --resume` looks up the log by its starting folder). Sessions started in a parent folder that is not a repository are linked to the repository folder they worked in most recently (from the cwd values in the last 2 MB of the log). Running sessions are detected with libproc, without spawning `ps` or `lsof`.
-- **Commands:** `claude --resume <id>`, `codex resume <id> -C <cwd>`; chat uses `claude -p --input-format stream-json --output-format stream-json --verbose --permission-prompts host --permission-prompt-tool stdio` and answers `can_use_tool` requests with the CLI's own input; Codex chat runs `codex exec --json` per turn.
+- **Commands:** `claude --resume <id>`; Codex terminals use a bundled request router with per-turn `codex exec --json` / `codex exec resume`; chat uses `claude -p --input-format stream-json --output-format stream-json --verbose --permission-prompts host --permission-prompt-tool stdio` and answers `can_use_tool` requests with the CLI's own input; Codex chat runs `codex exec --json` per turn.
 - **Author names:** the graph and commit details read `%aN`/`%aE`/`%cN`, so they follow `.mailmap` (even with `log.mailmap=false`). To show someone who committed under several names as one person, put a `.mailmap` in the repository root.
 - **Security:** every Git/file command only accepts paths inside a registered worktree (`..`, absolute paths and symlinks pointing outside are refused). The only file write is `fs_save`, accepted only while File editing is on; features change only through `extension_set` (the UI's `kv_set` can't touch `ext.*`), and File editing turns on only after a person clicks the macOS dialog Rust shows, so the webview alone can't enable writes. External editors are limited to a known list; `git init` refuses home/system folders. The automation socket used by tests exists only in `--features automation` builds.
 - **Footprint:** CPU while an agent works 3.14% → 0.74%, memory 194 → 148 MB, session list 108 → 2 ms, UI bundle 11 MB → 3.5 MB; app 7.5 MB, dmg 3.8 MB.

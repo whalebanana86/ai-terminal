@@ -373,7 +373,7 @@ export const api = {
   fsReadImage: (worktree: string, rel: string, rev?: string) => invoke<ArrayBuffer>("fs_read_image", { worktree, rel, rev: rev ?? null }),
   sessions: () => invoke<LinkedSession[]>("sessions_list"),
   transcript: (id: string) => invoke<Transcript>("session_transcript", { id }),
-  execStart: (args: { agent: Agent; mode: "new" | "resume"; sessionId?: string; cwd?: string; cols: number; rows: number; force?: boolean; prompt?: string; modelMode?: CodexModelMode; theme?: Theme }) =>
+  execStart: (args: { agent: Agent; mode: "new" | "new-native" | "resume" | "resume-native"; sessionId?: string; cwd?: string; cols: number; rows: number; force?: boolean; prompt?: string; sandbox?: string; theme?: Theme }) =>
     invoke<ExecInfo>("exec_start", { args }),
   /** replayed: 붙자마자 재생한 앞선 출력 양(바이트) */
   execAttach: (id: string, onData: Channel<ArrayBuffer | number[] | string>) => invoke<{ sinkId: number; replayed: number }>("exec_attach", { id, onData }),
