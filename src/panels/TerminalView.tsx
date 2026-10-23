@@ -100,6 +100,8 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
   /** 칸에 맞춰 크기를 다시 재고 PTY 에 알린다 */
   const fitRef = useRef<() => void>(() => {});
   const termRef = useRef<Terminal | null>(null);
+  /** 보일 때만 WebGL 로 그린다(on: 달기, off: 내려놓기) */
+  const glRef = useRef({ on: () => {}, off: () => {} });
 
   useEffect(() => {
     const el = host.current!;
@@ -202,20 +204,39 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
       else sendSize();
     };
     fitRef.current = resize;
-    try {
-      const gl = new WebglAddon();
-      // 동시에 쓸 수 있는 WebGL 개수를 넘으면 오래된 것부터 끊긴다. 기본 렌더러로 바뀌면 칸 크기가 달라질 수 있고
-      // 끊기기 전 화면이 어긋나 보일 수 있으니, 크기를 다시 재고 에이전트가 화면 전체를 다시 그리게 한다.
-      gl.onContextLoss(() => {
-        gl.dispose();
-        if (disposed) return;
-        needRepaint = true;
-        resize();
-      });
-      term.loadAddon(gl);
-    } catch {
-      /* WebGL 이 안 되면 기본 렌더러 */
-    }
+    // WebGL 은 보일 때만 쓴다. 숨은 터미널도 마지막 크기의 그리기 영역(레티나에서 하나에 약 11MB)을 쥐고 있고,
+    // 동시에 쓸 수 있는 WebGL 개수(약 16개)를 넘으면 오래된 것부터 끊긴다. 숨기면 기본 렌더러로 두고(그리지 않음) 보일 때 다시 단다.
+    let gl: { addon: WebglAddon; canvas: HTMLCanvasElement | null } | null = null;
+    const glOn = () => {
+      if (gl || disposed) return;
+      try {
+        const addon = new WebglAddon();
+        // 다른 이유로 끊기면 기본 렌더러로 바뀌어 칸 크기가 달라지거나 화면이 어긋날 수 있으니,
+        // 크기를 다시 재고 에이전트가 화면 전체를 다시 그리게 한다.
+        addon.onContextLoss(() => {
+          if (gl?.addon !== addon) return; // 우리가 내려놓은 것
+          gl = null;
+          addon.dispose();
+          if (disposed) return;
+          needRepaint = true;
+          resize();
+        });
+        term.loadAddon(addon);
+        gl = { addon, canvas: el.querySelector<HTMLCanvasElement>(".xterm-screen > canvas:not(.xterm-link-layer)") };
+      } catch {
+        /* WebGL 이 안 되면 기본 렌더러 */
+      }
+    };
+    const glOff = () => {
+      const g = gl;
+      if (!g) return;
+      gl = null;
+      // xterm 은 내려놓을 때 GL 컨텍스트를 반납하지 않아 가비지 수거 때까지 그리기 영역이 남는다 → 직접 반납
+      g.canvas?.getContext("webgl2")?.getExtension("WEBGL_lose_context")?.loseContext();
+      g.addon.dispose();
+    };
+    glRef.current = { on: glOn, off: glOff };
+    if (el.clientWidth >= 20) glOn();
     const ro = new ResizeObserver(() => resize());
     ro.observe(el);
     resize();
@@ -236,13 +257,18 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
       if (sinkId !== null) void api.execDetach(execId, sinkId);
       registry.delete(execId);
       termPasters.delete(execId);
+      glOff();
       term.dispose();
     };
   }, [execId]);
 
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      glRef.current.off();
+      return;
+    }
     const t = window.setTimeout(() => {
+      glRef.current.on();
       fitRef.current();
       termRef.current?.focus();
     }, 30);
