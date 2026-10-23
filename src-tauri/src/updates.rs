@@ -81,19 +81,12 @@ pub async fn check_update(
     *state.pending.lock() = None;
     let current = &app.package_info().version;
     let client = github_client(current)?;
-    let release: Release = client
-        .get(format!(
-            "https://api.github.com/repos/{REPO}/releases/latest"
-        ))
-        .header("Accept", "application/vnd.github+json")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .error_for_status()
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())?;
+    let release = match latest_release(&client).await {
+        Ok(release) => release,
+        // GitHub API 는 로그인 없이 같은 인터넷 주소에서 시간당 60번까지다(같은 와이파이의 다른 기기·프로그램과 나눠 씀).
+        // 막히면 API 를 거치지 않는 최신 릴리즈의 업데이트 파일(latest.json)로 확인한다.
+        Err(api_error) => return check_from_manifest(&app, &state, current).await.map_err(|_| api_error),
+    };
     let available = !release.draft && !release.prerelease && newer(&release.tag_name, current)?;
     let mut info = UpdateInfo {
         current_version: current.to_string(),
@@ -137,6 +130,66 @@ pub async fn check_update(
         *state.pending.lock() = Some(update);
     }
     Ok(info)
+}
+
+/// 최신 릴리즈 정보(GitHub API). 요청 한도에 걸리면 알아볼 수 있는 말로 돌려준다.
+async fn latest_release(client: &reqwest::Client) -> Result<Release, String> {
+    let response = client
+        .get(format!("https://api.github.com/repos/{REPO}/releases/latest"))
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let status = response.status();
+    if status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        return Err(tr!(
+            "GitHub 요청 한도(로그인 없이 시간당 60번)를 넘었습니다. 잠시 뒤 다시 확인해 주세요.",
+            "GitHub's request limit (60 per hour without signing in) was reached. Please check again later."
+        ));
+    }
+    response.error_for_status().map_err(|e| e.to_string())?.json().await.map_err(|e| e.to_string())
+}
+
+/// API 없이: 최신 릴리즈의 latest.json 을 업데이트 플러그인으로 바로 확인한다(서명 검증은 설치할 때 그대로).
+async fn check_from_manifest(
+    app: &tauri::AppHandle,
+    state: &State<'_, UpdateState>,
+    current: &semver::Version,
+) -> Result<UpdateInfo, String> {
+    let url = format!("https://github.com/{REPO}/releases/latest/download/latest.json")
+        .parse::<reqwest::Url>()
+        .map_err(|e| e.to_string())?;
+    let update = app
+        .updater_builder()
+        .endpoints(vec![url])
+        .map_err(|e| e.to_string())?
+        .timeout(Duration::from_secs(20))
+        .build()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(match update {
+        Some(mut update) => {
+            update.timeout = Some(Duration::from_secs(300));
+            let info = UpdateInfo {
+                current_version: current.to_string(),
+                version: update.version.clone(),
+                notes: update.body.clone().unwrap_or_default(),
+                available: true,
+                automatic: true,
+            };
+            *state.pending.lock() = Some(update);
+            info
+        }
+        None => UpdateInfo {
+            current_version: current.to_string(),
+            version: current.to_string(),
+            notes: String::new(),
+            available: false,
+            automatic: false,
+        },
+    })
 }
 
 #[tauri::command]
