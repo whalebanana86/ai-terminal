@@ -139,25 +139,12 @@ pub async fn check_update(
     Ok(info)
 }
 
-/// 터미널에서 실행 중인 에이전트는 새 버전으로 넘기지만(handoff), 채팅 화면이 응답 중이면 기다린다.
-fn ensure_idle(app: &tauri::AppHandle) -> Result<(), String> {
-    let state = app.state::<crate::commands::AppState>();
-    if state.core.chats.list().iter().any(|c| c.busy) {
-        return Err(tr!(
-            "채팅 화면에서 에이전트가 응답하는 중입니다. 끝난 뒤 업데이트해 주세요.",
-            "An agent is responding in a chat. Update after it finishes."
-        ));
-    }
-    Ok(())
-}
-
 #[tauri::command]
 pub async fn install_update(
     app: tauri::AppHandle,
     state: State<'_, UpdateState>,
 ) -> Result<(), String> {
     let _guard = state.begin()?;
-    ensure_idle(&app)?;
     let update = state
         .pending
         .lock()
@@ -178,7 +165,6 @@ pub async fn install_update(
         .await
         .map_err(|e| e.to_string())?;
     // Agents may have started during the download. Do not interrupt their work.
-    ensure_idle(&app)?;
     update.install(bytes).map_err(|e| e.to_string())?;
     let core = &app.state::<crate::commands::AppState>().core;
     // 터미널에서 실행 중인 에이전트는 끝내지 않고 새 버전 앱으로 넘긴다
@@ -189,7 +175,6 @@ pub async fn install_update(
             "The update is installed, but running agents couldn't be handed to the new version ({e:#}). Stop the agents and reopen the app to use the new version."
         ));
     }
-    core.chats.close_all();
     app.restart();
 }
 

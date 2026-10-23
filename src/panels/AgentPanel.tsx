@@ -1,13 +1,12 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { createContext, Fragment, lazy, memo, Suspense, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Group, Panel, Separator, useDefaultLayout, usePanelRef } from "react-resizable-panels";
-import { api, errorText, externalRunning, type Agent, type ChatInfo, type LinkedSession, type LiveRun, type Transcript, type WorktreeStatus } from "../api";
-import { ChevronDown, GitBranch, Info, PanelTopClose, PanelTopOpen, Play, Plus, RefreshCw, Square, X } from "lucide-react";
-import { AgentBadge, ContextMenu, Empty, WtDot } from "../components/Overlays";
+import { api, errorText, externalRunning, type Agent, type LinkedSession, type LiveRun, type Transcript, type WorktreeStatus } from "../api";
+import { GitBranch, Info, PanelTopClose, PanelTopOpen, Play, Plus, RefreshCw, Square } from "lucide-react";
+import { AgentBadge, Empty, WtDot } from "../components/Overlays";
 import { baseName, branchLabel, branchState, clientLabel, externalRunOf, kindLabel, kindLetter, relativeTime, relativeTo } from "../logic";
 import { useSelectedSession, useStore, visibleTabs } from "../store";
 import { PanelHead } from "./GitPanel";
-import { ChatView } from "./ChatView";
 import { t } from "../i18n";
 import { currentTheme } from "../theme";
 import { useExtensionOn } from "../extensions";
@@ -111,7 +110,6 @@ function SessionList() {
   const [agent, setAgent] = useState<"all" | Agent>("all");
   const [showArchived, setShowArchived] = useState(false);
   const liveRuns = useStore((s) => s.liveRuns);
-  const chats = useStore((s) => s.chats);
   const [, setTick] = useState(0);
   useEffect(() => {
     const t = window.setInterval(() => setTick((n) => n + 1), 30_000);
@@ -177,7 +175,6 @@ function SessionList() {
             onSelect={select}
             now={now}
             ext={externalRunOf(s.id, liveRuns)}
-            chat={chats.find((c) => c.sessionId === s.id || `chat:${c.id}` === s.id) ?? null}
           />
           </Fragment>
         ))}
@@ -201,7 +198,6 @@ type ItemProps = {
   onSelect: (id: string) => void;
   now: number;
   ext: LiveRun | null;
-  chat: ChatInfo | null;
   /** 같은 제목이 여러 개일 때 구분용 짧은 id */
   dupHint: string | null;
   /** 이 워크트리에서도 일했지만 마지막으로 일한 곳은 다른 워크트리일 때 그 경로 */
@@ -216,13 +212,11 @@ const SessionItem = memo(SessionItemView, (a, b) =>
   a.dupHint === b.dupHint &&
   a.elsewhere === b.elsewhere &&
   JSON.stringify(a.s) === JSON.stringify(b.s) &&
-  JSON.stringify(a.ext) === JSON.stringify(b.ext) &&
-  JSON.stringify(a.chat) === JSON.stringify(b.chat),
+  JSON.stringify(a.ext) === JSON.stringify(b.ext),
 );
 
 /** 세션 상태를 글자로(색 점만으로는 뜻을 알 수 없다) */
-export function sessionStatus(s: LinkedSession, ext: LiveRun | null, chat: ChatInfo | null): { label: string; cls: string; title: string } | null {
-  if (chat) return { label: chat.busy ? t("답하는 중") : t("채팅 열림"), cls: "st-chat", title: t("이 앱의 채팅 화면에서 열려 있습니다") };
+export function sessionStatus(s: LinkedSession, ext: LiveRun | null): { label: string; cls: string; title: string } | null {
   if (s.runningExecId) return { label: t("터미널 실행 중"), cls: "st-run", title: t("이 앱의 터미널에서 실행 중입니다") };
   if (ext)
     return {
@@ -233,9 +227,9 @@ export function sessionStatus(s: LinkedSession, ext: LiveRun | null, chat: ChatI
   return null;
 }
 
-function SessionItemView({ s, selected, onSelect, now, ext, chat, dupHint, elsewhere }: ItemProps) {
+function SessionItemView({ s, selected, onSelect, now, ext, dupHint, elsewhere }: ItemProps) {
   const bs = branchState(s);
-  const status = sessionStatus(s, ext, chat);
+  const status = sessionStatus(s, ext);
   const snippet = s.firstPrompt && !s.title.startsWith(s.firstPrompt.slice(0, 20)) ? s.firstPrompt : null;
   return (
     <li role="option" aria-selected={selected} className={`session${selected ? " on" : ""}`} onClick={() => onSelect(s.id)} data-session={s.id}>
@@ -276,9 +270,7 @@ function SessionItemView({ s, selected, onSelect, now, ext, chat, dupHint, elsew
 
 // ───────────────────────── 세션 상세 ─────────────────────────
 
-type ContinueHow = "chat" | "terminal";
-const PREF_KEY = "aiterm.continueHow";
-const modeKey = (agent: Agent) => `aiterm.chatMode.${agent}`;
+const modeKey = (agent: Agent) => `aiterm.terminalMode.${agent}`;
 const defaultMode = (agent: Agent) => (agent === "codex" ? "workspace-write" : "default");
 
 function SessionDetail() {
@@ -298,12 +290,10 @@ function SessionDetail() {
     return mine.length ? mine[mine.length - 1] : null;
   }, [session, execs]);
 
-  const chats = useStore((s) => s.chats);
   const liveRuns = useStore((s) => s.liveRuns);
-  const chat = session ? chats.find((c) => c.sessionId === session.id || `chat:${c.id}` === session.id) ?? null : null;
   const ext = session ? externalRunOf(session.id, liveRuns) : null;
   const running = !!exec && !exec.exited;
-  const live = !!chat || !!exec; // 대화 탭에 실시간 화면(채팅·터미널)이 있음
+  const live = !!exec; // 대화 탭에 실시간 터미널이 있음
 
   const sid = session?.id;
   useEffect(() => {
@@ -315,42 +305,11 @@ function SessionDetail() {
     try {
       const r = await withExternalConfirm((force) => api.execStart({ agent: session.agent, mode: "resume", sessionId: session.id, cols: 100, rows: 30, force, sandbox: localStorage.getItem(modeKey(session.agent)) ?? defaultMode(session.agent), theme: currentTheme() }));
       if (!r) return;
-      localStorage.setItem(PREF_KEY, "terminal");
       await refreshExecs();
       setTab("talk");
     } catch (e) {
       toast("error", t("이어가기 실패: {error}", { error: errorText(e) }));
     }
-  };
-  const resumeNative = async () => {
-    if (!session) return;
-    try {
-      const r = await withExternalConfirm((force) => api.execStart({ agent: session.agent, mode: "resume-native", sessionId: session.id, cols: 100, rows: 30, force, sandbox: localStorage.getItem(modeKey(session.agent)) ?? defaultMode(session.agent), theme: currentTheme() }));
-      if (!r) return;
-      localStorage.setItem(PREF_KEY, "terminal");
-      await refreshExecs();
-      setTab("talk");
-    } catch (e) {
-      toast("error", t("이어가기 실패: {error}", { error: errorText(e) }));
-    }
-  };
-  const openChat = async () => {
-    if (!session) return;
-    const mode = localStorage.getItem(modeKey(session.agent)) ?? defaultMode(session.agent);
-    try {
-      const r = await withExternalConfirm((force) => api.chatStart({ agent: session.agent, sessionId: session.id, mode, force }));
-      if (!r) return;
-      localStorage.setItem(PREF_KEY, "chat");
-      await useStore.getState().refreshChats();
-      setTab("talk");
-    } catch (e) {
-      toast("error", t("이어가기 실패: {error}", { error: errorText(e) }));
-    }
-  };
-  const closeChat = async () => {
-    if (!chat) return;
-    await api.chatClose(chat.id).catch(() => {});
-    await useStore.getState().refreshChats();
   };
   const stop = async () => {
     if (!exec) return;
@@ -358,7 +317,7 @@ function SessionDetail() {
     if (ok) await api.execKill(exec.id).catch((e) => toast("error", errorText(e)));
   };
 
-  const pending = !!session && (session.id.startsWith("exec:") || session.id.startsWith("chat:"));
+  const pending = !!session && session.id.startsWith("exec:");
   // 세션을 고르지 않은 화면(다른 저장소로 갔을 때 등)에서도 터미널은 내리지 않는다.
   // 내렸다가 다시 만들면 앞선 출력을 재생해 화면을 복원하는데, 재생한 화면은 실제와 어긋날 수 있다.
   return (
@@ -368,17 +327,12 @@ function SessionDetail() {
           <SessionHeader
             s={session}
             running={running}
-            chatOpen={!!chat}
             ext={ext}
-            chat={chat}
             canContinue={session.cwdExists && !pending}
-            onChat={openChat}
             onTerminal={resume}
-            onNativeTerminal={resumeNative}
             onStop={stop}
-            onCloseChat={closeChat}
           />
-          {ext && !running && !chat && (
+          {ext && !running && (
             <div className="banner banner-ext" data-testid="external-banner">
               {t("{client}에서 열려 있는 대화입니다 (PID {pid}). 여기서 동시에 이어가면 기록이 섞일 수 있어요.", { client: clientLabel(ext.client), pid: ext.pid })}
             </div>
@@ -399,7 +353,7 @@ function SessionDetail() {
         </>
       )}
       <div className="detail-body">
-        <TerminalHost selectedExecId={tab === "talk" && !chat ? exec?.id ?? null : null} />
+        <TerminalHost selectedExecId={tab === "talk" ? exec?.id ?? null : null} />
         {!session ? (
           <Empty title={t("세션을 고르세요")}>
             {t("위 목록에서 대화를 고르면 왼쪽 Git 과 오른쪽 파일이 그 대화가 작업한 워크트리를 보여 줍니다.")}
@@ -413,8 +367,7 @@ function SessionDetail() {
           </Empty>
         ) : (
           <>
-            {tab === "talk" && chat && <ChatView chat={chat} />}
-            {tab === "talk" && !chat && exec?.exited && (
+            {tab === "talk" && exec?.exited && (
               <div className="term-exit">
                 {t("에이전트가 끝났습니다 (코드 {code}).", { code: exec.exitCode ?? "?" })}{" "}
                 {!pending && (
@@ -437,46 +390,21 @@ function SessionDetail() {
 function SessionHeader({
   s,
   running,
-  chatOpen,
   ext,
-  chat,
   canContinue,
-  onChat,
   onTerminal,
-  onNativeTerminal,
   onStop,
-  onCloseChat,
 }: {
   s: LinkedSession;
   running: boolean;
-  chatOpen: boolean;
   ext: LiveRun | null;
-  chat: ChatInfo | null;
   canContinue: boolean;
-  onChat: () => void;
   onTerminal: () => void;
-  onNativeTerminal: () => void;
   onStop: () => void;
-  onCloseChat: () => void;
 }) {
   const bs = branchState(s);
   const [info, setInfo] = useState(false);
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  const [, force] = useState(0);
-  const status = sessionStatus(s, ext, chat);
-  const how = (localStorage.getItem(PREF_KEY) as ContinueHow | null) ?? "chat";
-  const mode = localStorage.getItem(modeKey(s.agent)) ?? defaultMode(s.agent);
-  const modes =
-    s.agent === "claude"
-      ? [
-          ["default", t("도구마다 허락 묻기")],
-          ["acceptEdits", t("파일 편집은 자동 허락")],
-          ["plan", t("계획만 세우기 (수정 안 함)")],
-        ]
-      : [
-          ["workspace-write", t("이 워크트리 안에서 쓰기 허락")],
-          ["read-only", t("읽기만 허락")],
-        ];
+  const status = sessionStatus(s, ext);
   const copy = (text: string) => void navigator.clipboard.writeText(text);
   const branchText = bs.unknownCurrent ? t("브랜치 알 수 없음") : bs.currentDetached ? t("브랜치 없음(커밋)") : branchLabel(bs.current);
   return (
@@ -492,29 +420,15 @@ function SessionHeader({
           </span>
         )}
         <span className="spacer" />
-        {chatOpen ? (
-          <button className="btn btn-small" onClick={onCloseChat} title={t("채팅을 닫습니다. 대화는 남아 나중에 이어갈 수 있어요.")}>
-            <X size={12} aria-hidden /> {t("채팅 닫기")}
-          </button>
-        ) : running ? (
+        {running ? (
           <button className="btn btn-small btn-danger" onClick={onStop}>
             <Square size={12} aria-hidden /> {t("멈추기")}
           </button>
         ) : (
           canContinue && (
             <div className="split-btn">
-              <button className="btn btn-small btn-primary" onClick={how === "terminal" ? onTerminal : onChat} data-testid="continue" title={how === "terminal" ? t(s.agent === "codex" ? "자동 선택 터미널로 이어가기" : "원본 CLI 터미널로 이어가기") : t("앱의 채팅 화면으로 이어가기")}>
+              <button className="btn btn-small btn-primary" onClick={onTerminal} data-testid="continue" title={t("원본 CLI 터미널로 이어가기")}>
                 <Play size={12} aria-hidden /> {t("이어가기")}
-              </button>
-              <button
-                className="btn btn-small btn-primary split-caret"
-                aria-label={t("이어가기 방법 고르기")}
-                onClick={(e) => {
-                  const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                  setMenu({ x: r.right - 260, y: r.bottom + 4 });
-                }}
-              >
-                <ChevronDown size={14} aria-hidden />
               </button>
             </div>
           )
@@ -551,26 +465,7 @@ function SessionHeader({
           </code>
         </div>
       )}
-      {menu && (
-        <ContextMenu
-          x={menu.x}
-          y={menu.y}
-          onClose={() => setMenu(null)}
-          items={[
-            { label: t("앱 채팅 화면으로 이어가기"), hint: t("도구 사용을 버튼으로 허락"), onClick: onChat, testId: "open-chat" },
-            { label: t(s.agent === "codex" ? "자동 선택 터미널로 이어가기" : "원본 CLI 터미널로 이어가기"), hint: s.agent === "claude" ? "claude --resume" : t("요청마다 모델 자동 선택"), onClick: onTerminal, testId: "resume" },
-            ...(s.agent === "codex" ? [{ label: t("원본 CLI 터미널로 이어가기"), hint: "codex resume", onClick: onNativeTerminal, testId: "resume-native" }] : []),
-            { header: true, label: t("채팅에서 쓸 허락 범위") },
-            ...modes.map(([v, label]) => ({
-              label: `${mode === v ? "✓ " : " "}${label}`,
-              onClick: () => {
-                localStorage.setItem(modeKey(s.agent), v);
-                force((n) => n + 1);
-              },
-            })),
-          ]}
-        />
-      )}
+
     </div>
   );
 }
@@ -727,13 +622,7 @@ function NewSessionDialog({ onClose }: { onClose: () => void }) {
   const [agent, setAgent] = useState<Agent>("claude");
   const [cwd, setCwd] = useState(focus?.worktreePath ?? "");
   const [busy, setBusy] = useState(false);
-  const [how, setHow] = useState<"terminal" | "chat" | "auto-terminal">((localStorage.getItem("aiterm.newSessionHow") as "terminal" | "chat" | "auto-terminal" | null) ?? (localStorage.getItem(PREF_KEY) as ContinueHow | null) ?? "chat");
-  const [mode, setMode] = useState(localStorage.getItem(modeKey("claude")) ?? "default");
   const [prompt, setPrompt] = useState("");
-  useEffect(() => {
-    setMode(localStorage.getItem(modeKey(agent)) ?? defaultMode(agent));
-    if (agent !== "codex") setHow((value) => value === "auto-terminal" ? "terminal" : value);
-  }, [agent]);
   const options = repos.flatMap((r) => r.worktrees.filter((w) => w.exists && !w.bare).map((w) => ({ repo: r, w })));
   const focusRepo = repos.find((r) => r.worktrees.some((w) => w.path === cwd));
 
@@ -759,21 +648,11 @@ function NewSessionDialog({ onClose }: { onClose: () => void }) {
     setBusy(true);
     try {
       const st = useStore.getState();
-      localStorage.setItem("aiterm.newSessionHow", how);
-      localStorage.setItem(PREF_KEY, how === "auto-terminal" ? "terminal" : how);
-      const selectedMode = agent === "codex" ? "workspace-write" : mode;
-      if (agent !== "codex") localStorage.setItem(modeKey(agent), selectedMode);
-      if (how === "chat") {
-        const c = await api.chatStart({ agent, cwd, mode: selectedMode });
-        await st.refreshChats();
-        st.selectSession(c.sessionId ?? `chat:${c.id}`);
-        if (prompt.trim()) await api.chatSend(c.id, prompt.trim());
-      } else {
-        const e = await api.execStart({ agent, mode: how === "terminal" ? "new-native" : "new", cwd, cols: 100, rows: 30, prompt: prompt.trim() || undefined, sandbox: agent === "codex" ? selectedMode : undefined, theme: currentTheme() });
-        await st.refreshExecs();
-        // 목록에 임시 항목으로 들어가 있으므로 고르면 그 워크트리로 포커스가 옮겨진다.
-        st.selectSession(e.sessionId ?? `exec:${e.id}`);
-      }
+      const selectedMode = defaultMode(agent);
+      const e = await api.execStart({ agent, mode: "new", cwd, cols: 100, rows: 30, prompt: prompt.trim() || undefined, sandbox: agent === "codex" ? selectedMode : undefined, theme: currentTheme() });
+      await st.refreshExecs();
+      // 목록에 임시 항목으로 들어가 있으므로 고르면 그 워크트리로 포커스가 옮겨진다.
+      st.selectSession(e.sessionId ?? `exec:${e.id}`);
       onClose();
     } catch (err) {
       toast("error", t("시작 실패: {error}", { error: errorText(err) }));
@@ -788,18 +667,6 @@ function NewSessionDialog({ onClose }: { onClose: () => void }) {
       <span className="choice-sub">{disabledNote ?? sub}</span>
     </button>
   );
-  const modes =
-    agent === "claude"
-      ? [
-          ["default", t("도구마다 허락 묻기")],
-          ["acceptEdits", t("파일 편집은 자동 허락")],
-          ["plan", t("계획만 세우기 (수정 안 함)")],
-        ]
-      : [
-          ["workspace-write", t("이 워크트리 안에서 쓰기 허락")],
-          ["read-only", t("읽기만 허락")],
-        ];
-
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
       <div className="modal modal-wide" role="dialog" aria-modal="true" aria-label={t("새 에이전트 세션")} onMouseDown={(e) => e.stopPropagation()}>
@@ -821,23 +688,6 @@ function NewSessionDialog({ onClose }: { onClose: () => void }) {
             <option value="__other__">{t("Git 밖의 다른 폴더 고르기…")}</option>
           </select>
         </label>
-        <div className="choice-row">
-          {card(how === "chat", () => setHow("chat"), t("앱 채팅 화면"), t("도구 사용을 버튼으로 허락"))}
-          {card(how === "terminal", () => setHow("terminal"), t("원본 CLI 터미널"), t("CLI 화면 그대로"))}
-          {agent === "codex" && card(how === "auto-terminal", () => setHow("auto-terminal"), t("자동 선택 터미널"), t("요청마다 모델 자동 선택"))}
-        </div>
-        {agent !== "codex" && how === "chat" && (
-          <label className="form-row col">
-            <span className="muted">{t("허락 범위")}</span>
-            <select value={mode} onChange={(e) => setMode(e.target.value)} aria-label={t("허락 범위")}>
-              {modes.map(([v, l]) => (
-                <option key={v} value={v}>
-                  {l}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
         <label className="form-row col">
           <span className="muted">{t("첫 지시 (선택)")}</span>
           <textarea

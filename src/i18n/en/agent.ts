@@ -1,21 +1,4 @@
-/** 영어 사전: agent (AgentPanel·ChatView) */
 export default {
-  "자동 선택 터미널": "Auto-select terminal",
-  "요청마다 모델 자동 선택": "Automatic model selection per request",
-  "자동 선택 터미널로 이어가기": "Continue in auto-select terminal",
-  "선택 미리보기를 불러오지 못했습니다": "Could not load the model preview",
-  "Codex 모델": "Codex model",
-  "자동 선택 (요청 난이도)": "Auto (task complexity)",
-  "단순 작업": "Simple task",
-  "일반 개발": "General development",
-  "복잡한 개발": "Complex development",
-  "CLI 설정 유지": "Keep CLI settings",
-  "기존 Codex 모델·추론 설정을 사용합니다": "Uses your existing Codex model and reasoning settings",
-  "선택 확인 중…": "Checking selection…",
-  "선택한 모델": "Selected model",
-  "요청 문구를 앱 안에서 분류합니다. 선택 결과가 맞지 않으면 직접 바꿀 수 있어요.": "Requests are classified locally. You can override the selection.",
-  "앱 채팅은 메시지마다 모델을 다시 선택합니다": "App chat selects the model for each message",
-  "터미널은 첫 지시로 시작 모델을 선택합니다. 후속 입력은 CLI에서 관리하며 /model로 변경할 수 있어요.": "The first instruction selects the terminal's initial model. The CLI manages subsequent input; use /model to change it.",
   // 세션 목록 날짜 묶음
   오늘: "Today",
   어제: "Yesterday",
@@ -48,8 +31,6 @@ export default {
 
   // 세션 상태
   "답하는 중": "Responding",
-  "채팅 열림": "Chat open",
-  "이 앱의 채팅 화면에서 열려 있습니다": "Open in this app's chat view",
   "터미널 실행 중": "Running in terminal",
   "이 앱의 터미널에서 실행 중입니다": "Running in this app's terminal",
   "{client}에서 실행 중": "Running in {client}",
@@ -94,10 +75,7 @@ export default {
   // 세션 머리
   "브랜치 알 수 없음": "Branch unknown",
   "브랜치 없음(커밋)": "No branch (commit)",
-  "채팅을 닫습니다. 대화는 남아 나중에 이어갈 수 있어요.": "Closes the chat. The conversation is kept, so you can continue later.",
-  "채팅 닫기": "Close chat",
   "원본 CLI 터미널로 이어가기": "Continue in original CLI terminal",
-  "앱의 채팅 화면으로 이어가기": "Continue in the app's chat view",
   이어가기: "Continue",
   "이어가기 방법 고르기": "Choose how to continue",
   "{name} (Git 아님)": "{name} (not Git)",
@@ -112,9 +90,7 @@ export default {
   "시작 {start} · 마지막 {last} · 지금 {current}": "Start {start} · Last {last} · Now {current}",
   "세션 id": "Session id",
   "(기록 대기 중)": "(waiting for log)",
-  "앱 채팅 화면으로 이어가기": "Continue in app chat view",
   "도구 사용을 버튼으로 허락": "Allow tool use with buttons",
-  "채팅에서 쓸 허락 범위": "Permission scope for chat",
   "터미널 준비 중…": "Preparing terminal…",
 
   // 이전 기록·작업한 파일
@@ -142,7 +118,6 @@ export default {
   "작업할 워크트리": "Worktree to work in",
   "＋ 새 워크트리 만들어서 시작…": "＋ Create a new worktree and start…",
   "Git 밖의 다른 폴더 고르기…": "Choose another folder outside Git…",
-  "앱 채팅 화면": "App chat view",
   "원본 CLI 터미널": "Original CLI terminal",
   "CLI 화면 그대로": "The CLI screen as is",
   "허락 범위": "Permission scope",
@@ -154,7 +129,6 @@ export default {
   "시작하는 중…": "Starting…",
   시작: "Start",
 
-  // 채팅 화면
   "에이전트 프로세스가 끝났습니다 (코드 {code}).": "Agent process exited (code {code}).",
   "허락 범위: {mode}": "Permission scope: {mode}",
   "이 워크트리 안에서 쓰기": "Write inside this worktree",

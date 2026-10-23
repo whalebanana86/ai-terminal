@@ -2,8 +2,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type { Theme } from "./theme";
 
-export type CodexModelMode = "auto" | "simple" | "general" | "complex" | "inherit";
-export interface CodexModelRoute { task: "simple" | "general" | "complex"; model: "gpt-6-luna" | "gpt-6.1-sol"; effort: "low" | "medium" }
 
 export type Agent = "claude" | "codex";
 
@@ -289,31 +287,6 @@ export interface LiveRun {
   ownedByApp: boolean;
 }
 
-export interface ChatInfo {
-  modelRoute?: CodexModelRoute | null;
-  id: string;
-  agent: Agent;
-  sessionId: string | null;
-  cwd: string;
-  busy: boolean;
-  mode: string;
-  alive: boolean;
-  pid: number | null;
-}
-
-export type ChatEvent =
-  | { kind: "modelSelected"; route: CodexModelRoute }
-  | { kind: "session"; sessionId: string }
-  | { kind: "user"; text: string }
-  | { kind: "assistant"; text: string }
-  | { kind: "tool"; id: string; name: string; summary: string; status: "running" | "ok" | "error"; output: string | null }
-  | { kind: "permission"; requestId: string; tool: string; summary: string; description: string | null; input: unknown }
-  | { kind: "permissionResolved"; requestId: string; allowed: boolean }
-  | { kind: "fileChange"; paths: string[] }
-  | { kind: "turnEnd"; costUsd: number | null; isError: boolean; text: string | null }
-  | { kind: "error"; text: string }
-  | { kind: "exit"; code: number | null };
-
 export interface Compare {
   ahead: number;
   behind: number;
@@ -341,7 +314,6 @@ export interface SubscriptionQuota {
 }
 
 export const api = {
-  codexModelRoute: (text: string, mode: CodexModelMode = "auto", previous?: string) => invoke<CodexModelRoute | null>("codex_model_route", { text, mode, previous: previous ?? null }),
   subscriptionUsage: () => invoke<SubscriptionQuota[]>("subscription_usage"),
   appInfo: () => invoke<AppInfo>("app_info"),
   repoList: () => invoke<RepoSummary[]>("repo_list"),
@@ -401,14 +373,6 @@ export const api = {
 
   liveRuns: () => invoke<LiveRun[]>("live_runs"),
 
-  chatStart: (args: { agent: Agent; sessionId?: string; cwd?: string; mode: string; force?: boolean }) => invoke<ChatInfo>("chat_start", { args }),
-  chatAttach: (id: string, onEvent: Channel<ChatEvent>) => invoke<number>("chat_attach", { id, onEvent }),
-  chatDetach: (id: string, sinkId: number) => invoke<void>("chat_detach", { id, sinkId }),
-  chatSend: (id: string, text: string, modelMode: CodexModelMode = "auto") => invoke<void>("chat_send", { id, text, modelMode }),
-  chatPermission: (id: string, requestId: string, allow: boolean) => invoke<void>("chat_permission", { id, requestId, allow }),
-  chatInterrupt: (id: string) => invoke<void>("chat_interrupt", { id }),
-  chatClose: (id: string) => invoke<void>("chat_close", { id }),
-  chatList: () => invoke<ChatInfo[]>("chat_list"),
 
   branchCreate: (path: string, name: string, start: string | null, checkout: boolean) =>
     invoke<string>("git_branch_create", { path, name, start, checkout }),

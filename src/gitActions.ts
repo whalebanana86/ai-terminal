@@ -17,11 +17,10 @@ function agentsIn(worktree: string): number {
 }
 
 /** 그 워크트리(하위 폴더 포함)에서 돌고 있는 에이전트 수: 앱 터미널 + 앱 채팅 + 앱 밖 */
-export function countAgentsIn(s: Pick<ReturnType<typeof st>, "sessions" | "chats" | "liveRuns">, worktree: string): number {
+export function countAgentsIn(s: Pick<ReturnType<typeof st>, "sessions" | "liveRuns">, worktree: string): number {
   const app = s.sessions.filter((x) => x.runningExecId && x.worktreePath === worktree).length;
-  const chats = s.chats.filter((c) => c.cwd === worktree || c.cwd.startsWith(worktree + "/")).length;
   const ext = s.liveRuns.filter((r) => !r.ownedByApp && r.cwd && (r.cwd === worktree || r.cwd.startsWith(worktree + "/"))).length;
-  return app + chats + ext;
+  return app + ext;
 }
 
 function afterChange() {

@@ -1518,7 +1518,7 @@ button.center-tab {
   cursor: pointer;
 }
 
-/* ── 외부 실행 / 채팅 ── */
+/* ── 외부 실행 ── */
 .dot-external {
   background: #b48cff;
   box-shadow: 0 0 6px #b48cff;
@@ -1532,135 +1532,6 @@ button.center-tab {
   border-color: #4a3d72;
   color: #d9ccff;
 }
-.chat {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.chat-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-bottom: 1px solid var(--line);
-}
-.chat-list {
-  flex: 1;
-  overflow: auto;
-  padding: 6px 10px 12px;
-  user-select: text;
-}
-.chat-tool {
-  margin: 3px 0;
-}
-.chat-tool-head {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: none;
-  border: none;
-  padding: 1px 0;
-  text-align: left;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--fg-dim);
-  white-space: nowrap;
-  overflow: hidden;
-}
-.chat-tool-head .tool-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.tool-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--fg-faint);
-  flex-shrink: 0;
-}
-.st-running .tool-dot {
-  background: var(--warn);
-}
-.st-ok .tool-dot {
-  background: var(--ok);
-}
-.st-error .tool-dot {
-  background: var(--err);
-}
-.chat-tool-out {
-  margin: 2px 0 6px 12px;
-  padding: 6px 8px;
-  background: var(--bg-0);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  max-height: 260px;
-  overflow: auto;
-  font: 11px/1.45 var(--mono);
-  white-space: pre-wrap;
-}
-.perm {
-  margin: 8px 0;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--line-2);
-  background: var(--bg-2);
-}
-.perm.pending {
-  border-color: var(--warn);
-  background: #2a2216;
-}
-.perm-summary {
-  font: 11.5px/1.45 var(--mono);
-  margin: 6px 0;
-  padding: 6px 8px;
-  background: var(--bg-0);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  white-space: pre-wrap;
-  word-break: break-all;
-  max-height: 240px;
-  overflow: auto;
-  user-select: text;
-}
-.perm-actions {
-  display: flex;
-  gap: 6px;
-  justify-content: flex-end;
-}
-.turn-end {
-  margin: 6px 0 12px;
-  font-size: 11px;
-  color: var(--fg-faint);
-  border-top: 1px dashed var(--line-2);
-  padding-top: 3px;
-}
-.turn-end.err {
-  color: var(--err);
-}
-.typing {
-  color: var(--fg-dim);
-  font-size: 12px;
-  padding: 4px 0;
-}
-.chat-input {
-  display: flex;
-  gap: 6px;
-  padding: 6px;
-  border-top: 1px solid var(--line);
-  align-items: flex-end;
-}
-.chat-input textarea {
-  flex: 1;
-  resize: none;
-  background: var(--bg-2);
-  border: 1px solid var(--line-2);
-  border-radius: 6px;
-  padding: 6px 8px;
-  user-select: text;
-}
-
 /* ── UI 개편: 아이콘·버튼·상태 ── */
 .btn {
   display: inline-flex;
@@ -1832,11 +1703,6 @@ li:hover .hover-only,
   color: var(--ok);
   border-color: #2b5a33;
   background: #142a19;
-}
-.st-chat {
-  color: var(--accent);
-  border-color: #234d6c;
-  background: #12273a;
 }
 .st-ext {
   color: #c9b3ff;
@@ -2718,13 +2584,11 @@ li:hover .hover-only,
 [data-theme="light"] .st-ext { color: #6639ba; border-color: #d8ccf5; }
 [data-theme="light"] .st-ext { background: #f5f1ff; }
 [data-theme="light"] .st-run { border-color: #b7e1c1; background: #e6f6ea; }
-[data-theme="light"] .st-chat { border-color: #c6dcf3; background: #e8f1fb; }
 [data-theme="light"] .term-stack,
 [data-theme="light"] .hangul-preview { background: #fbfbfc; }
 [data-theme="light"] .hangul-preview { color: #111; }
 [data-theme="light"] .term-exit { background: #fff4e0; border-top-color: #efd39a; }
 [data-theme="light"] .msg-user .msg-text { background: #e8f1fb; border-color: #c6dcf3; }
-[data-theme="light"] .perm.pending { background: #fff7e6; }
 [data-theme="light"] .hunk-head { color: #3a6ea5; background: #eef4fb; }
 [data-theme="light"] .dl-add { background: #e6f6ea; }
 [data-theme="light"] .dl-add .lc { color: #116329; }
@@ -2799,8 +2663,23 @@ li:hover .hover-only,
 .quota-window.high { color:var(--warning, #e7b76b); }
 .quota-window.high i { background:currentColor; }
 .quota-refresh { display:flex; padding:4px; border:0; background:transparent; color:var(--fg-dim); cursor:pointer; }
-.codex-model-picker { display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; padding:6px 10px; border-top:1px solid var(--line); flex-shrink:0; }
-.codex-model-picker label { display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:12px; }
-.codex-model-picker select { max-width:100%; font-size:12px; }
 
 .ref-merge { display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; color: var(--fg-dim); background: var(--bg-2); }
+
+/* 패널 폭을 기준으로 브랜치 전환 버튼을 안내 아래로 보낸다. */
+.git-focus { container-type: inline-size; }
+.branch-mismatch {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  white-space: normal;
+}
+.branch-mismatch-text { min-width: 0; overflow-wrap: anywhere; }
+.branch-mismatch-switch { max-width: 100%; }
+.branch-mismatch-close { grid-column: 3; grid-row: 1; }
+@container (max-width: 480px) {
+  .branch-mismatch { grid-template-columns: minmax(0, 1fr) auto; }
+  .branch-mismatch-switch { grid-column: 1 / -1; grid-row: 2; justify-self: start; white-space: normal; overflow-wrap: anywhere; text-align: left; }
+  .branch-mismatch-close { grid-column: 2; align-self: start; }
+}

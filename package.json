@@ -1,7 +1,7 @@
 {
   "name": "ai-terminal",
   "private": true,
-  "version": "0.10.0",
+  "version": "0.10.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
-    "check": "tsc --noEmit -p . && vitest run && python3 -B -m unittest discover -s scripts -p 'test_codewhere.py' && cd src-tauri && cargo test",
+    "check": "tsc --noEmit -p . && vitest run && cd src-tauri && cargo test",
     "postinstall": "bash scripts/install_app.sh",
     "install-app": "bash scripts/install_app.sh"
   },

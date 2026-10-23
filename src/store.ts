@@ -1,7 +1,7 @@
 // 앱 전역 상태. "focus" 하나를 세 패널이 함께 구독한다.
 import { create } from "zustand";
 import { lang, t } from "./i18n";
-import { api, errorText, type AppInfo, type ChatInfo, type ExecInfo, type LinkedSession, type LiveRun, type RepoSummary } from "./api";
+import { api, errorText, type AppInfo, type ExecInfo, type LinkedSession, type LiveRun, type RepoSummary } from "./api";
 import { mergeSessions } from "./logic";
 import { useExtensions } from "./extensions";
 
@@ -110,7 +110,6 @@ interface State {
   toasts: Toast[];
   confirm: ConfirmRequest | null;
   prompt: PromptRequest | null;
-  chats: ChatInfo[];
   liveRuns: LiveRun[];
   newSessionOpen: boolean;
   restored: boolean;
@@ -134,7 +133,6 @@ interface State {
   /** 버튼 셋(취소·altLabel·confirmLabel) 확인창. 취소면 null */
   choose: (req: Omit<ConfirmRequest, "resolve"> & { altLabel: string }) => Promise<"confirm" | "alt" | null>;
   promptForm: (req: Omit<PromptRequest, "resolve">) => Promise<Record<string, string> | null>;
-  refreshChats: () => Promise<void>;
   setLiveRuns: (runs: LiveRun[]) => void;
   setNewSessionOpen: (open: boolean) => void;
   onFsChanged: (worktree: string, paths: string[], files: boolean, git: boolean) => void;
@@ -177,7 +175,6 @@ export const useStore = create<State>((set, get) => ({
   toasts: [],
   confirm: null,
   prompt: null,
-  chats: [],
   liveRuns: [],
   newSessionOpen: false,
   restored: false,
@@ -203,7 +200,7 @@ export const useStore = create<State>((set, get) => ({
     } catch {
       /* 깨진 저장값은 무시 */
     }
-    await Promise.all([get().refreshRepos(), get().refreshExecs(), get().refreshSessions(), get().refreshChats()]);
+    await Promise.all([get().refreshRepos(), get().refreshExecs(), get().refreshSessions()]);
     api.liveRuns().then((r) => set({ liveRuns: r }), () => {});
     // 선택된 세션이 있으면 그 세션 워크트리로 포커스를 다시 맞춘다(저장 이후 워크트리가 바뀌었을 수 있음).
     const sel = get().selectedSessionId;
@@ -253,7 +250,7 @@ export const useStore = create<State>((set, get) => ({
 
   refreshExecs: async () => {
     const execs = await api.execList().catch(() => get().execs);
-    set({ execs, sessions: mergeSessions(get().rawSessions, execs, get().chats) });
+    set({ execs, sessions: mergeSessions(get().rawSessions, execs) });
     // 임시 항목(exec:<id>)을 보고 있었는데 실제 세션과 연결되었으면 선택을 옮긴다.
     const sel = get().selectedSessionId;
     if (sel?.startsWith("exec:")) {
@@ -306,7 +303,7 @@ export const useStore = create<State>((set, get) => ({
     const tab = get().activeTab;
     const belongs = (session: LinkedSession) => session.worktreePath === target.path || session.otherWorktrees?.includes(target.path);
     const remembered = get().sessions.find((session) => session.id === get().repoTabSessions[id] && belongs(session));
-    const running = get().sessions.filter(belongs).filter((session) => session.runningExecId || get().liveRuns.some((r) => r.sessionId === session.externalId || r.sessionId === session.id) || get().chats.some((c) => c.alive && (c.sessionId === session.id || `chat:${c.id}` === session.id))).sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    const running = get().sessions.filter(belongs).filter((session) => session.runningExecId || get().liveRuns.some((r) => r.sessionId === session.externalId || r.sessionId === session.id)).sort((a, b) => b.updatedAt - a.updatedAt)[0];
     const session = remembered ?? running;
     if (session) get().selectSession(session.id);
     if (tab && get().fileTabs.some((x) => x.id === tab)) set({ activeTab: tab });
@@ -404,20 +401,6 @@ export const useStore = create<State>((set, get) => ({
       });
     }),
 
-  refreshChats: async () => {
-    const chats = await api.chatList().catch(() => get().chats);
-    set({ chats, sessions: mergeSessions(get().rawSessions, get().execs, chats) });
-    // 새 채팅(임시 항목 chat:<id>)을 보고 있었는데 세션 id 가 정해졌으면 선택을 옮긴다.
-    const sel = get().selectedSessionId;
-    if (sel?.startsWith("chat:")) {
-      const c = chats.find((x) => `chat:${x.id}` === sel && x.sessionId);
-      if (c?.sessionId) {
-        await get().refreshSessions();
-        get().selectSession(c.sessionId);
-      }
-    }
-  },
-
   setLiveRuns: (runs) => {
     if (JSON.stringify(runs) !== JSON.stringify(get().liveRuns)) set({ liveRuns: runs });
   },
@@ -501,7 +484,7 @@ async function loadSessions() {
       const key = JSON.stringify(raw);
       if (key === lastSessionsKey) return;
       lastSessionsKey = key;
-      set({ rawSessions: raw, sessions: mergeSessions(raw, get().execs, get().chats) });
+      set({ rawSessions: raw, sessions: mergeSessions(raw, get().execs) });
       // 세션에서 저장소가 새로 발견되었을 수 있다.
       if (raw.some((s) => s.repoId && !get().repos.some((r) => r.id === s.repoId))) await get().refreshRepos();
     } catch (e) {

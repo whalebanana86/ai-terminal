@@ -224,19 +224,18 @@ export function GitPanel() {
           )}
         </div>
         {sessionHere && bs?.changedSinceLast && bs.last && dismissed !== `${sessionHere.id}:${bs.last}:${bs.current}` && (
-          <div className="banner banner-warn one-line" data-testid="branch-mismatch">
-            <span>
+          <div className="banner banner-warn branch-mismatch" data-testid="branch-mismatch">
+            <span className="branch-mismatch-text">
               {t("이 세션은")} <b>{branchLabel(bs.last)}</b>
               {t("에서 작업했어요. 지금 워크트리는")} <b>{bs.currentDetached ? t("브랜치 없음|세션 경고") : branchLabel(bs.current)}</b>
               {t("입니다.")}
             </span>
-            <span className="spacer" />
             {graph && bs.last !== "HEAD" && (
-              <button className="btn btn-small" onClick={() => ga.checkout(wtPath, bs.last!, "branch", graph.worktrees)}>
+              <button className="btn btn-small branch-mismatch-switch" onClick={() => ga.checkout(wtPath, bs.last!, "branch", graph.worktrees)}>
                 {t("{branch}로 전환…", { branch: branchLabel(bs.last) })}
               </button>
             )}
-            <button className="icon-btn ghost" aria-label={t("닫기")} onClick={() => setDismissed(`${sessionHere.id}:${bs.last}:${bs.current}`)}>
+            <button className="icon-btn ghost branch-mismatch-close" aria-label={t("닫기")} onClick={() => setDismissed(`${sessionHere.id}:${bs.last}:${bs.current}`)}>
               <X size={13} aria-hidden />
             </button>
           </div>

@@ -53,7 +53,7 @@ WORK=$(cd "$DEMO_DIR/work" && pwd -P)
 echo "── 앱 실행 (데모 ID, 가짜 HOME)"
 stop_app
 cd "$ROOT"
-(AITERM_HOME="$DEMO_DIR/home" AITERM_CLAUDE_BIN="$HERE/demo/fake-claude.sh" \
+(AITERM_HOME="$DEMO_DIR/home" \
   nohup pnpm tauri dev --features automation --config '{"identifier":"dev.aiterminal.demo"}' > "$DEMO_DIR/app.log" 2>&1 &)
 for _ in $(seq 1 150); do [ -S "$SOCK" ] && break; sleep 2; done
 [ -S "$SOCK" ] || { echo "앱이 뜨지 않았습니다: $DEMO_DIR/app.log"; exit 1; }
@@ -73,8 +73,6 @@ step "overview()" >/dev/null; shot overview
 step "switchSession()" >/dev/null; step "openDiff()" >/dev/null; shot worktree-switch
 step "image()" >/dev/null; shot image
 step "back()" >/dev/null
-step "chat(false)" >/dev/null; shot chat
-step "allow()" >/dev/null
 step "stage()" >/dev/null; shot stage
 step "graphMenu()" >/dev/null; shot graph-menu
 step "closeMenu()" >/dev/null
@@ -89,7 +87,7 @@ if [ $VIDEO = 1 ]; then
   # 상태를 처음으로 되돌리고(예시 데이터 다시 만들기) 같은 순서를 천천히 돌리며 창을 연달아 찍는다.
   stop_app
   python3 "$HERE/demo/make_demo.py" "$DEMO_DIR" >/dev/null
-  (AITERM_HOME="$DEMO_DIR/home" AITERM_CLAUDE_BIN="$HERE/demo/fake-claude.sh" \
+  (AITERM_HOME="$DEMO_DIR/home" \
     nohup pnpm tauri dev --features automation --config '{"identifier":"dev.aiterminal.demo"}' > "$DEMO_DIR/app.log" 2>&1 &)
   for _ in $(seq 1 150); do [ -S "$SOCK" ] && break; sleep 2; done
   sleep 4
@@ -111,8 +109,6 @@ if [ $VIDEO = 1 ]; then
   step "openDiff()" >/dev/null; sleep 1.5
   step "image()" >/dev/null; sleep 2
   step "back()" >/dev/null; sleep 0.8
-  step "chat(true)" >/dev/null; sleep 1.5
-  step "allow()" >/dev/null; sleep 1.5
   step "stage()" >/dev/null; sleep 1.2
   step "stageHunk()" >/dev/null; sleep 1
   step "graphMenu()" >/dev/null; sleep 1.8

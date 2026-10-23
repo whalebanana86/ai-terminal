@@ -1,9 +1,6 @@
 #[macro_use]
 pub mod i18n;
 pub mod brand;
-pub mod chat;
-pub mod codex_models;
-pub mod codex_terminal;
 pub mod commands;
 pub mod core;
 pub mod db;
@@ -122,7 +119,6 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
-            codex_models::codex_model_route,
             usage::subscription_usage,
             updates::check_update,
             updates::install_update,
@@ -174,14 +170,6 @@ pub fn run() {
             commands::reveal_in_finder,
             commands::automation_reply,
             commands::live_runs,
-            commands::chat_start,
-            commands::chat_attach,
-            commands::chat_detach,
-            commands::chat_send,
-            commands::chat_permission,
-            commands::chat_interrupt,
-            commands::chat_close,
-            commands::chat_list,
             commands::git_branch_create,
             commands::git_branch_delete,
             commands::git_compare,
@@ -207,7 +195,6 @@ pub fn run() {
                 // 앱이 띄운 에이전트 프로세스를 남기지 않는다.
                 if let Some(state) = app.try_state::<AppState>() {
                     state.core.pty.kill_all();
-                    state.core.chats.close_all();
                 }
             }
         });

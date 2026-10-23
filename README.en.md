@@ -7,7 +7,7 @@ Formerly AI Terminal. Existing repositories and session settings are preserved. 
 [한국어](README.md) · **English**
 
 <p align="center">
-  <img src="docs/demo.gif" width="900" alt="30-second demo: pick a session → all three panes follow its worktree → file diff and image compare → continue in chat with a tool permission card → stage part of a file → graph menu → worktrees">
+  <img src="docs/demo.gif" width="900" alt="30-second demo: pick a session → all three panes follow its worktree → file diff and image compare → continue in the terminal → stage part of a file → graph menu → worktrees">
   <br><sub>30-second demo (<a href="docs/demo.mp4">MP4</a>) · recorded with made-up sample data</sub>
 </p>
 
@@ -41,7 +41,7 @@ So Code Whereabouts
 
 - lists your local Claude Code and Codex conversations **per repository and worktree**,
 - moves the Git and file panes to the session's worktree **without ever checking anything out** (only the view changes),
-- and continues a conversation with one button, either in the original CLI or in the app's chat view.
+- and continues a conversation with one button, in the original CLI terminal.
 
 ## Install
 
@@ -93,24 +93,15 @@ The coloured line under the title bar is the colour of the worktree you are look
 - If the branch at the start of the session differs from the current branch, it shows `feature/tags → main`.
 - Sessions currently open outside the app (another terminal, the Codex app…) are marked "running in Terminal", and opening them here asks first.
 
-### Automatic Codex model selection
-
-Codex requests default to local, wording-based task classification: simple maintenance and copy edits use **GPT-6 Luna Low**, general development uses **GPT-6.1 Sol Low**, and complex architecture, concurrency or rendering work uses **GPT-6.1 Sol Medium**. No classification API is called. The composer previews the choice and lets you override it or keep your CLI settings.
-
-Choose **Original CLI terminal** in New Session to use the standard Codex CLI. **Auto-select terminal** is available as a separate option.
-
-Both app chat and the bundled **auto-select terminal** select a model per request and resume the same conversation ID. Choose Codex → Auto-select terminal in New Session; no Python or global CLI installation is required. Short continuations retain the previous category within the open conversation. Use `/paste` for multiline input (end with a line containing only `.`), `/status` for the session ID, and `/exit` to quit. The selected read-only/workspace-write sandbox is passed through. User configuration stays unchanged and unavailable models surface an error without retrying another model. Existing running original terminals keep running; open or resume a terminal to use the new router.
 
 ### Continuing a conversation
 
-- The **hide list** button in the Agents header (or dragging the divider all the way up) folds the session list away so the terminal or chat gets the whole pane height; the state and heights are remembered.
+- The **hide list** button in the Agents header (or dragging the divider all the way up) folds the session list away so the terminal gets the whole pane height; the state and heights are remembered.
 - The terminal font is **Haengbang Mono** (a modified D2Coding, OFL) whose Hangul is exactly two Latin cells wide, so Korean text has no gaps and more fits per line.
 - **Click a file path in terminal output to open it inside the app.** Links recognize relative and absolute paths, `file.ts:line:column`, quoted paths containing spaces or Korean characters, and long paths wrapped across terminal rows. Missing files and paths outside the worktree are not linked.
 
-![Chat view: the agent asks permission to run the tests](docs/screenshots/chat.png)
 
-- **Continue (이어가기)**, with ▾ to choose how:
-  - **Chat view** — before the agent runs a command or edits a file, it shows the **actual command or content as a card** and waits for Allow/Deny. Choose the permission scope (ask for each tool, auto-allow file edits, plan only).
+- **Continue (이어가기)** opens the original CLI terminal:
   - **Original CLI terminal** — the real `claude` / `codex` UI inside the app, with your slash commands, login and subscription.
 - **＋ New session** (`⌘N`) starts a new agent in the worktree you choose, optionally with a first instruction, or in a brand-new worktree so it doesn't collide with other agents.
 - Run several at once; switching sessions doesn't stop running agents.
@@ -161,10 +152,6 @@ Turn on **File editing** in Settings → **Features** and files are **editable a
 | `⌘,` | Settings (language, appearance, external editor, features) |
 | `⌘S` / `⌘F` | In file editing: save / find |
 
-### Codex terminal for any repository
-
-Install the shared `codewhere` command with `python3 scripts/install_cli.py`. Run `codewhere` in any Git repository to select a model per request while continuing the same conversation. Use `codewhere "request"` for one request or `codewhere --dry-run "request"` to preview. See [installation and usage](docs/codex-terminal.md).
-
 ## Privacy
 
 - No account. Choosing Check for Updates contacts GitHub for release metadata and update files. No repository paths or conversation contents are sent (the UI remains locked down by CSP).
@@ -181,7 +168,7 @@ Install the shared `codewhere` command with `python3 scripts/install_cli.py`. Ru
 - **Model:** Repository → Worktree → Branch/HEAD, linked to AgentSession (a CLI conversation) and AgentExecution (one run started by the app). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - **Logs read:** `~/.claude/projects/*/<id>.jsonl`, `~/.claude/sessions/<pid>.json`, `~/.codex/state_*.sqlite` (read-only), `~/.codex/sessions/**/rollout-*.jsonl[.zst]`, `~/.codex/thread-writer-locks/`. `CLAUDE_CONFIG_DIR` and `CODEX_HOME` are honoured.
 - **Linking a session to a worktree:** the last recorded cwd wins (resume always runs in the first cwd, because `claude --resume` looks up the log by its starting folder). Sessions started in a parent folder that is not a repository are linked to the repository folder they worked in most recently (from the cwd values in the last 2 MB of the log). Running sessions are detected with libproc, without spawning `ps` or `lsof`.
-- **Commands:** `claude --resume <id>`; Codex terminals use a bundled request router with per-turn `codex exec --json` / `codex exec resume`; chat uses `claude -p --input-format stream-json --output-format stream-json --verbose --permission-prompts host --permission-prompt-tool stdio` and answers `can_use_tool` requests with the CLI's own input; Codex chat runs `codex exec --json` per turn.
+- **Commands:** `claude --resume <id>`; Codex terminals use the original `codex` / `codex resume <id>` CLI.
 - **Author names:** the graph and commit details read `%aN`/`%aE`/`%cN`, so they follow `.mailmap` (even with `log.mailmap=false`). To show someone who committed under several names as one person, put a `.mailmap` in the repository root.
 - **Security:** every Git/file command only accepts paths inside a registered worktree (`..`, absolute paths and symlinks pointing outside are refused). The only file write is `fs_save`, accepted only while File editing is on; features change only through `extension_set` (the UI's `kv_set` can't touch `ext.*`), and File editing turns on only after a person clicks the macOS dialog Rust shows, so the webview alone can't enable writes. External editors are limited to a known list; `git init` refuses home/system folders. The automation socket used by tests exists only in `--features automation` builds.
 - **Footprint:** CPU while an agent works 3.14% → 0.74%, memory 194 → 148 MB, session list 108 → 2 ms, UI bundle 11 MB → 3.5 MB; app 7.5 MB, dmg 3.8 MB.
@@ -206,4 +193,4 @@ MIT. Inspired by GitKraken's information layout; no GitKraken code or proprietar
 
 ### Updates from the app menu
 
-Choose **Code Whereabouts → Check for Updates…**. Signed releases can be downloaded, verified and installed in the app, then restarted. Agents running in a terminal are handed to the new version and keep going, even mid-task; wait for chat responses to finish before installing. Older releases open the download page. GitHub is contacted only when you request an update; no repository paths or conversations are sent. See [docs/UPDATES.md](docs/UPDATES.md) for signing setup.
+Choose **Code Whereabouts → Check for Updates…**. Signed releases can be downloaded, verified and installed in the app, then restarted. Agents running in a terminal are handed to the new version and keep going, even mid-task. Older releases open the download page. GitHub is contacted only when you request an update; no repository paths or conversations are sent. See [docs/UPDATES.md](docs/UPDATES.md) for signing setup.

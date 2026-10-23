@@ -587,82 +587,6 @@ pub fn live_runs(state: State<'_, AppState>) -> Vec<crate::procs::LiveRun> {
     state.core.live_runs()
 }
 
-// ───────────── 채팅 ─────────────
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChatStartArgs {
-    pub agent: String,
-    pub session_id: Option<String>,
-    pub cwd: Option<String>,
-    pub mode: String,
-    #[serde(default)]
-    pub force: bool,
-}
-
-#[tauri::command]
-pub async fn chat_start(state: State<'_, AppState>, args: ChatStartArgs) -> Res<crate::chat::ChatInfo> {
-    let core = state.core.clone();
-    blocking(move || {
-        if let Some(c) = &args.cwd {
-            if args.session_id.is_none() && !std::path::Path::new(c).is_dir() {
-                anyhow::bail!(tr!("폴더가 없습니다: {c}", "Folder not found: {c}"));
-            }
-        }
-        core.chat_start(&args.agent, args.session_id.as_deref(), args.cwd.as_deref(), &args.mode, args.force)
-    })
-    .await
-}
-
-#[tauri::command]
-pub fn chat_attach(state: State<'_, AppState>, id: String, on_event: Channel<serde_json::Value>) -> Res<u64> {
-    state
-        .core
-        .chats
-        .attach(&id, Box::new(move |ev| on_event.send(serde_json::to_value(ev).unwrap_or_default()).is_ok()))
-        .map_err(err)
-}
-
-#[tauri::command]
-pub fn chat_detach(state: State<'_, AppState>, id: String, sink_id: u64) {
-    state.core.chats.detach(&id, sink_id);
-}
-
-#[tauri::command]
-pub async fn chat_send(app: tauri::AppHandle, state: State<'_, AppState>, id: String, text: String, model_mode: Option<String>) -> Res<()> {
-    use tauri::Emitter;
-    let core = state.core.clone();
-    blocking(move || {
-        let app2 = app.clone();
-        core.chats.send_with_model(&id, &text, model_mode.as_deref(), std::sync::Arc::new(move |info| {
-            let _ = app2.emit("chat-changed", info);
-        }))
-    })
-    .await
-}
-
-#[tauri::command]
-pub fn chat_permission(state: State<'_, AppState>, id: String, request_id: String, allow: bool) -> Res<()> {
-    state.core.chats.respond_permission(&id, &request_id, allow).map_err(err)
-}
-
-#[tauri::command]
-pub fn chat_interrupt(state: State<'_, AppState>, id: String) -> Res<()> {
-    state.core.chats.interrupt(&id).map_err(err)
-}
-
-#[tauri::command]
-pub fn chat_close(app: tauri::AppHandle, state: State<'_, AppState>, id: String) {
-    use tauri::Emitter;
-    state.core.chats.close(&id);
-    let _ = app.emit("chat-changed", serde_json::json!({ "id": id, "closed": true }));
-}
-
-#[tauri::command]
-pub fn chat_list(state: State<'_, AppState>) -> Vec<crate::chat::ChatInfo> {
-    state.core.chats.list()
-}
-
 // ───────────── Git 쓰기 작업 (브랜치·워크트리·스테이징·병합) ─────────────
 
 macro_rules! git_cmd {
@@ -720,8 +644,7 @@ pub async fn git_worktree_remove(state: State<'_, AppState>, path: String, targe
         let canon = std::fs::canonicalize(&target)?;
         let inside = |p: &str| std::fs::canonicalize(p).map(|c| c.starts_with(&canon)).unwrap_or(false);
         let busy_exec = core.exec_list().into_iter().any(|e| !e.exited && inside(&e.cwd));
-        let busy_chat = core.chats.list().into_iter().any(|c| c.alive && inside(&c.cwd));
-        if busy_exec || busy_chat {
+        if busy_exec {
             anyhow::bail!(tr!("이 워크트리에서 앱의 에이전트가 실행 중입니다. 먼저 중지하세요.", "An agent started from this app is running in this worktree. Stop it first."));
         }
         core.refresh_live();

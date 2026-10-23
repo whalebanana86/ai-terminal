@@ -6,7 +6,7 @@ vi.mock("./api", () => ({
     kvSet: vi.fn(async (k: string, v: string) => { mock.values.set(k, v); }),
     kvGet: vi.fn(async (k: string) => mock.values.get(k) ?? null),
     appInfo: async () => null, setLang: async () => {}, repoList: async () => mock.repos,
-    execList: async () => [], chatList: async () => [], sessions: async () => [], liveRuns: async () => [],
+    execList: async () => [], sessions: async () => [], liveRuns: async () => [],
   }, errorText: String,
 }));
 vi.mock("./panels/TerminalView", () => ({ exposeTerminals: () => {} }));
