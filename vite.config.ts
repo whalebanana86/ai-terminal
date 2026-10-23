@@ -1,4 +1,6 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
+import { configDefaults } from "vitest/config";
 import react from "@vitejs/plugin-react";
 // @ts-expect-error type error without @types/node package
 import process from "node:process";
@@ -25,8 +27,10 @@ export default defineConfig(() => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 3. tell Vite to ignore watching `src-tauri` (and agent worktrees under `.claude/worktrees`)
+      ignored: ["**/src-tauri/**", "**/.claude/**"],
     },
   },
+  // 에이전트가 저장소 안 .claude/worktrees 에 만든 작업 폴더의 테스트까지 돌지 않게
+  test: { exclude: [...configDefaults.exclude, "**/.claude/**"] },
 }));

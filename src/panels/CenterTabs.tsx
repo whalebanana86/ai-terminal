@@ -7,7 +7,8 @@ import { dropDraft, getDraft, saveDraft, useHasDraft } from "../extensions/edito
 import { FileIcon } from "../fileIcons";
 import { t } from "../i18n";
 import { baseName } from "../logic";
-import { useStore, type FileTab } from "../store";
+import { useShallow } from "zustand/react/shallow";
+import { shownTab, useStore, visibleTabs, type FileTab } from "../store";
 import { FileViewer } from "./FilePanel";
 
 /**
@@ -45,8 +46,9 @@ export async function closeFileTabs(ids: string[]) {
 }
 
 export function CenterTabBar() {
-  const tabs = useStore((s) => s.fileTabs);
-  const active = useStore((s) => s.activeTab);
+  // 다른 저장소에서 연 탭은 그 저장소로 돌아가야 보인다
+  const tabs = useStore(useShallow(visibleTabs));
+  const active = useStore((s) => shownTab(s)?.id ?? null);
   const setActive = useStore((s) => s.setActiveTab);
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const all = tabs.map((x) => x.id);
@@ -122,7 +124,7 @@ function FileTabButton({ tab, on, onMenu }: { tab: FileTab; on: boolean; onMenu:
 
 /** 지금 탭의 파일 화면(에이전트 화면 위에 덮음) */
 export function CenterFileView() {
-  const tab = useStore((s) => (s.activeTab ? s.fileTabs.find((x) => x.id === s.activeTab) : undefined));
+  const tab = useStore(shownTab);
   const setTabViewer = useStore((s) => s.setTabViewer);
   if (!tab) return null;
   return (

@@ -33,3 +33,4 @@ dist-ssr
 # 배포 파일(scripts/package_release.sh)
 /build/
 /promo/
+/.claude/worktrees/
