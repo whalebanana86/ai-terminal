@@ -65,6 +65,9 @@ importers:
       '@codemirror/view':
         specifier: ^6.43.15
         version: 6.43.15
+      '@crabnebula/tauri-plugin-drag':
+        specifier: 2.1.0
+        version: 2.1.0
       '@lezer/highlight':
         specifier: ^1.2.5
         version: 1.2.5
@@ -200,6 +203,9 @@ packages:
 
   '@codemirror/view@6.43.15':
     resolution: {integrity: sha512-HHsfpqFeHyXLs983pSRe38Xajs0vFWZQ2BuX0m7Ki8w3jZ5iD8cuR3lBz2/5/X53Dhf32SBHKh6rtSTB6tKeGw==}
+
+  '@crabnebula/tauri-plugin-drag@2.1.0':
+    resolution: {integrity: sha512-LnUXAZwQt1cdMoGDLJ6ogW9wFCYServCZXlGadS7CA+CZ9eXS7L+Q7QyQW6g/zGw9YI2MwKFqf1aSNBGyWw+OA==}
 
   '@jridgewell/resolve-uri@3.1.2':
     resolution: {integrity: sha512-bRISgCIjP20/tbWSPWMEi54QVPRZExkuD9lJL+UIxUKtwVJA8wW1Trb1jMs1RFXo1CBTNZ/5hpC9QvmKWdopKw==}
@@ -1097,6 +1103,10 @@ snapshots:
       crelt: 1.0.7
       style-mod: 4.1.4
       w3c-keyname: 2.2.8
+
+  '@crabnebula/tauri-plugin-drag@2.1.0':
+    dependencies:
+      '@tauri-apps/api': 2.12.4
 
   '@jridgewell/resolve-uri@3.1.2': {}
 

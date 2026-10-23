@@ -177,6 +177,19 @@ export interface DirEntry {
   ignored: boolean;
 }
 
+/** 끌어다 놓기 복사·이동 결과 */
+export interface TransferOutcome {
+  /** 새 위치(워크트리 기준 상대 경로) */
+  done: string[];
+  /** 같은 이름이 있어 비켜 놓은 것(복사) */
+  renamed: { from: string; to: string }[];
+  /** 이미 그 폴더에 있어 그대로 둔 수 */
+  unchanged: number;
+  failed: { name: string; reason: string }[];
+  /** 폴더 안에서 건너뛴 특수 파일 수 */
+  skipped: number;
+}
+
 export interface FileContent {
   rel: string;
   size: number;
@@ -343,6 +356,10 @@ export const api = {
     invoke<string>("git_checkout", { path, target, kind }),
   fsTerminalPaths: (worktree: string, cwd: string, paths: string[]) => invoke<(string | null)[]>("fs_terminal_paths", { worktree, cwd, paths }),
   fsList: (worktree: string, rel: string) => invoke<DirEntry[]>("fs_list", { worktree, rel }),
+  /** 밖(Finder)의 절대 경로들을 워크트리의 dest 폴더로 복사 */
+  fsCopyIn: (worktree: string, dest: string, sources: string[]) => invoke<TransferOutcome>("fs_copy_in", { worktree, dest, sources }),
+  /** 워크트리 안의 rels 를 dest 폴더로 이동 */
+  fsMove: (worktree: string, dest: string, rels: string[]) => invoke<TransferOutcome>("fs_move", { worktree, dest, rels }),
   setLang: (lang: string) => invoke<void>("set_lang", { lang }),
   fsRead: (worktree: string, rel: string) => invoke<FileContent>("fs_read", { worktree, rel }),
   /** 그림 파일 바이트. rev 가 "HEAD"(또는 커밋 해시)면 그때의 그림 */

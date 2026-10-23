@@ -30,6 +30,8 @@ use commands::AppState;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // 파일 트리에서 Finder·다른 앱으로 끌어 내보내기(맥 네이티브 드래그). 창 안에 다시 놓으면 파일 드롭으로 돌아온다.
+        .plugin(tauri_plugin_drag::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(updates::UpdateState::default())
         .setup(|app| {
@@ -133,6 +135,8 @@ pub fn run() {
             commands::fs_list,
             commands::fs_read,
             commands::fs_terminal_paths,
+            commands::fs_copy_in,
+            commands::fs_move,
             commands::set_lang,
             commands::fs_read_image,
             commands::fs_read_for_edit,

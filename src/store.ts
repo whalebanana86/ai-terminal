@@ -137,6 +137,9 @@ interface State {
   setNewSessionOpen: (open: boolean) => void;
   onFsChanged: (worktree: string, paths: string[], files: boolean, git: boolean) => void;
   bumpGit: () => void;
+  /** 앱이 직접 파일을 바꿨을 때(끌어다 놓기 복사·이동): 파일 감시를 기다리지 않고 트리·변경 목록을 다시 읽게 한다.
+   *  감시가 무시하는 폴더(빌드 결과물 등)에 놓아도 보이도록. */
+  bumpFs: (worktree: string, paths: string[]) => void;
 }
 
 let toastSeq = 1;
@@ -438,6 +441,16 @@ export const useStore = create<State>((set, get) => ({
   },
 
   bumpGit: () => set({ gitTick: get().gitTick + 1, statusTick: get().statusTick + 1 }),
+
+  bumpFs: (worktree, paths) => {
+    const patch: Partial<State> = { fsSignals: { ...get().fsSignals, [worktree]: { n: (get().fsSignals[worktree]?.n ?? 0) + 1, paths } } };
+    if (get().focus?.worktreePath === worktree) {
+      patch.fsTick = get().fsTick + 1;
+      patch.statusTick = get().statusTick + 1;
+      patch.changedPaths = paths;
+    }
+    set(patch);
+  },
 }));
 
 // ── 갱신 합치기 / 순서 보장 ──

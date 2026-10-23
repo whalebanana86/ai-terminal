@@ -193,6 +193,7 @@ export function ChangesView({ worktree, status, onChanged }: { worktree: string;
           </div>
         )}
         <textarea
+          data-cwd={worktree}
           placeholder={amend ? t("고칠 커밋 메시지") : t("커밋 메시지")}
           value={msg}
           onChange={(e) => setMsg(e.target.value)}

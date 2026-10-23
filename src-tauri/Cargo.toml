@@ -21,6 +21,8 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
+# 파일 트리에서 Finder·다른 앱으로 실제 파일을 끌어 내보내기(맥 네이티브 드래그)
+tauri-plugin-drag = "2.1.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 portable-pty = "0.9"

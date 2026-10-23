@@ -12,6 +12,7 @@ import { t } from "../i18n";
 import { baseName, decorationMap, kindLabel, kindLetter } from "../logic";
 import { useShownViewer, useStore, type Viewer } from "../store";
 import { onThemeChange } from "../theme";
+import { armTreeDrag, TREE_REVEAL, type TreeReveal } from "../treeDrag";
 import { PanelHead } from "./GitPanel";
 
 export function FilePanel() {
@@ -108,6 +109,23 @@ function FileTree({ worktree }: { worktree: string }) {
 
   const deco = useMemo(() => decorationMap(status?.entries ?? []), [status]);
 
+  // 끌어다 놓은 폴더를 펼쳐 복사·이동한 결과가 바로 보이게 한다
+  useEffect(() => {
+    const on = (ev: Event) => {
+      const { worktree: w, dir } = (ev as CustomEvent<TreeReveal>).detail;
+      if (w !== worktree || !dir) return;
+      const parts = dir.split("/");
+      const chain = parts.map((_, i) => parts.slice(0, i + 1).join("/"));
+      setExpanded((cur) => new Set([...cur, ...chain]));
+      for (const rel of chain) void loadDir(rel);
+    };
+    window.addEventListener(TREE_REVEAL, on);
+    return () => window.removeEventListener(TREE_REVEAL, on);
+  }, [worktree, loadDir]);
+
+  /** 누른 채 움직이면 맥 네이티브 드래그: 터미널·입력칸(경로), 다른 폴더(이동), Finder·다른 앱(복사) */
+  const arm = (ev: React.MouseEvent, rel: string, name: string, dir: boolean) => armTreeDrag(ev, { worktree, rel, name, dir });
+
   const toggle = (rel: string) => {
     const next = new Set(expanded);
     if (next.has(rel)) next.delete(rel);
@@ -132,7 +150,14 @@ function FileTree({ worktree }: { worktree: string }) {
         const open = expanded.has(e.rel);
         const n = deco.dirs.get(e.rel);
         rows.push(
-          <li key={e.rel} className={`tree-row dir${e.ignored ? " ignored" : ""}`} style={{ paddingLeft: 8 + depth * 14 }} onClick={() => toggle(e.rel)}>
+          <li
+            key={e.rel}
+            className={`tree-row dir${e.ignored ? " ignored" : ""}`}
+            style={{ paddingLeft: 8 + depth * 14 }}
+            onClick={() => toggle(e.rel)}
+            onMouseDown={(ev) => arm(ev, e.rel, e.name, true)}
+            data-dir={e.rel}
+          >
             <span className="twisty">{open ? "▾" : "▸"}</span>
             <FileIcon name={e.name} dir open={open} />
             <span className="name">{e.name}</span>
@@ -149,6 +174,7 @@ function FileTree({ worktree }: { worktree: string }) {
             className={`tree-row file${on ? " on" : ""}${e.ignored ? " ignored" : ""}${k ? ` k-${k}` : ""}`}
             style={{ paddingLeft: 22 + depth * 14 }}
             onClick={() => openFile(e.rel, k)}
+            onMouseDown={(ev) => arm(ev, e.rel, e.name, false)}
             data-rel={e.rel}
           >
             <FileIcon name={e.name} />
@@ -196,12 +222,20 @@ function FileTree({ worktree }: { worktree: string }) {
         </label>
       </div>
       {err && <div className="banner banner-error">{err}</div>}
-      <ul className="tree" aria-label={t("파일 트리")}>
+      {/* data-drop-tree: 놓을 곳(fileDrop.ts). Finder 에서 온 것은 이 워크트리 폴더로 복사, 트리에서 끈 것은 이동 */}
+      <ul className="tree" aria-label={t("파일 트리")} data-drop-tree={worktree}>
         {onlyChanged
           ? changed.map((e) => {
               const on = viewer?.kind === "file" && viewer.rel === e.path;
               return (
-                <li key={e.path} className={`tree-row file k-${e.kind}${on ? " on" : ""}`} style={{ paddingLeft: 10 }} onClick={() => openViewer({ kind: "file", rel: e.path, mode: editorOn && e.kind !== "deleted" ? "preview" : "diff" }, { keepMode: true })} data-rel={e.path}>
+                <li
+                  key={e.path}
+                  className={`tree-row file k-${e.kind}${on ? " on" : ""}`}
+                  style={{ paddingLeft: 10 }}
+                  onClick={() => openViewer({ kind: "file", rel: e.path, mode: editorOn && e.kind !== "deleted" ? "preview" : "diff" }, { keepMode: true })}
+                  onMouseDown={e.kind === "deleted" ? undefined : (ev) => arm(ev, e.path, baseName(e.path), false)}
+                  data-rel={e.path}
+                >
                   <FileIcon name={baseName(e.path)} />
                   <span className="name">{e.path}</span>
                   <span className={`kind kind-${e.kind}`}>{kindLetter(e.kind)}</span>
