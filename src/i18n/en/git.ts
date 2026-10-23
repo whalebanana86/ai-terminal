@@ -1,5 +1,6 @@
 /** 영어 사전: git */
 export default {
+  "{n}개 갈래가 합쳐진 커밋": "Commit merging {n} lines of history",
   // 작업 결과 알림
   "{label} 완료": "{label} — done",
   "{label} 완료: {out}": "{label} — done: {out}",
