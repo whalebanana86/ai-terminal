@@ -2799,3 +2799,8 @@ li:hover .hover-only,
 .quota-window.high { color:var(--warning, #e7b76b); }
 .quota-window.high i { background:currentColor; }
 .quota-refresh { display:flex; padding:4px; border:0; background:transparent; color:var(--fg-dim); cursor:pointer; }
+.codex-model-picker { display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; padding:6px 10px; border-top:1px solid var(--line); flex-shrink:0; }
+.codex-model-picker label { display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:12px; }
+.codex-model-picker select { max-width:100%; font-size:12px; }
+
+.ref-merge { display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; color: var(--fg-dim); background: var(--bg-2); }

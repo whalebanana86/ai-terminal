@@ -31,6 +31,20 @@ const rows: GraphRow[] = [
 ];
 
 describe("metroColors", () => {
+  it("병합 후 워크트리를 삭제해도 갈래와 병합 연결선의 색을 유지", () => {
+    const merged: GraphRow[] = [
+      { ...rows[0], sha: "merge", parents: ["c3", "c2"], segments: [
+        { fromLane: 0, fromY: 1, toLane: 0, toY: 2, color: 0 },
+        { fromLane: 0, fromY: 1, toLane: 1, toY: 2, color: 1 },
+      ] }, ...rows,
+    ];
+    const main = wt("/m", "merge", true);
+    const before = metroColors(merged, [main, wt("/topic", "c2")], (p) => p === "/m" ? "#4cc2ff" : "#ff8a5b");
+    const after = metroColors(merged, [main], () => "#4cc2ff", Object.fromEntries(before.node));
+    expect(after.node.get("c2")).toBe("#ff8a5b");
+    expect(after.seg.get("merge")).toEqual(["#4cc2ff", "#ff8a5b"]);
+    expect(after.seg.get("c1")).toEqual(["#4cc2ff", "#ff8a5b", "#4cc2ff"]);
+  });
   const col = (p: string) => (p === "/m" ? "M" : "T");
   it("메인이 줄기를, 다른 워크트리는 갈라진 곳까지만", () => {
     const { node, seg } = metroColors(rows, [wt("/t", "c2"), wt("/m", "c3", true)], col);
@@ -39,9 +53,11 @@ describe("metroColors", () => {
     // 갈라진 지점으로 모이는 곡선은 topic 색, 아래 줄기는 메인 색
     expect(seg.get("c1")).toEqual(["M", "T", "M"]);
   });
-  it("워크트리가 없는 갈래는 일반 레인색(undefined)", () => {
-    const { seg } = metroColors(rows, [wt("/m", "c3", true)], col);
-    expect(seg.get("c2")).toEqual(["M", undefined]);
-    expect(seg.get("c1")).toEqual(["M", undefined, "M"]);
+  it("워크트리가 없는 갈래도 독립된 노선 색", () => {
+    const { node, seg } = metroColors(rows, [wt("/m", "c3", true)], col);
+    const topic = node.get("c2");
+    expect(topic).toMatch(/^#/);
+    expect(seg.get("c2")).toEqual(["M", topic]);
+    expect(seg.get("c1")).toEqual(["M", topic, "M"]);
   });
 });

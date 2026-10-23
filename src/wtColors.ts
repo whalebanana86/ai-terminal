@@ -98,6 +98,7 @@ export function metroColors(
   rows: GraphRow[],
   worktrees: Worktree[],
   color: (path: string) => string,
+  history: Record<string, string> = {},
 ): { node: Map<string, string>; seg: Map<string, (string | undefined)[]> } {
   const bySha = new Map(rows.map((r) => [r.sha, r]));
   const node = new Map<string, string>();
@@ -110,6 +111,25 @@ export function metroColors(
       node.set(cur.sha, c);
       cur = cur.parents[0] ? bySha.get(cur.parents[0]) : undefined;
     }
+  }
+  // 브랜치/워크트리가 사라져도 커밋에 기록한 노선 색을 유지한다.
+  // 병합의 두 번째 이후 부모는 별도 줄기로 칠하고, 공통 조상에서는 멈춘다.
+  const paint = (start: string) => {
+    let known = bySha.get(start);
+    while (known && !node.has(known.sha) && !history[known.sha]) {
+      known = known.parents[0] ? bySha.get(known.parents[0]) : undefined;
+    }
+    const c = (known && !node.has(known.sha) ? history[known.sha] : undefined)
+      ?? WT_COLORS[1 + (hash(start) % (WT_COLORS.length - 1))];
+    let cur = bySha.get(start);
+    while (cur && !node.has(cur.sha)) {
+      node.set(cur.sha, history[cur.sha] ?? c);
+      cur = cur.parents[0] ? bySha.get(cur.parents[0]) : undefined;
+    }
+  };
+  for (const r of rows) {
+    if (!node.has(r.sha)) paint(r.sha);
+    for (const parent of r.parents.slice(1)) paint(parent);
   }
   // 레인(색 번호)마다 지금 그 레인이 나르는 선의 노선 색. 위에서 아래로 한 번 훑는다.
   const slot = new Map<number, string | undefined>();

@@ -1,6 +1,7 @@
 import { Channel } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText, type ChatEvent, type ChatInfo, type Transcript } from "../api";
+import { CodexModelPicker, savedCodexModelMode, routeLabel, taskLabel } from "../components/CodexModelPicker";
 import { useStore } from "../store";
 import { t } from "../i18n";
 
@@ -30,6 +31,9 @@ export function foldChatEvents(events: ChatEvent[]): Item[] {
       case "assistant":
       case "error":
         items.push({ kind: e.kind, text: e.text });
+        break;
+      case "modelSelected":
+        items.push({ kind: "note", text: `${t("선택한 모델")}: ${routeLabel(e.route)} · ${taskLabel(e.route.task)}` });
         break;
       case "tool": {
         const prev = e.id ? tools.get(e.id) : undefined;
@@ -73,6 +77,7 @@ export function ChatView({ chat }: { chat: ChatInfo }) {
   const [events, setEvents] = useState<ChatEvent[]>([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [modelMode, setModelMode] = useState(savedCodexModelMode);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const toast = useStore((s) => s.toast);
   const bottom = useRef<HTMLDivElement>(null);
@@ -84,18 +89,20 @@ export function ChatView({ chat }: { chat: ChatInfo }) {
     const ch = new Channel<ChatEvent>();
     const buf: ChatEvent[] = [];
     let frame = 0;
+    let disposed = false;
     // 이벤트가 몰려도 한 프레임에 한 번만 그린다.
     ch.onmessage = (e) => {
+      if (disposed) return;
       buf.push(e);
       if (!frame)
         frame = requestAnimationFrame(() => {
           frame = 0;
+          if (disposed) return;
           const batch = buf.splice(0);
           setEvents((prev) => [...prev, ...batch]);
         });
     };
     let sinkId: number | null = null;
-    let disposed = false;
     api.chatAttach(chat.id, ch).then(
       (id) => (disposed ? void api.chatDetach(chat.id, id) : (sinkId = id)),
       (e) => toast("error", errorText(e)),
@@ -103,6 +110,7 @@ export function ChatView({ chat }: { chat: ChatInfo }) {
     return () => {
       disposed = true;
       cancelAnimationFrame(frame);
+      buf.length = 0;
       if (sinkId !== null) void api.chatDetach(chat.id, sinkId);
     };
   }, [chat.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -126,7 +134,7 @@ export function ChatView({ chat }: { chat: ChatInfo }) {
     if (!msg) return;
     setSending(true);
     try {
-      await api.chatSend(chat.id, msg);
+      await api.chatSend(chat.id, msg, modelMode);
       setText("");
       stick.current = true;
     } catch (e) {
@@ -270,6 +278,7 @@ export function ChatView({ chat }: { chat: ChatInfo }) {
         {chat.busy && !pendingPermission && <div className="typing">{t("답하는 중…")}</div>}
         <div ref={bottom} />
       </div>
+      {chat.agent === "codex" && <CodexModelPicker text={text} mode={modelMode} onChange={setModelMode} previous={chat.modelRoute?.task} disabled={chat.busy || sending} />}
       {/* data-cwd: 끌어다 놓은 파일이 이 작업 폴더 안이면 상대 경로로 넣는다(fileDrop.ts) */}
       <div className="chat-input" data-cwd={chat.cwd}>
         <textarea

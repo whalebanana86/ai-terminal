@@ -2,6 +2,9 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type { Theme } from "./theme";
 
+export type CodexModelMode = "auto" | "simple" | "general" | "complex" | "inherit";
+export interface CodexModelRoute { task: "simple" | "general" | "complex"; model: "gpt-6-luna" | "gpt-6.1-sol"; effort: "low" | "medium" }
+
 export type Agent = "claude" | "codex";
 
 export interface AppInfo {
@@ -287,6 +290,7 @@ export interface LiveRun {
 }
 
 export interface ChatInfo {
+  modelRoute?: CodexModelRoute | null;
   id: string;
   agent: Agent;
   sessionId: string | null;
@@ -298,6 +302,7 @@ export interface ChatInfo {
 }
 
 export type ChatEvent =
+  | { kind: "modelSelected"; route: CodexModelRoute }
   | { kind: "session"; sessionId: string }
   | { kind: "user"; text: string }
   | { kind: "assistant"; text: string }
@@ -336,6 +341,7 @@ export interface SubscriptionQuota {
 }
 
 export const api = {
+  codexModelRoute: (text: string, mode: CodexModelMode = "auto", previous?: string) => invoke<CodexModelRoute | null>("codex_model_route", { text, mode, previous: previous ?? null }),
   subscriptionUsage: () => invoke<SubscriptionQuota[]>("subscription_usage"),
   appInfo: () => invoke<AppInfo>("app_info"),
   repoList: () => invoke<RepoSummary[]>("repo_list"),
@@ -367,7 +373,7 @@ export const api = {
   fsReadImage: (worktree: string, rel: string, rev?: string) => invoke<ArrayBuffer>("fs_read_image", { worktree, rel, rev: rev ?? null }),
   sessions: () => invoke<LinkedSession[]>("sessions_list"),
   transcript: (id: string) => invoke<Transcript>("session_transcript", { id }),
-  execStart: (args: { agent: Agent; mode: "new" | "resume"; sessionId?: string; cwd?: string; cols: number; rows: number; force?: boolean; prompt?: string; theme?: Theme }) =>
+  execStart: (args: { agent: Agent; mode: "new" | "resume"; sessionId?: string; cwd?: string; cols: number; rows: number; force?: boolean; prompt?: string; modelMode?: CodexModelMode; theme?: Theme }) =>
     invoke<ExecInfo>("exec_start", { args }),
   /** replayed: 붙자마자 재생한 앞선 출력 양(바이트) */
   execAttach: (id: string, onData: Channel<ArrayBuffer | number[] | string>) => invoke<{ sinkId: number; replayed: number }>("exec_attach", { id, onData }),
@@ -398,7 +404,7 @@ export const api = {
   chatStart: (args: { agent: Agent; sessionId?: string; cwd?: string; mode: string; force?: boolean }) => invoke<ChatInfo>("chat_start", { args }),
   chatAttach: (id: string, onEvent: Channel<ChatEvent>) => invoke<number>("chat_attach", { id, onEvent }),
   chatDetach: (id: string, sinkId: number) => invoke<void>("chat_detach", { id, sinkId }),
-  chatSend: (id: string, text: string) => invoke<void>("chat_send", { id, text }),
+  chatSend: (id: string, text: string, modelMode: CodexModelMode = "auto") => invoke<void>("chat_send", { id, text, modelMode }),
   chatPermission: (id: string, requestId: string, allow: boolean) => invoke<void>("chat_permission", { id, requestId, allow }),
   chatInterrupt: (id: string) => invoke<void>("chat_interrupt", { id }),
   chatClose: (id: string) => invoke<void>("chat_close", { id }),

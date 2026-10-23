@@ -1,5 +1,18 @@
 /** 영어 사전: agent (AgentPanel·ChatView) */
 export default {
+  "선택 미리보기를 불러오지 못했습니다": "Could not load the model preview",
+  "Codex 모델": "Codex model",
+  "자동 선택 (요청 난이도)": "Auto (task complexity)",
+  "단순 작업": "Simple task",
+  "일반 개발": "General development",
+  "복잡한 개발": "Complex development",
+  "CLI 설정 유지": "Keep CLI settings",
+  "기존 Codex 모델·추론 설정을 사용합니다": "Uses your existing Codex model and reasoning settings",
+  "선택 확인 중…": "Checking selection…",
+  "선택한 모델": "Selected model",
+  "요청 문구를 앱 안에서 분류합니다. 선택 결과가 맞지 않으면 직접 바꿀 수 있어요.": "Requests are classified locally. You can override the selection.",
+  "앱 채팅은 메시지마다 모델을 다시 선택합니다": "App chat selects the model for each message",
+  "터미널은 첫 지시로 시작 모델을 선택합니다. 후속 입력은 CLI에서 관리하며 /model로 변경할 수 있어요.": "The first instruction selects the terminal's initial model. The CLI manages subsequent input; use /model to change it.",
   // 세션 목록 날짜 묶음
   오늘: "Today",
   어제: "Yesterday",

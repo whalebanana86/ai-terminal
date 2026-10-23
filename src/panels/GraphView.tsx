@@ -1,3 +1,4 @@
+import { GitMerge } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GitRef, GraphData, GraphRow, Worktree } from "../api";
 import { baseName, laneColor, relativeTime } from "../logic";
@@ -66,7 +67,20 @@ export function GraphView({ data, focusWorktree, sessionStartBranch, selectedSha
 
   // 워크트리마다 노선 색: HEAD 에서 갈라진 곳까지의 선과 커밋을 그 색으로
   const wtColors = useWtColors();
-  const metro = useMemo(() => metroColors(data.rows, data.worktrees, (p) => colorOf(wtColors, p)), [data.rows, data.worktrees, wtColors]);
+  const colorKey = `aiterm.graphColors:${data.worktrees.find((w) => w.isMain)?.path ?? focusWorktree}`;
+  const metro = useMemo(() => {
+    let history: Record<string, string> = {};
+    try {
+      const saved: unknown = JSON.parse(localStorage.getItem(colorKey) ?? "{}");
+      if (saved && typeof saved === "object" && !Array.isArray(saved)) {
+        history = Object.fromEntries(Object.entries(saved).filter(([, c]) => typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c)));
+      }
+    } catch { /* 저장 실패 시에도 그래프는 표시한다. */ }
+    return metroColors(data.rows, data.worktrees, (p) => colorOf(wtColors, p), history);
+  }, [data.rows, data.worktrees, wtColors, colorKey]);
+  useEffect(() => {
+    try { localStorage.setItem(colorKey, JSON.stringify(Object.fromEntries(metro.node))); } catch { /* 저장 공간이 없어도 표시한다. */ }
+  }, [colorKey, metro]);
   const colorFor = (p: string) => colorOf(wtColors, p);
 
   // 작성자가 한 명뿐이면 작성자 칸을 그리지 않는다(보이는 줄이 아니라 불러온 전체 기준이라 스크롤해도 그대로)
@@ -227,6 +241,11 @@ function Row(props: {
             </span>
           ))}
         </span>
+        {row.parents.length > 1 && (
+          <span className="ref ref-merge" title={t("{n}개 갈래가 합쳐진 커밋", { n: row.parents.length })}>
+            <GitMerge size={11} aria-hidden /> {t("병합")}
+          </span>
+        )}
         <span className="gsubject">{row.subject}</span>
       </div>
       <AiCell coAuthors={row.coAuthors} />
