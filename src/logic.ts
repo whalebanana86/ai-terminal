@@ -1,5 +1,5 @@
 // 화면과 무관한 순수 로직. 단위 테스트 대상(logic.test.ts).
-import type { ChangeKind, ChatInfo, ExecInfo, LinkedSession, LiveRun, StatusEntry } from "./api";
+import type { ChangeKind, ExecInfo, LinkedSession, LiveRun, StatusEntry } from "./api";
 import { t } from "./i18n";
 
 /** Claude 가 detached/저장소 아님일 때 쓰는 "HEAD" 를 사람이 읽을 이름으로 */
@@ -74,8 +74,8 @@ export function pendingSessionFromExec(e: ExecInfo): LinkedSession {
   };
 }
 
-/** 세션 목록 + 아직 목록에 없는 앱 실행·채팅을 합친다. 실행 중인 세션에는 실행 id 를 붙인다. */
-export function mergeSessions(sessions: LinkedSession[], execs: ExecInfo[], chats: ChatInfo[] = []): LinkedSession[] {
+/** 세션 목록 + 아직 목록에 없는 앱 실행을 합친다. 실행 중인 세션에는 실행 id 를 붙인다. */
+export function mergeSessions(sessions: LinkedSession[], execs: ExecInfo[]): LinkedSession[] {
   const byId = new Map(sessions.map((s) => [s.id, s]));
   const out = sessions.map((s) => {
     const running = execs.find((e) => e.sessionId === s.id && !e.exited);
@@ -86,36 +86,7 @@ export function mergeSessions(sessions: LinkedSession[], execs: ExecInfo[], chat
     if (e.sessionId && byId.has(e.sessionId)) continue;
     out.unshift(pendingSessionFromExec(e));
   }
-  for (const c of chats) {
-    if (c.sessionId && (byId.has(c.sessionId) || out.some((x) => x.id === c.sessionId))) continue;
-    out.unshift(pendingSessionFromChat(c));
-  }
   return out;
-}
-
-/** 채팅으로 새로 시작했지만 아직 기록이 없는 대화 */
-export function pendingSessionFromChat(c: ChatInfo): LinkedSession {
-  return {
-    ...pendingSessionFromExec({
-      id: c.id,
-      sessionId: c.sessionId,
-      agent: c.agent,
-      kind: "new",
-      cwd: c.cwd,
-      worktreePath: null,
-      branchAtStart: null,
-      headAtStart: null,
-      startedAt: Date.now(),
-      pid: c.pid,
-      exited: false,
-      exitCode: null,
-    }),
-    id: c.sessionId ?? `chat:${c.id}`,
-    title: c.agent === "claude" ? t("새 Claude 채팅") : t("새 Codex 채팅"),
-    worktreePath: c.cwd,
-    runningExecId: null,
-    otherWorktrees: [],
-  };
 }
 
 /** 이 세션을 앱 밖(외부 터미널·다른 앱)에서 실행 중인 프로세스 */

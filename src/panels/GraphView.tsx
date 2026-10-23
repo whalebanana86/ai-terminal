@@ -82,6 +82,8 @@ export function GraphView({ data, focusWorktree, sessionStartBranch, selectedSha
     try { localStorage.setItem(colorKey, JSON.stringify(Object.fromEntries(metro.node))); } catch { /* 저장 공간이 없어도 표시한다. */ }
   }, [colorKey, metro]);
   const colorFor = (p: string) => colorOf(wtColors, p);
+  const mainWorktree = data.worktrees.find((w) => w.isMain);
+  const mainColor = mainWorktree ? colorFor(mainWorktree.path) : undefined;
 
   // 작성자가 한 명뿐이면 작성자 칸을 그리지 않는다(보이는 줄이 아니라 불러온 전체 기준이라 스크롤해도 그대로)
   const showAuthor = useMemo(() => !isSingleAuthor(data.rows), [data.rows]);
@@ -119,6 +121,7 @@ export function GraphView({ data, focusWorktree, sessionStartBranch, selectedSha
             refs={refsBySha.get(row.sha) ?? []}
             worktrees={wtBySha.get(row.sha) ?? []}
             segColors={metro.seg.get(row.sha)}
+            mainColor={mainColor}
             nodeColor={metro.node.get(row.sha)}
             colorFor={colorFor}
             focusWorktree={focusWorktree}
@@ -151,6 +154,7 @@ function Row(props: {
   refs: GitRef[];
   worktrees: Worktree[];
   segColors: (string | undefined)[] | undefined;
+  mainColor: string | undefined;
   nodeColor: string | undefined;
   colorFor: (path: string) => string;
   focusWorktree: string;
@@ -191,12 +195,12 @@ function Row(props: {
           const y1 = Y[s.fromY];
           const y2 = Y[s.toY];
           const d = x1 === x2 ? `M${x1} ${y1}L${x2} ${y2}` : `M${x1} ${y1}C${x1} ${(y1 + y2) / 2} ${x2} ${(y1 + y2) / 2} ${x2} ${y2}`;
-          // 워크트리 노선은 굵고 선명하게, 워크트리가 없는 갈래는 가늘고 흐리게
+          // 메인 노선은 3px, 나머지 갈래는 2px로 표시한다.
           const metro = props.segColors?.[i];
           return metro ? (
-            <path key={i} d={d} stroke={metro} strokeWidth={3} fill="none" strokeLinecap="round" />
+            <path key={i} d={d} stroke={metro} strokeWidth={metro === props.mainColor ? 3 : 2} fill="none" strokeLinecap="round" />
           ) : (
-            <path key={i} d={d} stroke={laneColor(s.color)} strokeWidth={1.5} strokeOpacity={0.45} fill="none" />
+            <path key={i} d={d} stroke={laneColor(s.color)} strokeWidth={2} strokeOpacity={0.45} fill="none" />
           );
         })}
         {!fits(row.lane) && (

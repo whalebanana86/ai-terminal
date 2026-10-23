@@ -99,8 +99,6 @@ export default {
   "브랜치 없음|브랜치 이름 자리": "No branch",
   "새 Claude 세션": "New Claude session",
   "새 Codex 세션": "New Codex session",
-  "새 Claude 채팅": "New Claude chat",
-  "새 Codex 채팅": "New Codex chat",
 
   // logic.ts — 실행 위치(clientLabel)
   터미널: "Terminal",

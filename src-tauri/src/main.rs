@@ -6,8 +6,5 @@ fn main() {
     if let Some(code) = ai_terminal_lib::handoff::keeper_from_args() {
         std::process::exit(code);
     }
-    if let Some(code) = ai_terminal_lib::codex_terminal::from_args() {
-        std::process::exit(code);
-    }
     ai_terminal_lib::run()
 }

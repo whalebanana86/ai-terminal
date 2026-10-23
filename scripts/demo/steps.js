@@ -95,27 +95,6 @@
       await select("정렬 버그 고치기");
       return 1;
     },
-    async chat(slow) {
-      click($('[aria-label="이어가기 방법 고르기"]'));
-      await wait(slow ? 700 : 300);
-      click($('[data-action="open-chat"]'));
-      const input = await until(() => $('[data-testid="chat-input"]'));
-      await wait(600);
-      if (slow) await type(input, "고정한 일은 맨 위에 오게 해 줘.");
-      else setText(input, "고정한 일은 맨 위에 오게 해 줘.");
-      await wait(300);
-      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-      await until(() => $('[data-testid="permission-card"].pending'));
-      await wait(400);
-      return 1;
-    },
-    async allow() {
-      const card = $('[data-testid="permission-card"].pending');
-      click($$("button", card).find((b) => b.innerText.trim() === "허용"));
-      await until(() => !$('[data-testid="permission-card"].pending'));
-      await wait(1500);
-      return 1;
-    },
     async stage() {
       await tab("changes");
       const p = $('[data-testid="unstaged-list"] li[data-path="src/lib/sort.ts"] .path');

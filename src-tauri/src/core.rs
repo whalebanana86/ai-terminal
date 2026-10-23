@@ -11,7 +11,6 @@ use std::sync::Arc;
 use crate::db::{now_ms, Db, ExecutionRow, RepoRow, SessionLink};
 use crate::git::{self, RepoLocation, Worktree};
 use crate::graph::{self, GraphRow};
-use crate::chat::{ChatInfo, ChatManager, StartChat};
 use crate::procs::LiveRun;
 use crate::pty::{PtyManager, SpawnSpec};
 use crate::sessions::{self, SessionIndex, SessionMeta, Transcript};
@@ -104,7 +103,6 @@ pub struct StartRequest {
 pub struct AppCore {
     pub db: Db,
     pub pty: PtyManager,
-    pub chats: ChatManager,
     /// 마지막으로 감지한 실행 중 에이전트(외부 포함)
     live: Mutex<Vec<LiveRun>>,
     /// 세션 열기(재개·채팅)를 한 번에 하나씩: 같은 세션을 두 번 띄우는 경쟁 방지
@@ -144,7 +142,6 @@ impl AppCore {
         Arc::new(Self {
             db,
             pty: PtyManager::default(),
-            chats: ChatManager::default(),
             live: Mutex::new(Vec::new()),
             open_lock: Mutex::new(()),
             index: Mutex::new(SessionIndex::default()),
@@ -480,7 +477,6 @@ impl AppCore {
     }
 
     pub fn start(self: &Arc<Self>, mut req: StartRequest) -> Result<ExecInfo> {
-        let native_terminal = matches!(req.mode.as_str(), "new-native" | "resume-native");
         if req.mode == "new-native" {
             req.mode = "new".into();
         } else if req.mode == "resume-native" {
@@ -500,9 +496,6 @@ impl AppCore {
                 let cwd = meta.cwd.clone().ok_or_else(|| anyhow!(tr!("세션에 작업 폴더 기록이 없습니다", "The session has no recorded working folder")))?;
                 if !Path::new(&cwd).is_dir() {
                     bail!(tr!("세션이 작업하던 폴더가 없습니다: {cwd}\n워크트리가 삭제되었을 수 있습니다.", "The session's working folder no longer exists: {cwd}\nThe worktree may have been deleted."));
-                }
-                for dead in self.chats.dead_for_session(&sid) {
-                    self.chats.close(&dead);
                 }
                 self.ensure_not_open(&sid, req.force)?;
                 let args = if agent == "claude" {
@@ -536,22 +529,7 @@ impl AppCore {
             args.push("--settings".into());
             args.push(json!({ "theme": claude_theme(base, configured_claude_theme().as_deref()) }).to_string());
         }
-        let program = if program == "codex" && !native_terminal {
-            // App-bundled request router; no Python/global command installation is needed.
-            let config = crate::codex_terminal::Config {
-                cwd: cwd.clone(),
-                resume_id: session_id.as_deref().and_then(|s| s.strip_prefix("codex:")).map(str::to_string),
-                prompt: req.prompt.clone(),
-                sandbox: req.sandbox.clone().unwrap_or_else(|| "workspace-write".into()),
-                english: crate::i18n::is_en(),
-            };
-            if !matches!(config.sandbox.as_str(), "workspace-write" | "read-only") { bail!("Invalid Codex sandbox"); }
-            args = vec![crate::codex_terminal::ARG.into(), serde_json::to_string(&config)?];
-            let executable = std::env::current_exe()?.to_string_lossy().into_owned();
-            #[cfg(debug_assertions)]
-            let executable = std::env::var("AITERM_ROUTER_BIN").unwrap_or(executable);
-            executable
-        } else {
+        let program = {
             // Original interactive CLI terminal and optional first instruction.
             if req.mode == "new" {
                 if let Some(p) = req.prompt.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
@@ -648,9 +626,6 @@ impl AppCore {
         if let Some(e) = self.execs.lock().values().find(|e| e.session_id.as_deref() == Some(session_id) && !e.exited) {
             bail!(tr!("이 세션은 이미 앱의 터미널에서 실행 중입니다 (실행 {})", "This session is already running in the app's terminal (run {})", e.id));
         }
-        if self.chats.find_by_session(session_id).is_some() {
-            bail!(tr!("이 세션은 이미 앱의 채팅으로 열려 있습니다", "This session is already open as a chat in the app"));
-        }
         if !force {
             // 5초 주기 결과는 오래되었을 수 있으니 열기 직전에 다시 훑는다(libproc, 수 ms).
             self.refresh_live();
@@ -665,9 +640,7 @@ impl AppCore {
 
     /// 앱이 띄운 프로세스 pid (터미널 실행 + 채팅)
     pub fn app_pids(&self) -> std::collections::HashSet<u32> {
-        let mut set: std::collections::HashSet<u32> = self.exec_list().into_iter().filter(|e| !e.exited).filter_map(|e| e.pid).collect();
-        set.extend(self.chats.list().into_iter().filter_map(|c| c.pid));
-        set.extend(self.chats.closing_pids());
+        let set: std::collections::HashSet<u32> = self.exec_list().into_iter().filter(|e| !e.exited).filter_map(|e| e.pid).collect();
         set
     }
 
@@ -684,37 +657,6 @@ impl AppCore {
 
     pub fn live_runs(&self) -> Vec<LiveRun> {
         self.live.lock().clone()
-    }
-
-    // ───────────── 채팅 ─────────────
-
-    /// 세션을 채팅으로 열거나(resume), 새 채팅을 시작한다.
-    pub fn chat_start(&self, agent: &str, session_id: Option<&str>, cwd: Option<&str>, mode: &str, force: bool) -> Result<ChatInfo> {
-        let events = self.events.clone();
-        let on_change: Arc<dyn Fn(&ChatInfo) + Send + Sync> = Arc::new(move |info| events("chat-changed", json!(info)));
-        let _open = self.open_lock.lock();
-        let (resume_id, cwd) = match session_id {
-            Some(sid) => {
-                if let Some(c) = self.chats.find_by_session(sid) {
-                    return Ok(c.info()); // 이미 열린 채팅
-                }
-                // 프로세스가 끝난 채 남은 채팅은 정리하고 새로 연다.
-                for dead in self.chats.dead_for_session(sid) {
-                    self.chats.close(&dead);
-                }
-                self.ensure_not_open(sid, force)?;
-                let meta = self.find_session(sid).ok_or_else(|| anyhow!(tr!("세션을 찾을 수 없습니다: {sid}", "Session not found: {sid}")))?;
-                if meta.agent != agent {
-                    bail!(tr!("세션 종류가 맞지 않습니다", "Session type does not match"));
-                }
-                let cwd = meta.cwd.clone().ok_or_else(|| anyhow!(tr!("세션에 작업 폴더 기록이 없습니다", "The session has no recorded working folder")))?;
-                (Some(meta.external_id), cwd)
-            }
-            None => (None, cwd.ok_or_else(|| anyhow!(tr!("작업 폴더를 고르세요", "Choose a working folder")))?.to_string()),
-        };
-        let info = self.chats.start(StartChat { agent: agent.to_string(), resume_id, cwd, mode: mode.to_string() }, on_change)?;
-        (self.events)("chat-changed", json!(info));
-        Ok(info)
     }
 
     /// Codex 새 실행은 세션 id 를 미리 알 수 없다. 같은 cwd 에서 실행 이후 생긴 스레드와 연결한다.
@@ -965,7 +907,6 @@ mod tests {
         unsafe {
             std::env::set_var("AITERM_CLAUDE_BIN", &fake);
             std::env::set_var("AITERM_CODEX_BIN", &fake);
-            std::env::set_var("AITERM_ROUTER_BIN", &fake);
         }
 
         let core = AppCore::new(Db::open_in_memory().unwrap(), Arc::new(|_, _| {}));
@@ -1014,8 +955,7 @@ mod tests {
             if output.contains("PWD:") { break; }
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
-        assert!(output.contains(crate::codex_terminal::ARG), "{output}");
-        assert!(output.contains("workspace-write") && output.contains("resume_id"), "{output}");
+        assert!(output.contains("ARGS:-s workspace-write -C "), "{output}");
         write_codex(&home, "fresh", &main, "main");
         // 기록 시각을 실행 이후로 맞춘다
         let dir = home.join(".codex/sessions/2026/10/01");
@@ -1040,7 +980,7 @@ mod tests {
         core.list_sessions().unwrap();
         let e2 = core.exec_list().into_iter().find(|e| e.id == second.id).unwrap();
         assert_eq!(e2.session_id.as_deref(), Some("codex:fresh2"));
-        // The restored original terminal bypasses the router and preserves the first instruction.
+        // The compatibility alias also preserves the first instruction.
         let native = core
             .start(StartRequest { agent: "codex".into(), mode: "new-native".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false, prompt: Some("-v instruction".into()), sandbox: Some("read-only".into()), theme: None })
             .unwrap();
@@ -1053,12 +993,10 @@ mod tests {
         }
         assert!(output.contains("ARGS:-s read-only -C "), "{output}");
         assert!(output.contains("-- -v instruction"), "{output}");
-        assert!(!output.contains(crate::codex_terminal::ARG), "{output}");
         unsafe {
             std::env::remove_var("AITERM_HOME");
             std::env::remove_var("AITERM_CLAUDE_BIN");
             std::env::remove_var("AITERM_CODEX_BIN");
-            std::env::remove_var("AITERM_ROUTER_BIN");
         }
     }
 

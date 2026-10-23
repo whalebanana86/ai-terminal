@@ -48,7 +48,6 @@ export default function App() {
         st().toast(e.payload.code === 0 ? "info" : "error", t("에이전트 프로세스가 종료되었습니다 (코드 {code})", { code: e.payload.code ?? "?" }));
         void st().refreshSessions();
       }),
-      listen("chat-changed", () => void st().refreshChats()),
       listen<import("./api").LiveRun[]>("live-runs", (e) => st().setLiveRuns(e.payload)),
       listen("exec-linked", async () => {
         await st().refreshExecs();
