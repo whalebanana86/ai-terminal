@@ -60,7 +60,7 @@ pub fn open_file(worktree: &Path, rel: &str, id: &str) -> Result<()> {
     if !p.is_file() {
         bail!(tr!("일반 파일이 아니라 열 수 없습니다", "Not a regular file, so it can't be opened"));
     }
-    std::process::Command::new("/usr/bin/open").args(open_args(id, &p)?).spawn()?;
+    crate::env::spawn_reaped(std::process::Command::new("/usr/bin/open").args(open_args(id, &p)?))?;
     Ok(())
 }
 

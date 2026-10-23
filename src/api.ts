@@ -1,5 +1,6 @@
 // Rust 명령과 1:1 로 대응하는 타입 있는 호출 계층.
 import { Channel, invoke } from "@tauri-apps/api/core";
+import type { Theme } from "./theme";
 
 export type Agent = "claude" | "codex";
 
@@ -349,7 +350,7 @@ export const api = {
   fsReadImage: (worktree: string, rel: string, rev?: string) => invoke<ArrayBuffer>("fs_read_image", { worktree, rel, rev: rev ?? null }),
   sessions: () => invoke<LinkedSession[]>("sessions_list"),
   transcript: (id: string) => invoke<Transcript>("session_transcript", { id }),
-  execStart: (args: { agent: Agent; mode: "new" | "resume"; sessionId?: string; cwd?: string; cols: number; rows: number; force?: boolean; prompt?: string }) =>
+  execStart: (args: { agent: Agent; mode: "new" | "resume"; sessionId?: string; cwd?: string; cols: number; rows: number; force?: boolean; prompt?: string; theme?: Theme }) =>
     invoke<ExecInfo>("exec_start", { args }),
   /** replayed: 붙자마자 재생한 앞선 출력 양(바이트) */
   execAttach: (id: string, onData: Channel<ArrayBuffer | number[] | string>) => invoke<{ sinkId: number; replayed: number }>("exec_attach", { id, onData }),
