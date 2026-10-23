@@ -523,11 +523,11 @@ impl AppCore {
         };
         // Claude 테마를 앱 터미널 바탕에 맞춘다. 사용자의 Claude 테마가 반대 밝기면(예: 밝은 테마에 어두운 바탕)
         // 색을 직접 정한 글자가 검정으로 칠해져 바탕에 묻힌다. 이 실행에만 적용되고 사용자 설정 파일은 건드리지 않는다.
-        if program == "claude" {
-            if let Some(base) = req.theme.as_deref().filter(|t| matches!(*t, "dark" | "light")) {
-                args.push("--settings".into());
-                args.push(json!({ "theme": claude_theme(base, configured_claude_theme().as_deref()) }).to_string());
-            }
+        if program == "claude"
+            && let Some(base) = req.theme.as_deref().filter(|t| matches!(*t, "dark" | "light"))
+        {
+            args.push("--settings".into());
+            args.push(json!({ "theme": claude_theme(base, configured_claude_theme().as_deref()) }).to_string());
         }
         // 첫 지시: `--` 뒤에 두어 '-' 로 시작해도 옵션으로 해석되지 않게 한다(셸을 거치지 않으므로 따옴표 문제 없음).
         if req.mode == "new" {
