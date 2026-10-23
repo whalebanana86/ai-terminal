@@ -34,3 +34,6 @@ dist-ssr
 /build/
 /promo/
 /.claude/worktrees/
+
+# Python CLI test caches
+__pycache__/

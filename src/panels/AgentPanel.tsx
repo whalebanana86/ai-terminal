@@ -9,7 +9,6 @@ import { useSelectedSession, useStore, visibleTabs } from "../store";
 import { PanelHead } from "./GitPanel";
 import { ChatView } from "./ChatView";
 import { t } from "../i18n";
-import { CodexModelPicker, savedCodexModelMode } from "../components/CodexModelPicker";
 import { currentTheme } from "../theme";
 import { useExtensionOn } from "../extensions";
 import { CenterFileView, CenterTabBar } from "./CenterTabs";
@@ -314,7 +313,19 @@ function SessionDetail() {
   const resume = async () => {
     if (!session) return;
     try {
-      const r = await withExternalConfirm((force) => api.execStart({ agent: session.agent, mode: "resume", sessionId: session.id, cols: 100, rows: 30, force, theme: currentTheme() }));
+      const r = await withExternalConfirm((force) => api.execStart({ agent: session.agent, mode: "resume", sessionId: session.id, cols: 100, rows: 30, force, sandbox: localStorage.getItem(modeKey(session.agent)) ?? defaultMode(session.agent), theme: currentTheme() }));
+      if (!r) return;
+      localStorage.setItem(PREF_KEY, "terminal");
+      await refreshExecs();
+      setTab("talk");
+    } catch (e) {
+      toast("error", t("이어가기 실패: {error}", { error: errorText(e) }));
+    }
+  };
+  const resumeNative = async () => {
+    if (!session) return;
+    try {
+      const r = await withExternalConfirm((force) => api.execStart({ agent: session.agent, mode: "resume-native", sessionId: session.id, cols: 100, rows: 30, force, sandbox: localStorage.getItem(modeKey(session.agent)) ?? defaultMode(session.agent), theme: currentTheme() }));
       if (!r) return;
       localStorage.setItem(PREF_KEY, "terminal");
       await refreshExecs();
@@ -363,6 +374,7 @@ function SessionDetail() {
             canContinue={session.cwdExists && !pending}
             onChat={openChat}
             onTerminal={resume}
+            onNativeTerminal={resumeNative}
             onStop={stop}
             onCloseChat={closeChat}
           />
@@ -431,6 +443,7 @@ function SessionHeader({
   canContinue,
   onChat,
   onTerminal,
+  onNativeTerminal,
   onStop,
   onCloseChat,
 }: {
@@ -442,6 +455,7 @@ function SessionHeader({
   canContinue: boolean;
   onChat: () => void;
   onTerminal: () => void;
+  onNativeTerminal: () => void;
   onStop: () => void;
   onCloseChat: () => void;
 }) {
@@ -489,7 +503,7 @@ function SessionHeader({
         ) : (
           canContinue && (
             <div className="split-btn">
-              <button className="btn btn-small btn-primary" onClick={how === "terminal" ? onTerminal : onChat} data-testid="continue" title={how === "terminal" ? t("원본 CLI 터미널로 이어가기") : t("앱의 채팅 화면으로 이어가기")}>
+              <button className="btn btn-small btn-primary" onClick={how === "terminal" ? onTerminal : onChat} data-testid="continue" title={how === "terminal" ? t(s.agent === "codex" ? "자동 선택 터미널로 이어가기" : "원본 CLI 터미널로 이어가기") : t("앱의 채팅 화면으로 이어가기")}>
                 <Play size={12} aria-hidden /> {t("이어가기")}
               </button>
               <button
@@ -544,7 +558,8 @@ function SessionHeader({
           onClose={() => setMenu(null)}
           items={[
             { label: t("앱 채팅 화면으로 이어가기"), hint: t("도구 사용을 버튼으로 허락"), onClick: onChat, testId: "open-chat" },
-            { label: t("원본 CLI 터미널로 이어가기"), hint: s.agent === "claude" ? "claude --resume" : "codex resume", onClick: onTerminal, testId: "resume" },
+            { label: t(s.agent === "codex" ? "자동 선택 터미널로 이어가기" : "원본 CLI 터미널로 이어가기"), hint: s.agent === "claude" ? "claude --resume" : t("요청마다 모델 자동 선택"), onClick: onTerminal, testId: "resume" },
+            ...(s.agent === "codex" ? [{ label: t("원본 CLI 터미널로 이어가기"), hint: "codex resume", onClick: onNativeTerminal, testId: "resume-native" }] : []),
             { header: true, label: t("채팅에서 쓸 허락 범위") },
             ...modes.map(([v, label]) => ({
               label: `${mode === v ? "✓ " : " "}${label}`,
@@ -712,11 +727,13 @@ function NewSessionDialog({ onClose }: { onClose: () => void }) {
   const [agent, setAgent] = useState<Agent>("claude");
   const [cwd, setCwd] = useState(focus?.worktreePath ?? "");
   const [busy, setBusy] = useState(false);
-  const [how, setHow] = useState<"terminal" | "chat">(((localStorage.getItem(PREF_KEY) as ContinueHow | null) ?? "chat") as "terminal" | "chat");
+  const [how, setHow] = useState<"terminal" | "chat" | "auto-terminal">((localStorage.getItem("aiterm.newSessionHow") as "terminal" | "chat" | "auto-terminal" | null) ?? (localStorage.getItem(PREF_KEY) as ContinueHow | null) ?? "chat");
   const [mode, setMode] = useState(localStorage.getItem(modeKey("claude")) ?? "default");
   const [prompt, setPrompt] = useState("");
-  const [modelMode, setModelMode] = useState(savedCodexModelMode);
-  useEffect(() => setMode(localStorage.getItem(modeKey(agent)) ?? defaultMode(agent)), [agent]);
+  useEffect(() => {
+    setMode(localStorage.getItem(modeKey(agent)) ?? defaultMode(agent));
+    if (agent !== "codex") setHow((value) => value === "auto-terminal" ? "terminal" : value);
+  }, [agent]);
   const options = repos.flatMap((r) => r.worktrees.filter((w) => w.exists && !w.bare).map((w) => ({ repo: r, w })));
   const focusRepo = repos.find((r) => r.worktrees.some((w) => w.path === cwd));
 
@@ -742,15 +759,17 @@ function NewSessionDialog({ onClose }: { onClose: () => void }) {
     setBusy(true);
     try {
       const st = useStore.getState();
-      localStorage.setItem(PREF_KEY, how);
-      localStorage.setItem(modeKey(agent), mode);
+      localStorage.setItem("aiterm.newSessionHow", how);
+      localStorage.setItem(PREF_KEY, how === "auto-terminal" ? "terminal" : how);
+      const selectedMode = agent === "codex" ? "workspace-write" : mode;
+      if (agent !== "codex") localStorage.setItem(modeKey(agent), selectedMode);
       if (how === "chat") {
-        const c = await api.chatStart({ agent, cwd, mode });
+        const c = await api.chatStart({ agent, cwd, mode: selectedMode });
         await st.refreshChats();
         st.selectSession(c.sessionId ?? `chat:${c.id}`);
-        if (prompt.trim()) await api.chatSend(c.id, prompt.trim(), modelMode);
+        if (prompt.trim()) await api.chatSend(c.id, prompt.trim());
       } else {
-        const e = await api.execStart({ agent, mode: "new", cwd, cols: 100, rows: 30, prompt: prompt.trim() || undefined, modelMode: agent === "codex" ? modelMode : undefined, theme: currentTheme() });
+        const e = await api.execStart({ agent, mode: how === "terminal" ? "new-native" : "new", cwd, cols: 100, rows: 30, prompt: prompt.trim() || undefined, sandbox: agent === "codex" ? selectedMode : undefined, theme: currentTheme() });
         await st.refreshExecs();
         // 목록에 임시 항목으로 들어가 있으므로 고르면 그 워크트리로 포커스가 옮겨진다.
         st.selectSession(e.sessionId ?? `exec:${e.id}`);
@@ -805,8 +824,9 @@ function NewSessionDialog({ onClose }: { onClose: () => void }) {
         <div className="choice-row">
           {card(how === "chat", () => setHow("chat"), t("앱 채팅 화면"), t("도구 사용을 버튼으로 허락"))}
           {card(how === "terminal", () => setHow("terminal"), t("원본 CLI 터미널"), t("CLI 화면 그대로"))}
+          {agent === "codex" && card(how === "auto-terminal", () => setHow("auto-terminal"), t("자동 선택 터미널"), t("요청마다 모델 자동 선택"))}
         </div>
-        {how === "chat" && (
+        {agent !== "codex" && how === "chat" && (
           <label className="form-row col">
             <span className="muted">{t("허락 범위")}</span>
             <select value={mode} onChange={(e) => setMode(e.target.value)} aria-label={t("허락 범위")}>
@@ -832,10 +852,6 @@ function NewSessionDialog({ onClose }: { onClose: () => void }) {
             data-testid="first-prompt"
           />
         </label>
-        {agent === "codex" && how === "chat" && <>
-          <CodexModelPicker text={prompt} mode={modelMode} onChange={setModelMode} disabled={busy} />
-          <p className="muted small">{t("앱 채팅은 메시지마다 모델을 다시 선택합니다")}</p>
-        </>}
         <p className="muted small">{t("기존 CLI 로그인·구독을 그대로 써요. 이 앱은 대화 내용을 외부로 보내지 않아요.")}</p>
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>

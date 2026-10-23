@@ -37,8 +37,19 @@ fn preset(task: &str) -> ModelRoute {
         },
     }
 }
-fn contains(text: &str, words: &[&str]) -> bool {
-    words.iter().any(|word| text.contains(word))
+#[derive(serde::Deserialize)]
+struct Policy {
+    followup: Vec<String>,
+    complex: Vec<String>,
+    development: Vec<String>,
+    simple: Vec<String>,
+}
+fn policy() -> &'static Policy {
+    static POLICY: std::sync::OnceLock<Policy> = std::sync::OnceLock::new();
+    POLICY.get_or_init(|| serde_json::from_str(include_str!("../../scripts/codex-routing.json")).expect("valid embedded routing policy"))
+}
+fn contains(text: &str, words: &[String]) -> bool {
+    words.iter().any(|word| text.contains(word.as_str()))
 }
 
 pub fn route(
@@ -56,145 +67,22 @@ pub fn route(
     }
     let text = text.trim().to_lowercase();
     // Short continuations belong to the ongoing task; do not downgrade a complex task to Luna.
-    let followup = [
-        "응",
-        "네",
-        "어",
-        "계속",
-        "계속해",
-        "계속해줘",
-        "진행해",
-        "진행해줘",
-        "이어서 해",
-        "이어서 진행해",
-        "구현해",
-        "구현해줘",
-        "이어서 작업해",
-        "해줘",
-        "고쳐줘",
-        "continue",
-        "go ahead",
-        "yes",
-        "do it",
-    ];
+    let followup = &policy().followup;
     let continuation = text.trim_end_matches(['.', '!', '?']);
     let continuation = ["응 ", "네 ", "어 ", "응, ", "네, ", "어, ", "yes, "]
         .iter()
         .find_map(|prefix| continuation.strip_prefix(prefix))
         .unwrap_or(continuation);
-    if followup.contains(&continuation) {
+    if followup.iter().any(|word| word == continuation) {
         return Ok(Some(preset(previous.unwrap_or("general"))));
     }
-    let complex = contains(
-        &text,
-        &[
-            "동시성",
-            "데드락",
-            "교착",
-            "경쟁 상태",
-            "경쟁상태",
-            "렌더링",
-            "렌더러",
-            "글자 깨",
-            "글자들이 이상",
-            "아키텍처",
-            "구조 변경",
-            "구조변경",
-            "설계",
-            "마이그레이션",
-            "대규모",
-            "전체 리팩",
-            "전반적인 리팩",
-            "다중 모듈",
-            "보안 취약",
-            "인증 구조",
-            "머지 충돌",
-            "병합 충돌",
-            "분산",
-            "메모리 누수",
-            "race condition",
-            "concurrency",
-            "concurrent",
-            "deadlock",
-            "rendering",
-            "renderer",
-            "architecture",
-            "migration",
-            "redesign",
-            "security vulnerability",
-            "merge conflict",
-            "memory leak",
-            "distributed",
-        ],
-    ) || text.chars().count() > 1600;
+    let complex = contains(&text, &policy().complex) || text.chars().count() > 1600;
     if complex {
         return Ok(Some(preset("complex")));
     }
     // Development intent wins over embedded maintenance commands, e.g. "fix git pull errors".
-    let development = contains(
-        &text,
-        &[
-            "버그",
-            "오류",
-            "에러",
-            "안돼",
-            "안 돼",
-            "안되",
-            "안 되",
-            "깨져",
-            "깨짐",
-            "기능",
-            "구현",
-            "로그인",
-            "리팩",
-            "개발",
-            "파서",
-            "테스트 추가",
-            "테스트를 추가",
-            "api",
-            "bug",
-            "error",
-            "fix ",
-            "implement",
-            "feature",
-            "refactor",
-            "parser",
-            "add test",
-            "write test",
-        ],
-    );
-    let simple = contains(
-        &text,
-        &[
-            "git pull",
-            "git status",
-            "git log",
-            "git diff",
-            "커밋",
-            "푸시",
-            "릴리즈",
-            "메인머지",
-            "메인 머지",
-            "문구",
-            "오타",
-            "띄어쓰기",
-            "색상",
-            "글씨 색",
-            "파일명",
-            "이름 변경",
-            "번역",
-            "요약",
-            "commit",
-            "push",
-            "release",
-            "typo",
-            "wording",
-            "spelling",
-            "rename file",
-            "translate",
-            "summarize",
-        ],
-    );
+    let development = contains(&text, &policy().development);
+    let simple = contains(&text, &policy().simple);
     Ok(Some(preset(if simple && !development {
         "simple"
     } else {

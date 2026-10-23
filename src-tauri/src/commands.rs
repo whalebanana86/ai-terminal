@@ -457,7 +457,7 @@ pub struct StartArgs {
     #[serde(default)]
     pub force: bool,
     pub prompt: Option<String>,
-    pub model_mode: Option<String>,
+    pub sandbox: Option<String>,
     pub theme: Option<String>,
 }
 
@@ -474,7 +474,7 @@ pub async fn exec_start(state: State<'_, AppState>, args: StartArgs) -> Res<Exec
             rows: args.rows,
             force: args.force,
             prompt: args.prompt,
-            model_mode: args.model_mode,
+            sandbox: args.sandbox,
             theme: args.theme,
         })
     })

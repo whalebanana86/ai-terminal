@@ -3,6 +3,7 @@ pub mod i18n;
 pub mod brand;
 pub mod chat;
 pub mod codex_models;
+pub mod codex_terminal;
 pub mod commands;
 pub mod core;
 pub mod db;
