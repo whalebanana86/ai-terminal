@@ -12,6 +12,7 @@ pub mod files;
 pub mod git;
 pub mod gitops;
 pub mod graph;
+pub mod handoff;
 pub mod procs;
 pub mod pty;
 pub mod sessions;
@@ -64,6 +65,12 @@ pub fn run() {
                 let _ = h.emit(name, payload);
             });
             let core = core::AppCore::new(db, events);
+            // 업데이트 전 버전이 맡겨 둔 에이전트(터미널)를 이어받는다
+            match handoff::adopt(&core, &data_dir) {
+                Ok(0) => {}
+                Ok(n) => eprintln!("[handoff] 실행 중인 에이전트 {n}개를 이어받았습니다"),
+                Err(e) => eprintln!("[handoff] 이어받지 못했습니다: {e:#}"),
+            }
 
             let h = handle.clone();
             let watcher = watch::WorkspaceWatcher::new(Arc::new(move |batch| {

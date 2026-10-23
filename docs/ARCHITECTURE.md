@@ -161,6 +161,9 @@ UI 는 셋이 다르면 경고 배지를 띄운다. 어떤 값도 체크아웃�
 - **Codex 새 실행 연결 규칙**: 실행 중 + 같은 cwd(정규화) + 시작 5초 전~10분 후 생성 + 아직 다른 실행과 연결되지 않은 스레드 중 가장 이른 것. 실행은 시작 순서대로 처리.
 - **갱신 신호 분리**: `fsTick`(파일 내용·목록) / `statusTick`(git status) / `gitTick`(HEAD·refs → 그래프). 파일만 바뀌면 전체 log 를 다시 읽지 않는다. 세션·저장소 갱신은 합치고 최신 응답만 반영한다.
 - **PTY 수명**: 종료 즉시 PTY 장치 반납, 끝난 실행은 최근 8개만 출력 재생용으로 보관. 중지·앱 종료는 프로세스 그룹 단위(SIGHUP → SIGKILL).
+- **업데이트 때 넘기기**(`handoff.rs`): 설치 뒤 PTY 읽기 스레드를 멈추고(select + 멈춤 파이프 — macOS 의 poll·kqueue 는 PTY 를 제대로 못 본다) 화면 기록·실행 정보를 `handoff/` 에 쓴 다음,
+  같은 실행 파일(이제 새 버전)을 `--handoff-keeper` 로 띄워 PTY 마스터 복제본을 물려준다. 맡김 프로세스가 PTY 를 쥐고 있어 옛 앱이 꺼져도 에이전트에 SIGHUP 이 가지 않고, 그사이 출력은 받아 둔다.
+  새 앱은 시작할 때 소켓에 붙어 fd 를 SCM_RIGHTS 로 받아 같은 실행 id 로 이어서 연다(내 자식이 아니라 종료 코드는 모름). 10분 안에 아무도 안 붙으면 맡김 프로세스가 끝난다.
 - **파일 감시**: 파일 id 캐시 없는 디바운서(감시 등록 때 하위 전체를 훑지 않음), 무시 폴더 목록 20초마다 갱신, 감시 루트의 inode 가 바뀌면 다시 등록.
 - **Git 실행 고정 옵션**: `GIT_OPTIONAL_LOCKS=0`, `GIT_LITERAL_PATHSPECS=1`(check-ignore 제외), `core.fsmonitor=false`, `diff.noprefix=false`, `diff.mnemonicPrefix=false`, `core.quotepath=false`, diff 는 `--no-ext-diff --no-textconv`.
 

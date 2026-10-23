@@ -139,14 +139,13 @@ pub async fn check_update(
     Ok(info)
 }
 
+/// 터미널에서 실행 중인 에이전트는 새 버전으로 넘기지만(handoff), 채팅 화면이 응답 중이면 기다린다.
 fn ensure_idle(app: &tauri::AppHandle) -> Result<(), String> {
     let state = app.state::<crate::commands::AppState>();
-    if state.core.pty.list().iter().any(|e| !e.exited)
-        || state.core.chats.list().iter().any(|c| c.busy)
-    {
+    if state.core.chats.list().iter().any(|c| c.busy) {
         return Err(tr!(
-            "실행 중인 에이전트를 종료한 뒤 업데이트해 주세요.",
-            "Stop running agents before updating."
+            "채팅 화면에서 에이전트가 응답하는 중입니다. 끝난 뒤 업데이트해 주세요.",
+            "An agent is responding in a chat. Update after it finishes."
         ));
     }
     Ok(())
@@ -182,6 +181,14 @@ pub async fn install_update(
     ensure_idle(&app)?;
     update.install(bytes).map_err(|e| e.to_string())?;
     let core = &app.state::<crate::commands::AppState>().core;
+    // 터미널에서 실행 중인 에이전트는 끝내지 않고 새 버전 앱으로 넘긴다
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    if let Err(e) = crate::handoff::prepare(core, &data_dir) {
+        return Err(tr!(
+            "업데이트는 설치했지만 실행 중인 에이전트를 새 버전으로 넘기지 못했습니다({e:#}). 에이전트를 끝낸 뒤 앱을 다시 열면 새 버전이 됩니다.",
+            "The update is installed, but running agents couldn't be handed to the new version ({e:#}). Stop the agents and reopen the app to use the new version."
+        ));
+    }
     core.chats.close_all();
     app.restart();
 }

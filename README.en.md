@@ -193,4 +193,4 @@ MIT. Inspired by GitKraken's information layout; no GitKraken code or proprietar
 
 ### Updates from the app menu
 
-Choose **Code Whereabouts → Check for Updates…**. Signed releases can be downloaded, verified and installed in the app, then restarted. Stop terminal agents and wait for chat responses before installing. Older releases open the download page. GitHub is contacted only when you request an update; no repository paths or conversations are sent. See [docs/UPDATES.md](docs/UPDATES.md) for signing setup.
+Choose **Code Whereabouts → Check for Updates…**. Signed releases can be downloaded, verified and installed in the app, then restarted. Agents running in a terminal are handed to the new version and keep going, even mid-task; wait for chat responses to finish before installing. Older releases open the download page. GitHub is contacted only when you request an update; no repository paths or conversations are sent. See [docs/UPDATES.md](docs/UPDATES.md) for signing setup.
