@@ -22,6 +22,8 @@ declare global {
       terminalText: (execId: string) => string | null;
       terminalIds: () => string[];
       terminalCursor: (execId: string) => { x: number; y: number; rows: number; cols: number } | null;
+      /** 시험용: 모든 터미널의 옵션 하나를 바꾼다(쉬는 동안 자원 사용 비교 등) */
+      setTerminalOption: (key: string, value: unknown) => number;
     };
   }
 }
@@ -41,6 +43,10 @@ export function exposeTerminals() {
     terminalCursor: (execId) => {
       const t = registry.get(execId);
       return t ? { x: t.buffer.active.cursorX, y: t.buffer.active.cursorY, rows: t.rows, cols: t.cols } : null;
+    },
+    setTerminalOption: (key, value) => {
+      registry.forEach((t) => ((t.options as Record<string, unknown>)[key] = value));
+      return registry.size;
     },
   };
 }
@@ -101,7 +107,8 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
       fontFamily: TERM_FONT,
       fontSize: TERM_FONT_SIZE,
       lineHeight: 1.15,
-      cursorBlink: true,
+      // 깜빡이면 0.6초마다 터미널을 다시 그려 쉬는 동안에도 CPU 를 쓴다(맥 터미널·VS Code 기본도 깜빡이지 않음)
+      cursorBlink: false,
       // 화면 메모리 절약: 이전 출력은 백엔드 버퍼(2MB)에도 남아 다시 붙을 때 재생된다.
       scrollback: 5000,
       allowProposedApi: true,
