@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText, type GitRef, type GraphData, type Worktree, type WorktreeStatus } from "../api";
 import { ContextMenu, WtDot, type MenuItem } from "../components/Overlays";
 import { useWtColors, colorOf } from "../wtColors";
+import { refLineColors, useMetroColors } from "./GraphView";
 import * as ga from "../gitActions";
 import { baseName, branchLabel, relativeTime } from "../logic";
 import { useStore } from "../store";
@@ -84,6 +85,9 @@ export function BranchesView({ worktree, repoPath, graph, status }: { worktree: 
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const [q, setQ] = useState("");
   const timeOf = useMemo(() => new Map(graph.rows.map((r) => [r.sha, r.time])), [graph.rows]);
+  // 브랜치 이름표는 그래프 탭과 같은 색(가리키는 커밋의 노선 색, 원격은 테두리만)
+  const { metro } = useMetroColors(graph, worktree);
+  const lineOf = useMemo(() => refLineColors(graph.rows, metro), [graph.rows, metro]);
   const now = Date.now();
   const cur = status.branch;
   const needle = q.trim().toLowerCase();
@@ -139,6 +143,7 @@ export function BranchesView({ worktree, repoPath, graph, status }: { worktree: 
                   const isCur = r.kind === "branch" && r.short === cur;
                   const usedBy = r.kind === "branch" ? graph.worktrees.find((w) => w.branch === r.short) : undefined;
                   const ts = timeOf.get(r.target);
+                  const lc = r.kind !== "tag" ? lineOf.get(r.target) : undefined;
                   return (
                     <li
                       key={r.name}
@@ -151,7 +156,9 @@ export function BranchesView({ worktree, repoPath, graph, status }: { worktree: 
                       onDoubleClick={() => r.kind !== "tag" && !isCur && ga.checkout(worktree, r.short, r.kind === "remote" ? "remote" : "branch", graph.worktrees)}
                       title={t("더블클릭: 이 브랜치로 전환 · 우클릭/⋯: 메뉴")}
                     >
-                      <span className={`ref ref-${r.kind}${isCur ? " ref-focus" : ""}`}>{r.short}</span>
+                      <span className={`ref ref-${r.kind}${lc ? " ref-line" : ""}${isCur ? " ref-focus" : ""}`} style={lc ? ({ "--lc": lc } as React.CSSProperties) : undefined}>
+                        {r.short}
+                      </span>
                       {usedBy && (
                         <span className="muted small wt-name" title={t("{path} 워크트리가 쓰는 중", { path: usedBy.path })}>
                           <WtDot path={usedBy.path} />

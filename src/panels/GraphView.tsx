@@ -10,6 +10,28 @@ import { authorLabel, isSingleAuthor } from "../author";
 import { AuthorCell } from "./AuthorCell";
 
 const ROW_H = 26;
+
+/** 그래프의 노선 색(커밋마다). 브랜치 탭의 이름표도 같은 색을 쓴다. 저장은 그래프가 한다. */
+export function useMetroColors(data: GraphData, focusWorktree: string) {
+  const wtColors = useWtColors();
+  const colorKey = `aiterm.graphColors:${data.worktrees.find((w) => w.isMain)?.path ?? focusWorktree}`;
+  const metro = useMemo(() => {
+    let history: Record<string, string> = {};
+    try {
+      const saved: unknown = JSON.parse(localStorage.getItem(colorKey) ?? "{}");
+      if (saved && typeof saved === "object" && !Array.isArray(saved)) {
+        history = Object.fromEntries(Object.entries(saved).filter(([, c]) => typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c)));
+      }
+    } catch { /* 저장 실패 시에도 그래프는 표시한다. */ }
+    return metroColors(data.rows, data.worktrees, (p) => colorOf(wtColors, p), history);
+  }, [data.rows, data.worktrees, wtColors, colorKey]);
+  return { wtColors, colorKey, metro };
+}
+
+/** 커밋마다 그래프에서 그 커밋에 붙는 브랜치 이름표의 색(노선 색, 없으면 레인 색) */
+export function refLineColors(rows: GraphRow[], metro: { node: Map<string, string> }): Map<string, string> {
+  return new Map(rows.map((r) => [r.sha, metro.node.get(r.sha) ?? laneColor(r.color)]));
+}
 const LANE_W = 13;
 const MAX_LANES_SHOWN = 14;
 
@@ -66,18 +88,7 @@ export function GraphView({ data, focusWorktree, sessionStartBranch, selectedSha
   }, [data.rows, data.head]);
 
   // 워크트리마다 노선 색: HEAD 에서 갈라진 곳까지의 선과 커밋을 그 색으로
-  const wtColors = useWtColors();
-  const colorKey = `aiterm.graphColors:${data.worktrees.find((w) => w.isMain)?.path ?? focusWorktree}`;
-  const metro = useMemo(() => {
-    let history: Record<string, string> = {};
-    try {
-      const saved: unknown = JSON.parse(localStorage.getItem(colorKey) ?? "{}");
-      if (saved && typeof saved === "object" && !Array.isArray(saved)) {
-        history = Object.fromEntries(Object.entries(saved).filter(([, c]) => typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c)));
-      }
-    } catch { /* 저장 실패 시에도 그래프는 표시한다. */ }
-    return metroColors(data.rows, data.worktrees, (p) => colorOf(wtColors, p), history);
-  }, [data.rows, data.worktrees, wtColors, colorKey]);
+  const { wtColors, colorKey, metro } = useMetroColors(data, focusWorktree);
   useEffect(() => {
     const value = JSON.stringify(Object.fromEntries(metro.node));
     try { localStorage.setItem(colorKey, value); } catch {
