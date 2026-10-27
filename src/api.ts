@@ -318,6 +318,9 @@ export const api = {
   appInfo: () => invoke<AppInfo>("app_info"),
   repoList: () => invoke<RepoSummary[]>("repo_list"),
   repoAdd: (path: string) => invoke<{ id: string; path: string; name: string; pinned: boolean }>("repo_add", { path }),
+  /** 믿지 않은 저장소에서 꺼 둔 실행 명령(없거나 믿으면 빈 목록) */
+  repoTrustInfo: (worktree: string) => invoke<string[]>("repo_trust_info", { worktree }),
+  repoTrust: (worktree: string) => invoke<void>("repo_trust", { worktree }),
   repoSetPinned: (id: string, pinned: boolean) => invoke<void>("repo_set_pinned", { id, pinned }),
   worktrees: (path: string) => invoke<Worktree[]>("git_worktrees", { path }),
   graph: (path: string, limit?: number) => invoke<GraphData>("git_graph", { path, limit }),
@@ -354,6 +357,7 @@ export const api = {
   execResize: (id: string, cols: number, rows: number) => invoke<void>("exec_resize", { id, cols, rows }),
   execKill: (id: string) => invoke<void>("exec_kill", { id }),
   execList: () => invoke<ExecInfo[]>("exec_list"),
+  handoffNotice: () => invoke<string | null>("handoff_notice"),
   watchSet: (worktrees: string[]) => invoke<void>("watch_set", { worktrees }),
   kvGet: (key: string) => invoke<string | null>("kv_get", { key }),
   kvSet: (key: string, value: string) => invoke<void>("kv_set", { key, value }),

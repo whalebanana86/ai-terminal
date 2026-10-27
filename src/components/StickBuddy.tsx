@@ -325,6 +325,8 @@ function useAwake(ms = 30_000): boolean {
     let last = 0;
     const sleep = () => {
       window.clearTimeout(timer);
+      // 1초 안에 돌아와도 타이머를 다시 걸게 한다(안 그러면 깬 채로 남아 계속 걷는다)
+      last = 0;
       setAwake(false);
     };
     const wake = () => {

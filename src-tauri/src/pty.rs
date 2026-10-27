@@ -171,8 +171,11 @@ impl PtyManager {
             handed_off: AtomicBool::new(false),
             adopted: true,
         });
-        self.execs.lock().insert(id, exec.clone());
-        start_reader(&exec)?;
+        self.execs.lock().insert(id.clone(), exec.clone());
+        if let Err(e) = start_reader(&exec) {
+            self.execs.lock().remove(&id);
+            return Err(e);
+        }
         Ok(exec)
     }
 
@@ -183,7 +186,7 @@ impl PtyManager {
         let running: Vec<Arc<PtyExec>> = self.execs.lock().values().filter(|e| !e.inner.lock().exited).cloned().collect();
         let mut out = Vec::new();
         for e in &running {
-            let stopped = (|| -> Result<Handed> {
+            let stopped = (|| -> Result<Option<Handed>> {
                 let wake = e.wake.lock().take().ok_or_else(|| anyhow!(tr!("터미널 읽기를 멈출 수 없습니다", "Can't pause reading the terminal")))?;
                 e.handed_off.store(true, Ordering::SeqCst);
                 // SAFETY: 우리가 연 파이프에 한 바이트 쓴다.
@@ -191,13 +194,18 @@ impl PtyManager {
                 if let Some(h) = e.reader.lock().take() {
                     let _ = h.join();
                 }
-                let fd = e.master.lock().as_ref().and_then(|m| m.as_raw_fd()).ok_or_else(|| anyhow!(tr!("터미널이 닫혔습니다", "The terminal is closed")))?;
+                let Some(fd) = e.master.lock().as_ref().and_then(|m| m.as_raw_fd()) else {
+                    // 멈추는 사이에 에이전트가 끝나 읽기 스레드가 이미 정리했다: 넘길 것이 없다
+                    e.handed_off.store(false, Ordering::SeqCst);
+                    return Ok(None);
+                };
                 let inner = e.inner.lock();
                 let (a, b) = inner.buffer.as_slices();
-                Ok(Handed { id: e.id.clone(), pid: e.pid, master: dup_cloexec(fd)?, buffer: [a, b].concat() })
+                Ok(Some(Handed { id: e.id.clone(), pid: e.pid, master: dup_cloexec(fd)?, buffer: [a, b].concat() }))
             })();
             match stopped {
-                Ok(h) => out.push(h),
+                Ok(Some(h)) => out.push(h),
+                Ok(None) => {}
                 Err(err) => {
                     self.resume_handoff();
                     return Err(err);

@@ -45,7 +45,10 @@ export default function App() {
       }),
       listen<{ id: string; code: number | null }>("exec-exit", async (e) => {
         await st().refreshExecs();
-        st().toast(e.payload.code === 0 ? "info" : "error", t("에이전트 프로세스가 종료되었습니다 (코드 {code})", { code: e.payload.code ?? "?" }));
+        const code = e.payload.code;
+        // 업데이트 때 이어받은 에이전트는 이 앱의 자식이 아니라 종료 코드를 알 수 없다(null)
+        if (code === null) st().toast("info", t("에이전트 프로세스가 종료되었습니다"));
+        else st().toast(code === 0 ? "info" : "error", t("에이전트 프로세스가 종료되었습니다 (코드 {code})", { code }));
         void st().refreshSessions();
       }),
       listen<import("./api").LiveRun[]>("live-runs", (e) => st().setLiveRuns(e.payload)),
@@ -54,6 +57,8 @@ export default function App() {
         void st().refreshSessions();
       }),
     ];
+    // 업데이트 전 에이전트를 이어받지 못했으면 한 번 알린다(앱이 뜨기 전에 일어나 이벤트로는 놓친다)
+    void api.handoffNotice().then((m) => m && st().toast("error", m), () => {});
     return () => {
       unsubs.forEach((p) => p.then((u) => u()));
     };
@@ -90,6 +95,7 @@ export default function App() {
         execCwd: (execId) => useStore.getState().execs.find((e) => e.id === execId)?.cwd ?? null,
         transfer: (plan) => void runTransfer(plan),
         onMiss: () => useStore.getState().toast("info", t("터미널·입력칸에 놓으면 경로가 들어가고, 파일 트리의 폴더에 놓으면 복사돼요")),
+        onUnsafe: () => useStore.getState().toast("error", t("이름에 줄바꿈 같은 제어 문자가 든 파일은 경로로 넣지 않아요")),
       }),
     [],
   );

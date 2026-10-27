@@ -165,8 +165,11 @@ UI 는 셋이 다르면 경고 배지를 띄운다. 어떤 값도 체크아웃�
 - **업데이트 때 넘기기**(`handoff.rs`): 설치 뒤 PTY 읽기 스레드를 멈추고(select + 멈춤 파이프 — macOS 의 poll·kqueue 는 PTY 를 제대로 못 본다) 화면 기록·실행 정보를 `handoff/` 에 쓴 다음,
   같은 실행 파일(이제 새 버전)을 `--handoff-keeper` 로 띄워 PTY 마스터 복제본을 물려준다. 맡김 프로세스가 PTY 를 쥐고 있어 옛 앱이 꺼져도 에이전트에 SIGHUP 이 가지 않고, 그사이 출력은 받아 둔다.
   새 앱은 시작할 때 소켓에 붙어 fd 를 SCM_RIGHTS 로 받아 같은 실행 id 로 이어서 연다(내 자식이 아니라 종료 코드는 모름). 10분 안에 아무도 안 붙으면 맡김 프로세스가 끝난다.
+  소켓(0600, 폴더 0700)은 같은 사용자 + 같은 앱 폴더의 실행 파일(LOCAL_PEERPID → proc_pidpath)만 받는다. fd 를 보낸 뒤에는 받았다는 답이 없어도 더 읽지 않는다(둘이 나눠 읽으면 출력이 빠진다).
+  이어받기는 실행 기록을 되살린 뒤에 읽기 스레드를 시작하고(넘기는 사이 끝난 에이전트), 이어받지 못하면 화면에 한 번 알린다(`handoff_notice`).
 - **파일 감시**: 파일 id 캐시 없는 디바운서(감시 등록 때 하위 전체를 훑지 않음), 무시 폴더 목록 20초마다 갱신, 감시 루트의 inode 가 바뀌면 다시 등록.
-- **Git 실행 고정 옵션**: `GIT_OPTIONAL_LOCKS=0`, `GIT_LITERAL_PATHSPECS=1`(check-ignore 제외), `core.fsmonitor=false`, `diff.noprefix=false`, `diff.mnemonicPrefix=false`, `core.quotepath=false`, diff 는 `--no-ext-diff --no-textconv`.
+- **저장소 믿기**(`trust.rs`): git 을 부를 때마다 `.git` 을 찾아 올라가(git 을 부르지 않음) 저장소를 알아내고, 믿지 않은 저장소면 그 저장소 설정(`git config --list --show-scope` 의 local·worktree, include 로 끌어온 것 포함)과 `.git/hooks` 에서 실행 명령을 찾아 `-c` 로 끈다(필터 clean/smudge/process 빈 값 + required=false, hooksPath=/dev/null, sshCommand=ssh, gpg 프로그램 기본값, credential helper 비움, ext 프로토콜 금지). 결과는 설정·훅 폴더 수정 시각으로 캐시. 믿는 목록은 kv `trusted_repos`, 처음엔 등록된 저장소 전부.
+- **Git 실행 고정 옵션**: `GIT_OPTIONAL_LOCKS=0`, `GIT_LITERAL_PATHSPECS=1`(check-ignore 제외), `core.fsmonitor=false`, `log.showSignature=false`(gpg.program 실행 방지), `diff.noprefix=false`, `diff.mnemonicPrefix=false`, `core.quotepath=false`, diff 는 `--no-ext-diff --no-textconv`.
 
 ## 10. 2차 작업에서 추가된 구조
 

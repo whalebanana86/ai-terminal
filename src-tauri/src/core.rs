@@ -120,6 +120,9 @@ pub struct AppCore {
     events: EventSink,
 }
 
+/// 믿는 저장소 목록(kv, JSON 배열)
+const TRUST_KEY: &str = "trusted_repos";
+
 /// 기록된 cwd 가 심볼릭 링크 경로(/tmp/x/sub)이고 워크트리가 실제 경로(/private/tmp/x)일 때,
 /// 기록 형태의 워크트리 경로(/tmp/x)를 돌려준다.
 pub fn path_alias(raw_cwd: &str, canonical_worktree: &str) -> Option<String> {
@@ -217,6 +220,32 @@ impl AppCore {
     }
 
     // ───────────── 저장소 ─────────────
+
+    /// 믿는 저장소 목록을 읽는다. 처음(목록이 없을 때)에는 이미 등록한 저장소를 모두 믿는다:
+    /// 이전 버전에서 계속 써 온 저장소라 새로 막을 이유가 없고, 앞으로 추가하는 저장소부터 묻는다.
+    pub fn load_trust(&self) {
+        let ids: Vec<String> = match self.db.kv_get(TRUST_KEY) {
+            Ok(Some(s)) => serde_json::from_str(&s).unwrap_or_default(),
+            _ => {
+                let ids: Vec<String> = self.db.repos().map(|rs| rs.into_iter().map(|r| r.id).collect()).unwrap_or_default();
+                let _ = self.db.kv_set(TRUST_KEY, &json!(ids).to_string());
+                ids
+            }
+        };
+        crate::trust::set_trusted(ids);
+    }
+
+    /// 믿지 않은 저장소에서 꺼 둔 실행 명령(화면에 보여 주고 믿을지 묻는다)
+    pub fn untrusted_items(&self, worktree: &str) -> Result<Vec<String>> {
+        self.ensure_known(worktree)?;
+        Ok(crate::trust::untrusted_items(Path::new(worktree)))
+    }
+
+    pub fn trust_repo(&self, worktree: &str) -> Result<()> {
+        self.ensure_known(worktree)?;
+        crate::trust::trust(Path::new(worktree)).ok_or_else(|| anyhow!(tr!("Git 저장소가 아닙니다: {worktree}", "Not a Git repository: {worktree}")))?;
+        self.db.kv_set(TRUST_KEY, &json!(crate::trust::trusted_ids()).to_string())
+    }
 
     pub fn add_repo(&self, path: &str) -> Result<RepoRow> {
         let loc = git::locate(Path::new(path))?.ok_or_else(|| anyhow!(tr!("Git 저장소가 아닙니다: {path}", "Not a Git repository: {path}")))?;
@@ -613,10 +642,18 @@ impl AppCore {
 
     /// 이전 버전 앱이 업데이트하며 넘겨준 실행을 같은 실행 id·기록으로 이어서 연다.
     pub fn adopt_exec(self: &Arc<Self>, info: ExecInfo, master: std::os::fd::OwnedFd, buffer: Vec<u8>) -> Result<()> {
-        self.pty.adopt(info.id.clone(), info.pid, master, buffer, self.on_exec_exit())?;
-        // 앱을 열 때 '끝나지 않은 실행' 을 비정상 종료로 보고 끝냈으니 되돌린다
-        let _ = self.db.reopen_execution(&info.id);
-        self.execs.lock().insert(info.id.clone(), ExecInfo { exited: false, exit_code: None, ..info });
+        // 앱을 열 때 '끝나지 않은 실행' 을 비정상 종료로 보고 끝냈으니 되돌린다.
+        // 읽기 스레드보다 먼저 해야 한다: 넘기는 사이 끝난 에이전트는 읽기 스레드가 곧바로 끝을 알린다.
+        let id = info.id.clone();
+        let _ = self.db.reopen_execution(&id);
+        self.execs.lock().insert(id.clone(), ExecInfo { exited: false, exit_code: None, ..info.clone() });
+        if let Err(e) = self.pty.adopt(id.clone(), info.pid, master, buffer, self.on_exec_exit()) {
+            let _ = self.db.finish_execution(&id, None);
+            if let Some(x) = self.execs.lock().get_mut(&id) {
+                x.exited = true;
+            }
+            return Err(e);
+        }
         Ok(())
     }
 

@@ -159,6 +159,7 @@ Turn on **File editing** in Settings → **Features** and files are **editable a
 - The app only writes your files when the **File editing** feature is on (off by default, a macOS confirmation to turn on).
 - The only traffic is what you start: Git remote actions, and the Claude Code / Codex CLIs you launch.
 - Hard-to-undo actions (checkout, pull, push, discard) always confirm, and warn about uncommitted changes or agents running in that worktree.
+- If a newly added repository's Git settings (.git) contain commands Git would run (filters, hooks, …), they stay **off until you trust the repository**, so opening a repository from someone else can't run them.
 
 ---
 

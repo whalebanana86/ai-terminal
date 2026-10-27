@@ -79,7 +79,14 @@ export function GraphView({ data, focusWorktree, sessionStartBranch, selectedSha
     return metroColors(data.rows, data.worktrees, (p) => colorOf(wtColors, p), history);
   }, [data.rows, data.worktrees, wtColors, colorKey]);
   useEffect(() => {
-    try { localStorage.setItem(colorKey, JSON.stringify(Object.fromEntries(metro.node))); } catch { /* 저장 공간이 없어도 표시한다. */ }
+    const value = JSON.stringify(Object.fromEntries(metro.node));
+    try { localStorage.setItem(colorKey, value); } catch {
+      // 저장소마다 커밋 수만큼 쌓여 저장 공간(5MB)이 찰 수 있다. 다른 저장소의 색 기록을 비우고 한 번 더 한다.
+      try {
+        for (const k of Object.keys(localStorage)) if (k.startsWith("aiterm.graphColors:") && k !== colorKey) localStorage.removeItem(k);
+        localStorage.setItem(colorKey, value);
+      } catch { /* 저장 공간이 없어도 표시한다. */ }
+    }
   }, [colorKey, metro]);
   const colorFor = (p: string) => colorOf(wtColors, p);
   const mainWorktree = data.worktrees.find((w) => w.isMain);

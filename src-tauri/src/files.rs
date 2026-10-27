@@ -239,8 +239,17 @@ fn editable_from(rel: &str, bytes: &[u8]) -> EditableFile {
 }
 
 fn refuse_git_dir(rel: &str) -> Result<()> {
-    if Path::new(rel).components().any(|c| c.as_os_str() == ".git") {
+    if has_git_component(Path::new(rel)) {
         bail!(tr!(".git 안의 파일은 고칠 수 없습니다", "Files inside .git can't be edited"));
+    }
+    Ok(())
+}
+
+/// rel 글자만이 아니라 실제 경로로도 .git 안인지 본다. 워크트리 인자가 .git 자체이거나
+/// 저장소 안의 링크 폴더(docs -> .git 등)가 .git 을 가리키면 글자 검사를 지나간다.
+fn refuse_real_git(root: &Path, real: &Path) -> Result<()> {
+    if has_git_component(root) || has_git_component(real.strip_prefix(root).unwrap_or(real)) {
+        bail!(tr!(".git 안은 앱에서 바꿀 수 없습니다", "Nothing inside .git can be changed from the app"));
     }
     Ok(())
 }
@@ -248,6 +257,7 @@ fn refuse_git_dir(rel: &str) -> Result<()> {
 pub fn read_for_edit(worktree: &Path, rel: &str) -> Result<EditableFile> {
     refuse_git_dir(rel)?;
     let p = resolve_inside(worktree, rel)?;
+    refuse_real_git(&std::fs::canonicalize(worktree)?, &p)?;
     let meta = std::fs::metadata(&p)?;
     if !meta.is_file() {
         bail!(tr!("일반 파일이 아니라 고칠 수 없습니다", "Not a regular file, so it can't be edited"));
@@ -274,6 +284,7 @@ pub fn save_file(worktree: &Path, rel: &str, text: &str, crlf: bool, bom: bool, 
     }
     let name = p.file_name().ok_or_else(|| anyhow::anyhow!(tr!("올바르지 않은 경로: {rel}", "Invalid path: {rel}")))?.to_owned();
     let target = parent.join(&name);
+    refuse_real_git(&root, &target)?;
     let meta = std::fs::symlink_metadata(&target).ok();
     if meta.as_ref().is_some_and(|m| !m.is_file()) {
         bail!(tr!("일반 파일이 아니라 고칠 수 없습니다", "Not a regular file, so it can't be edited"));
@@ -363,9 +374,7 @@ fn drop_dir(worktree: &Path, rel: &str) -> Result<(PathBuf, PathBuf)> {
     let root = std::fs::canonicalize(worktree)?;
     let dir = resolve_inside(worktree, rel)?;
     // 링크 폴더가 .git 을 가리키는 경우까지 실제 경로로 한 번 더 본다
-    if has_git_component(dir.strip_prefix(&root).unwrap_or(Path::new(""))) {
-        bail!(tr!(".git 안에는 넣을 수 없습니다", "Can't put anything inside .git"));
-    }
+    refuse_real_git(&root, &dir)?;
     match std::fs::metadata(&dir) {
         Ok(m) if m.is_dir() => Ok((root, dir)),
         Ok(_) => bail!(tr!("폴더가 아닙니다: {rel}", "Not a folder: {rel}")),
@@ -406,7 +415,8 @@ fn free_target(dir: &Path, name: &str, is_dir: bool) -> Result<PathBuf> {
 
 /// 하나를 복사한다. 링크는 따라가지 않고 링크 그대로 만들고, 폴더는 안까지 복사한다.
 /// created 는 dst 를 이번에 만들었는지(실패했을 때 치워도 되는지).
-fn copy_entry(src: &Path, dst: &Path, skipped: &mut usize, created: &mut bool) -> Result<()> {
+/// 폴더 권한은 dirs 에 모아 두었다가 전부 복사한 뒤에 입힌다: 중간에 실패하면 읽기 전용 폴더 안을 치우지 못한다.
+fn copy_entry(src: &Path, dst: &Path, skipped: &mut usize, created: &mut bool, dirs: &mut Vec<(PathBuf, std::fs::Permissions)>) -> Result<()> {
     let meta = std::fs::symlink_metadata(src)?;
     let ft = meta.file_type();
     if ft.is_symlink() {
@@ -419,10 +429,9 @@ fn copy_entry(src: &Path, dst: &Path, skipped: &mut usize, created: &mut bool) -
         *created = true;
         for e in std::fs::read_dir(src)? {
             let e = e?;
-            copy_entry(&e.path(), &dst.join(e.file_name()), skipped, &mut false)?;
+            copy_entry(&e.path(), &dst.join(e.file_name()), skipped, &mut false, dirs)?;
         }
-        // 읽기 전용 폴더도 안을 다 채운 뒤에 권한을 맞춘다
-        let _ = std::fs::set_permissions(dst, meta.permissions());
+        dirs.push((dst.to_path_buf(), meta.permissions()));
     } else if ft.is_file() {
         if exists_no_follow(dst) {
             bail!(tr!("같은 이름이 이미 있습니다", "An item with the same name already exists"));
@@ -476,9 +485,13 @@ pub fn copy_into(worktree: &Path, dest_rel: &str, sources: &[String]) -> Result<
                 continue;
             }
         };
-        let (mut skipped, mut created) = (0, false);
-        match copy_entry(&src, &target, &mut skipped, &mut created) {
+        let (mut skipped, mut created, mut dirs) = (0, false, Vec::new());
+        match copy_entry(&src, &target, &mut skipped, &mut created, &mut dirs) {
             Ok(()) => {
+                // 읽기 전용 폴더도 안을 다 채운 뒤에 권한을 맞춘다
+                for (d, perm) in dirs {
+                    let _ = std::fs::set_permissions(d, perm);
+                }
                 out.skipped += skipped;
                 let new_name = display_name(&target);
                 if new_name != name {
@@ -536,6 +549,7 @@ fn move_one(worktree: &Path, root: &Path, dir: &Path, rel: &str) -> Result<Optio
     };
     // 부모 폴더만 실제 경로로 풀고 마지막 이름은 그대로 둔다: 링크면 가리키는 곳이 아니라 링크 자체를 옮긴다
     let parent = resolve_inside(worktree, parent_rel)?;
+    refuse_real_git(root, &parent)?;
     let src = parent.join(name);
     let meta = std::fs::symlink_metadata(&src).map_err(|_| anyhow::anyhow!(tr!("원본이 없습니다", "The source no longer exists")))?;
     if parent == dir {
@@ -770,6 +784,46 @@ mod transfer_tests {
         assert!(r.done.is_empty(), "{:?}", r.done);
         assert_eq!(r.failed.len(), 5, "{:?}", r.failed);
         assert_eq!(std::fs::read_dir(w.join("sub/deep")).unwrap().count(), 0, "실패한 것은 남기지 않는다");
+    }
+
+    #[test]
+    fn git_dir_is_refused_by_real_path() {
+        let wd = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let w = wd.path();
+        std::fs::create_dir_all(w.join(".git/hooks")).unwrap();
+        std::fs::write(w.join(".git/config"), "[core]\n").unwrap();
+        std::os::unix::fs::symlink(w.join(".git"), w.join("docs")).unwrap();
+        std::fs::write(outside.path().join("x.txt"), "x").unwrap();
+        let x = vec![s(&outside.path().join("x.txt"))];
+        // 워크트리 인자가 .git 자체
+        assert!(copy_into(&w.join(".git"), "hooks", &x).is_err());
+        assert!(move_into(&w.join(".git"), "", &["hooks".into()]).is_err());
+        assert!(read_for_edit(&w.join(".git"), "config").is_err());
+        // .git 을 가리키는 링크 폴더를 거쳐 고치기·꺼내 옮기기
+        assert!(read_for_edit(w, "docs/config").is_err());
+        assert!(save_file(w, "docs/config", "x", false, false, "", true).is_err());
+        let r = move_into(w, "", &["docs/hooks".into()]).unwrap();
+        assert!(r.done.is_empty() && r.failed.len() == 1, "{:?}", r.failed);
+        assert!(w.join(".git/hooks").is_dir());
+        assert_eq!(std::fs::read_to_string(w.join(".git/config")).unwrap(), "[core]\n");
+    }
+
+    #[test]
+    fn failed_folder_copy_leaves_nothing_even_with_read_only_folders() {
+        use std::os::unix::fs::PermissionsExt;
+        let wd = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let src = outside.path().join("pkg");
+        std::fs::create_dir_all(src.join("ro")).unwrap();
+        std::fs::write(src.join("ro/a.txt"), "a").unwrap();
+        std::fs::write(src.join("bad.txt"), "b").unwrap();
+        std::fs::set_permissions(src.join("ro"), std::fs::Permissions::from_mode(0o555)).unwrap();
+        std::fs::set_permissions(src.join("bad.txt"), std::fs::Permissions::from_mode(0o000)).unwrap();
+        let r = copy_into(wd.path(), "", &[s(&src)]).unwrap();
+        assert_eq!(r.failed.len(), 1, "{:?}", r.done);
+        assert!(!wd.path().join("pkg").exists(), "반쯤 복사한 폴더가 남지 않는다");
+        std::fs::set_permissions(src.join("ro"), std::fs::Permissions::from_mode(0o755)).unwrap();
     }
 
     #[test]

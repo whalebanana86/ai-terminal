@@ -30,6 +30,16 @@ const MANIFEST: &str = "manifest.json";
 const KEEP_FOR: Duration = Duration::from_secs(10 * 60);
 /// 맡아 두는 동안 받은 출력은 실행마다 이만큼만(앱의 화면 기록과 같은 양)
 const MAX_HELD: usize = 2 * 1024 * 1024;
+/// 맡김 폴더의 파일·소켓 줄을 읽을 때의 상한(앱이 쓰는 것보다 넉넉히)
+const MAX_FILE: u64 = 16 * 1024 * 1024;
+const MAX_LINE: u64 = 64;
+
+/// 이어받기에 실패했을 때 화면에 한 번 알릴 말(앱이 뜨기 전에 일어나 이벤트로는 놓친다)
+static NOTICE: parking_lot::Mutex<Option<String>> = parking_lot::Mutex::new(None);
+
+pub fn take_notice() -> Option<String> {
+    NOTICE.lock().take()
+}
 
 #[derive(Serialize, Deserialize)]
 struct Manifest {
@@ -54,6 +64,46 @@ struct Taken {
 
 pub fn dir(data_dir: &Path) -> PathBuf {
     data_dir.join("handoff")
+}
+
+/// 실행 id 는 파일 이름에 쓰므로 uuid 꼴만 받는다
+fn safe_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 64 && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+}
+
+fn read_capped(path: &Path) -> Result<Vec<u8>> {
+    let mut out = Vec::new();
+    std::fs::File::open(path)?.take(MAX_FILE + 1).read_to_end(&mut out)?;
+    if out.len() as u64 > MAX_FILE {
+        bail!("맡김 파일이 너무 큽니다: {}", path.display());
+    }
+    Ok(out)
+}
+
+/// 붙은 상대가 이 앱(같은 Contents/MacOS 폴더의 실행 파일)인지. 같은 사용자의 다른 프로그램이
+/// 업데이트 순간에 먼저 붙어 에이전트 터미널을 가져가지 못하게 한다.
+/// 실행 파일 이름이 버전마다 바뀌어도 넘길 수 있게 폴더로 비교한다.
+fn peer_is_this_app(stream: &UnixStream) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    let mut pid: libc::pid_t = 0;
+    let mut len = std::mem::size_of::<libc::pid_t>() as libc::socklen_t;
+    // SAFETY: 연결된 유닉스 소켓, pid_t 크기의 버퍼.
+    let ok = unsafe { libc::getsockopt(stream.as_raw_fd(), libc::SOL_LOCAL, libc::LOCAL_PEERPID, (&raw mut pid).cast(), &mut len) } == 0;
+    if !ok || pid <= 0 {
+        return false;
+    }
+    let mut buf = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
+    // SAFETY: buf 길이를 그대로 넘긴다.
+    let n = unsafe { libc::proc_pidpath(pid, buf.as_mut_ptr().cast(), buf.len() as u32) };
+    if n <= 0 {
+        return false;
+    }
+    let peer = Path::new(std::ffi::OsStr::from_bytes(&buf[..n as usize])).to_path_buf();
+    let folder = |p: &Path| std::fs::canonicalize(p).ok().and_then(|p| p.parent().map(Path::to_path_buf));
+    match (std::env::current_exe().ok().and_then(|p| folder(&p)), folder(&peer)) {
+        (Some(mine), Some(theirs)) => mine == theirs,
+        _ => false,
+    }
 }
 
 // ───────────── 옛 앱: 맡기기 ─────────────
@@ -143,7 +193,10 @@ struct Held {
 }
 
 fn keep(dir: &Path) -> Result<()> {
-    let manifest: Manifest = serde_json::from_slice(&std::fs::read(dir.join(MANIFEST))?)?;
+    let manifest: Manifest = serde_json::from_slice(&read_capped(&dir.join(MANIFEST))?)?;
+    if let Some(e) = manifest.execs.iter().find(|e| !safe_id(&e.info.id)) {
+        bail!("올바르지 않은 실행 id: {:?}", e.info.id);
+    }
     let mut held: Vec<Held> = manifest
         .execs
         .into_iter()
@@ -164,10 +217,17 @@ fn keep(dir: &Path) -> Result<()> {
         drain(&mut held, &ready);
         if ready.contains(&listener.as_raw_fd())
             && let Ok((stream, _)) = listener.accept()
-            && serve(dir, &stream, &mut held).unwrap_or(false)
         {
-            let _ = std::fs::remove_file(&sock);
-            return Ok(());
+            match serve(dir, &stream, &mut held) {
+                Ok(Served::Taken) => {
+                    let _ = std::fs::remove_file(&sock);
+                    return Ok(());
+                }
+                // 보냈지만 받았다는 답이 없다: 새 앱이 이미 읽고 있을 수 있으니 더는 읽지 않고 쥐고만 있는다
+                // (둘이 나눠 읽으면 출력이 빠진다). 다시 take 가 오면 그대로 다시 보낸다.
+                Ok(Served::Sent) => held.iter_mut().for_each(|h| h.eof = true),
+                Ok(Served::No) | Err(_) => {}
+            }
         }
     }
     let _ = std::fs::remove_file(&sock);
@@ -215,21 +275,30 @@ fn drain(held: &mut [Held], ready: &[RawFd]) {
     }
 }
 
-/// 새 앱에 넘긴다. 넘겼고 받았다는 답까지 받았으면 true.
-fn serve(dir: &Path, stream: &UnixStream, held: &mut [Held]) -> Result<bool> {
+enum Served {
+    /// 넘기지 않았다(다른 사용자·다른 프로그램·잘못된 요청)
+    No,
+    /// fd 를 보냈지만 받았다는 답은 못 받았다
+    Sent,
+    /// 보냈고 받았다는 답까지 받았다
+    Taken,
+}
+
+/// 새 앱에 넘긴다.
+fn serve(dir: &Path, stream: &UnixStream, held: &mut [Held]) -> Result<Served> {
     stream.set_nonblocking(false)?;
     stream.set_read_timeout(Some(Duration::from_secs(10)))?;
-    // 같은 사용자만
+    // 같은 사용자의 이 앱만
     let (mut uid, mut gid) = (0, 0);
     // SAFETY: 연결된 유닉스 소켓.
-    if unsafe { libc::getpeereid(stream.as_raw_fd(), &mut uid, &mut gid) } != 0 || uid != unsafe { libc::getuid() } {
-        return Ok(false);
+    if unsafe { libc::getpeereid(stream.as_raw_fd(), &mut uid, &mut gid) } != 0 || uid != unsafe { libc::getuid() } || !peer_is_this_app(stream) {
+        return Ok(Served::No);
     }
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut line = String::new();
-    reader.read_line(&mut line)?;
+    (&mut reader).take(MAX_LINE).read_line(&mut line)?;
     if line.trim() != "take" {
-        return Ok(false);
+        return Ok(Served::No);
     }
     // 마지막으로 쌓인 출력까지 받아 둔다(이 뒤 출력은 새 앱이 읽는다)
     loop {
@@ -248,8 +317,8 @@ fn serve(dir: &Path, stream: &UnixStream, held: &mut [Held]) -> Result<bool> {
     send_fds(stream, &msg, &fds)?;
     // 받았다는 답을 기다린다(받기 전에 끝나면 fd 가 닫혀 에이전트가 끝난다)
     let mut ack = String::new();
-    reader.read_line(&mut ack)?;
-    Ok(ack.trim() == "ok")
+    let _ = (&mut reader).take(MAX_LINE).read_line(&mut ack);
+    Ok(if ack.trim() == "ok" { Served::Taken } else { Served::Sent })
 }
 
 fn send_fds(stream: &UnixStream, data: &[u8], fds: &[RawFd]) -> Result<()> {
@@ -282,23 +351,62 @@ fn send_fds(stream: &UnixStream, data: &[u8], fds: &[RawFd]) -> Result<()> {
 // ───────────── 새 앱: 이어받기 ─────────────
 
 /// 시작할 때: 이전 버전 앱이 맡겨 둔 에이전트가 있으면 이어받는다. 이어받은 수를 돌려준다.
+/// 이어받지 못한 것이 있으면 화면에 알릴 말을 남긴다(take_notice).
 pub fn adopt(core: &Arc<AppCore>, data_dir: &Path) -> Result<usize> {
     let dir = dir(data_dir);
     if !dir.exists() {
         return Ok(0);
     }
-    let result = take(core, &dir);
-    // 받았든 못 받았든(맡김 프로세스가 이미 끝남 등) 남은 파일은 지운다
-    let _ = std::fs::remove_dir_all(&dir);
-    result
-}
-
-fn take(core: &Arc<AppCore>, dir: &Path) -> Result<usize> {
-    let sock = dir.join(SOCKET);
-    if !sock.exists() {
+    if !dir.join(SOCKET).exists() {
+        // 맡김 프로세스가 기다리다 끝났다(그러면서 에이전트도 끝났다)
+        if dir.join("keeper.log").exists() {
+            *NOTICE.lock() = Some(tr!(
+                "업데이트 전에 실행 중이던 에이전트를 새 버전이 {m}분 안에 이어받지 못해 에이전트가 끝났습니다.",
+                "The new version didn't pick up the agents that were running before the update within {m} minutes, so they ended.",
+                m = KEEP_FOR.as_secs() / 60
+            ));
+        }
+        let _ = std::fs::remove_dir_all(&dir);
         return Ok(0);
     }
-    let manifest: Manifest = serde_json::from_slice(&std::fs::read(dir.join(MANIFEST))?)?;
+    let result = take(core, &dir);
+    match &result {
+        Ok((_, 0)) => {}
+        Ok((_, failed)) => {
+            *NOTICE.lock() = Some(tr!(
+                "업데이트 전에 실행 중이던 에이전트 {failed}개를 새 버전에서 이어받지 못해 끝났습니다.",
+                "{failed} agent(s) that were running before the update couldn't be picked up by the new version and ended."
+            ))
+        }
+        Err(e) => {
+            // 맡김 프로세스가 아직 살아 있으면 폴더를 남겨 앱을 다시 열 때 한 번 더 받는다
+            let alive = UnixStream::connect(dir.join(SOCKET)).is_ok();
+            *NOTICE.lock() = Some(if alive {
+                tr!(
+                    "업데이트 전에 실행 중이던 에이전트를 이어받지 못했습니다({e:#}). 에이전트는 아직 돌고 있으니 {m}분 안에 앱을 다시 열어 주세요.",
+                    "Couldn't pick up the agents that were running before the update ({e:#}). They are still running; reopen the app within {m} minutes.",
+                    m = KEEP_FOR.as_secs() / 60
+                )
+            } else {
+                tr!(
+                    "업데이트 전에 실행 중이던 에이전트를 이어받지 못했습니다({e:#}).",
+                    "Couldn't pick up the agents that were running before the update ({e:#})."
+                )
+            });
+            if alive {
+                return result.map(|(n, _)| n);
+            }
+        }
+    }
+    // 받았든 못 받았든(맡김 프로세스가 이미 끝남 등) 남은 파일은 지운다
+    let _ = std::fs::remove_dir_all(&dir);
+    result.map(|(n, _)| n)
+}
+
+/// 이어받은 수와 못 받은 수
+fn take(core: &Arc<AppCore>, dir: &Path) -> Result<(usize, usize)> {
+    let sock = dir.join(SOCKET);
+    let manifest: Manifest = serde_json::from_slice(&read_capped(&dir.join(MANIFEST))?)?;
     if manifest.v > VERSION {
         bail!("모르는 맡김 형식입니다(v{})", manifest.v);
     }
@@ -307,6 +415,9 @@ fn take(core: &Arc<AppCore>, dir: &Path) -> Result<usize> {
     (&stream).write_all(b"take\n")?;
     let (mut data, fds) = recv_fds(&stream, manifest.execs.len())?;
     while !data.ends_with(b"\n") {
+        if data.len() as u64 > MAX_FILE {
+            bail!("맡김 프로세스의 답이 너무 깁니다");
+        }
         let mut more = [0u8; 4096];
         let n = (&stream).read(&mut more)?;
         if n == 0 {
@@ -318,18 +429,24 @@ fn take(core: &Arc<AppCore>, dir: &Path) -> Result<usize> {
     if taken.ids.len() != fds.len() {
         bail!("받은 터미널 수가 맞지 않습니다({} / {})", fds.len(), taken.ids.len());
     }
-    let mut n = 0;
+    let (mut n, mut failed) = (0, 0);
     for (id, fd) in taken.ids.into_iter().zip(fds) {
-        let Some(entry) = manifest.execs.iter().find(|e| e.info.id == id) else { continue };
-        let mut buffer = std::fs::read(dir.join(format!("{id}.out"))).unwrap_or_default();
-        buffer.extend(std::fs::read(dir.join(format!("{id}.more"))).unwrap_or_default());
+        let Some(entry) = manifest.execs.iter().find(|e| e.info.id == id && safe_id(&id)) else {
+            failed += 1;
+            continue;
+        };
+        let mut buffer = read_capped(&dir.join(format!("{id}.out"))).unwrap_or_default();
+        buffer.extend(read_capped(&dir.join(format!("{id}.more"))).unwrap_or_default());
         match core.adopt_exec(entry.info.clone(), fd, buffer) {
             Ok(()) => n += 1,
-            Err(e) => eprintln!("[handoff] {id} 를 이어받지 못했습니다: {e:#}"),
+            Err(e) => {
+                eprintln!("[handoff] {id} 를 이어받지 못했습니다: {e:#}");
+                failed += 1;
+            }
         }
     }
     (&stream).write_all(b"ok\n")?;
-    Ok(n)
+    Ok((n, failed))
 }
 
 fn recv_fds(stream: &UnixStream, expect: usize) -> Result<(Vec<u8>, Vec<OwnedFd>)> {
@@ -438,9 +555,21 @@ mod tests {
         std::thread::sleep(Duration::from_millis(300));
         assert!(!old.output_text("t1").unwrap().contains("got:two"));
 
+        // 같은 사용자라도 이 앱이 아닌 프로그램이 먼저 붙어 take 를 보내면 넘기지 않는다
+        let mut nc = std::process::Command::new("/usr/bin/nc")
+            .args(["-w", "3", "-U"])
+            .arg(dir.join(SOCKET))
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        nc.stdin.take().unwrap().write_all(b"take\n").unwrap();
+        let got = nc.wait_with_output().unwrap();
+        assert!(got.stdout.is_empty(), "{:?}", String::from_utf8_lossy(&got.stdout));
+
         // 새 앱: 이어받는다
         let core = AppCore::new(Db::open_in_memory().unwrap(), Arc::new(|_, _| {}));
-        assert_eq!(take(&core, &dir).unwrap(), 1);
+        assert_eq!(take(&core, &dir).unwrap(), (1, 0));
         keeper.join().unwrap().unwrap();
         let out = core.pty.output_text("t1").unwrap();
         let (a, b) = (out.find("got:one").unwrap(), out.find("got:two").expect(&out));

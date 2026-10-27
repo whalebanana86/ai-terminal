@@ -48,6 +48,14 @@ impl std::fmt::Display for GitError {
 }
 
 pub fn git_command(cwd: &Path) -> Command {
+    let mut cmd = base_command(cwd);
+    // 믿지 않은 저장소의 설정에 적힌 실행 명령(필터·훅 등)을 끈다
+    cmd.args(crate::trust::overrides(cwd));
+    cmd
+}
+
+/// 저장소 설정을 가리지 않는 기본 git 명령(설정을 읽어 실행 명령을 찾을 때 쓴다)
+pub(crate) fn base_command(cwd: &Path) -> Command {
     let git = crate::env::which("git").unwrap_or_else(|| PathBuf::from("/usr/bin/git"));
     let mut cmd = Command::new(git);
     cmd.current_dir(cwd)
@@ -67,7 +75,8 @@ pub fn git_command(cwd: &Path) -> Command {
         .env_remove("GIT_INDEX_FILE")
         .args(["-c", "core.quotepath=false", "-c", "color.ui=false", "-c", "core.pager=cat"])
         // 화면 조회만으로 저장소 설정(.git/config)에 적힌 외부 명령이 자동 실행되지 않게 한다.
-        .args(["-c", "core.fsmonitor=false"])
+        // log.showSignature 가 켜져 있으면 log·show 가 서명된 커밋마다 gpg.program 을 부른다.
+        .args(["-c", "core.fsmonitor=false", "-c", "log.showSignature=false"])
         // 사용자 전역 설정이 diff 헤더 형식(a/ b/ 접두사)을 바꾸지 못하게 고정한다.
         .args(["-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "-c", "diff.suppressBlankEmpty=false"])
         .stdin(Stdio::null())
