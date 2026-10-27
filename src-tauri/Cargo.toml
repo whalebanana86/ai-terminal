@@ -13,7 +13,8 @@ edition = "2024"
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "ai_terminal_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# 맥 앱과 examples 는 rlib 만 쓴다. staticlib(iOS)·cdylib(Android)는 빌드마다 수백 MB 를 만들어 뺐다.
+crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
