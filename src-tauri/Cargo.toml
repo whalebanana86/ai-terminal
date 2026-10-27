@@ -53,6 +53,10 @@ tempfile = "3"
 automation = ["dep:objc2", "dep:objc2-foundation", "dep:objc2-app-kit"]
 
 
+# 개발 빌드는 오류 위치(줄 번호)만 남긴다. 전체 디버그 정보는 빌드 결과물을 몇 배로 키운다.
+[profile.dev]
+debug = "line-tables-only"
+
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
 codegen-units = 1
