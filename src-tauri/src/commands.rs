@@ -69,12 +69,31 @@ pub async fn app_info(app: tauri::AppHandle) -> Res<AppInfo> {
     .await
 }
 
+/// 업데이트 전 에이전트를 이어받지 못했을 때 화면에 한 번 알릴 말
+#[tauri::command]
+pub fn handoff_notice() -> Option<String> {
+    crate::handoff::take_notice()
+}
+
 // ───────────── 저장소 ─────────────
 
 #[tauri::command]
 pub async fn repo_list(state: State<'_, AppState>) -> Res<Vec<RepoSummary>> {
     let core = state.core.clone();
     blocking(move || core.list_repos()).await
+}
+
+/// 믿지 않은 저장소에서 꺼 둔 실행 명령(없거나 믿으면 빈 목록)
+#[tauri::command]
+pub async fn repo_trust_info(state: State<'_, AppState>, worktree: String) -> Res<Vec<String>> {
+    let core = state.core.clone();
+    blocking(move || core.untrusted_items(&worktree)).await
+}
+
+#[tauri::command]
+pub async fn repo_trust(state: State<'_, AppState>, worktree: String) -> Res<()> {
+    let core = state.core.clone();
+    blocking(move || core.trust_repo(&worktree)).await
 }
 
 #[tauri::command]

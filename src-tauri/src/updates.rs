@@ -85,7 +85,14 @@ pub async fn check_update(
         Ok(release) => release,
         // GitHub API 는 로그인 없이 같은 인터넷 주소에서 시간당 60번까지다(같은 와이파이의 다른 기기·프로그램과 나눠 씀).
         // 막히면 API 를 거치지 않는 최신 릴리즈의 업데이트 파일(latest.json)로 확인한다.
-        Err(api_error) => return check_from_manifest(&app, &state, current).await.map_err(|_| api_error),
+        Err(api_error) => {
+            return check_from_manifest(&app, &state, current).await.map_err(|e| {
+                tr!(
+                    "{api_error}\n대신 확인한 업데이트 파일(latest.json)도 읽지 못했습니다: {e}",
+                    "{api_error}\nThe fallback update file (latest.json) couldn't be read either: {e}"
+                )
+            });
+        }
     };
     let available = !release.draft && !release.prerelease && newer(&release.tag_name, current)?;
     let mut info = UpdateInfo {
@@ -161,6 +168,8 @@ async fn check_from_manifest(
         .map_err(|e| e.to_string())?;
     let update = app
         .updater_builder()
+        // API 경로의 newer() 와 같게: 더 높은 정식 버전만(-beta 같은 꼬리표가 붙은 버전은 권하지 않는다)
+        .version_comparator(|current, remote| remote.version.pre.is_empty() && remote.version > current)
         .endpoints(vec![url])
         .map_err(|e| e.to_string())?
         .timeout(Duration::from_secs(20))

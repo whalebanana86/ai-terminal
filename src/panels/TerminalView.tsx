@@ -102,6 +102,9 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
   const termRef = useRef<Terminal | null>(null);
   /** 보일 때만 WebGL 로 그린다(on: 달기, off: 내려놓기) */
   const glRef = useRef({ on: () => {}, off: () => {} });
+  /** 처음 만들 때 보이는 터미널인지(보이기 효과는 터미널을 만들기 전에 돌아 그때는 포커스를 줄 수 없다) */
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
 
   useEffect(() => {
     const el = host.current!;
@@ -146,11 +149,27 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
       term.focus();
     });
 
+    // 다시 붙을 때 재생하는 옛 출력에는 에이전트가 시작할 때 보낸 질의(커서 위치·색 등)가 섞여 있다.
+    // 재생을 다 그릴 때까지는 터미널이 하는 자동 응답을 에이전트에 보내지 않는다(입력칸에 엉뚱한 글자가 들어간다).
+    let quiet = true;
+    let received = 0;
+    let replayEnd = -1;
+    const endQuietAfterReplay = () => {
+      if (quiet && replayEnd >= 0 && received >= replayEnd) term.write("", () => { quiet = false; });
+    };
     const ch = new Channel<ArrayBuffer | number[] | string>();
     ch.onmessage = (m) => {
-      if (m instanceof ArrayBuffer) term.write(new Uint8Array(m));
-      else if (Array.isArray(m)) term.write(new Uint8Array(m));
-      else term.write(m);
+      if (m instanceof ArrayBuffer) {
+        received += m.byteLength;
+        term.write(new Uint8Array(m));
+      } else if (Array.isArray(m)) {
+        received += m.length;
+        term.write(new Uint8Array(m));
+      } else {
+        received += m.length;
+        term.write(m);
+      }
+      endQuietAfterReplay();
     };
     let sinkId: number | null = null;
     let disposed = false;
@@ -205,6 +224,10 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
         if (disposed) return void api.execDetach(execId, a.sinkId);
         sinkId = a.sinkId;
         if (a.replayed > 0) needRepaint = true;
+        replayEnd = a.replayed;
+        endQuietAfterReplay();
+        // 혹시 재생 끝을 놓쳐도 입력이 막힌 채로 남지 않게
+        window.setTimeout(() => { quiet = false; }, 2000);
         term.write("", () => {
           if (disposed) return;
           attachedReady = true;
@@ -213,10 +236,13 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
       },
       (e) => {
         attachedReady = true;
+        quiet = false;
         term.write(`\r\n${t("[연결 실패]")} ${e}\r\n`, resize);
       },
     );
-    const onData = term.onData((d) => void api.execWrite(execId, d).catch(() => {}));
+    const onData = term.onData((d) => {
+      if (!quiet) void api.execWrite(execId, d).catch(() => {});
+    });
     let retries = 0;
     const resize = () => {
       if (disposed || el.clientWidth < 20 || el.clientHeight < 20) return; // 숨겨진 상태
@@ -280,6 +306,7 @@ export function TerminalView({ execId, visible }: { execId: string; visible: boo
     const ro = new ResizeObserver(() => resize());
     ro.observe(el);
     resize();
+    if (visibleRef.current) term.focus();
     // 글꼴을 늦게 불러왔으면 칸 크기를 다시 재고(옵션을 다시 넣어야 잰다) 터미널 크기를 맞춘다
     void termFontReady.then(() => {
       if (disposed) return;

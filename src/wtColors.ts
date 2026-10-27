@@ -69,7 +69,14 @@ export function worktreeColorMap(repos: RepoSummary[]): Map<string, string> {
       if (saved[p] !== c) (saved[p] = c), (dirty = true);
     }
   }
-  if (dirty) localStorage.setItem(KEY, JSON.stringify(saved));
+  if (dirty) {
+    // 렌더 중에 불리므로 저장 공간이 차도(QuotaExceeded) 던지지 않는다: 던지면 앱 화면 전체가 하얗게 된다
+    try {
+      localStorage.setItem(KEY, JSON.stringify(saved));
+    } catch {
+      /* 색은 이번 실행 동안만 유지 */
+    }
+  }
   cache = { repos, map };
   return map;
 }

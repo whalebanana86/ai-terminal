@@ -12,6 +12,7 @@ import { GraphView } from "./GraphView";
 import { locale, t } from "../i18n";
 import { AI_NAME, aiAgentOf, parseIdentity } from "../aiAuthors";
 import { AiMark } from "../components/AiMark";
+import { askTrust, firstAsk } from "../repoTrust";
 
 type Tab = "graph" | "changes" | "branches" | "worktrees";
 
@@ -34,6 +35,8 @@ export function GitPanel() {
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const wtPath = focus?.worktreePath ?? null;
+  /** 믿지 않은 저장소에서 꺼 둔 실행 명령 */
+  const [untrusted, setUntrusted] = useState<string[]>([]);
 
   // 응답이 늦게 와도 지금 보는 워크트리가 아니면 버린다(빠르게 세션을 바꿀 때 덮어쓰기 방지).
   const current = useRef(wtPath);
@@ -68,6 +71,29 @@ export function GitPanel() {
     setOp(null);
     setSelectedSha(null);
     void load().then(() => setToHead((n) => n + 1));
+  }, [wtPath]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 저장소 설정에 실행 명령이 있으면 믿을지 처음 한 번 묻고, 믿기 전에는 안내 막대를 둔다.
+  const trust = useCallback(async (items: string[]) => {
+    if (!wtPath) return;
+    try {
+      if (!(await askTrust(wtPath, items))) return;
+      setUntrusted([]);
+      void load();
+    } catch (e) {
+      toast("error", errorText(e));
+    }
+  }, [wtPath, load, toast]);
+  useEffect(() => {
+    setUntrusted([]);
+    if (!wtPath) return;
+    const path = wtPath;
+    void api.repoTrustInfo(path).then((items) => {
+      if (current.current !== path) return;
+      setUntrusted(items);
+      const repoId = useStore.getState().repos.find((r) => r.worktrees.some((w) => w.path === path))?.id ?? path;
+      if (items.length && firstAsk(repoId)) void trust(items);
+    }, () => {});
   }, [wtPath]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (gitTick) void load();
@@ -237,6 +263,14 @@ export function GitPanel() {
             )}
             <button className="icon-btn ghost branch-mismatch-close" aria-label={t("닫기")} onClick={() => setDismissed(`${sessionHere.id}:${bs.last}:${bs.current}`)}>
               <X size={13} aria-hidden />
+            </button>
+          </div>
+        )}
+        {untrusted.length > 0 && (
+          <div className="banner banner-warn branch-mismatch" data-testid="untrusted-repo">
+            <span className="branch-mismatch-text">{t("이 저장소 설정의 실행 명령 {n}개를 끈 채로 보고 있어요.", { n: untrusted.length })}</span>
+            <button className="btn btn-small branch-mismatch-switch" onClick={() => void trust(untrusted)}>
+              {t("확인…")}
             </button>
           </div>
         )}

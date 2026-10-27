@@ -37,6 +37,24 @@ describe("가운데 칸 파일 탭", () => {
     expect(useStore.getState().fileTabs).toEqual([]);
   });
 
+  it("지금 탭을 닫으면 같은 저장소의 탭으로 간다(다른 저장소의 숨은 탭이 아니라)", () => {
+    editor(true);
+    const open = (wt: string, rel: string) => {
+      focus(wt);
+      useStore.getState().openViewer({ kind: "file", rel, mode: "preview" });
+    };
+    open("/a", "a1.ts");
+    open("/b", "b1.ts");
+    open("/a", "a2.ts");
+    const [a1, , a2] = useStore.getState().fileTabs.map((x) => x.id);
+    useStore.getState().setActiveTab(a1);
+    useStore.getState().setTabViewer(a1, null);
+    expect(useStore.getState().activeTab).toBe(a2);
+    open("/a", "a3.ts");
+    useStore.getState().closeTabs([useStore.getState().activeTab!]);
+    expect(useStore.getState().activeTab).toBe(a2);
+  });
+
   it("켜져 있으면 탭으로 열고, 같은 파일은 한 탭만", () => {
     editor(true);
     focus("/w");

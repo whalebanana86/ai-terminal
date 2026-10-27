@@ -38,6 +38,14 @@ describe("놓을 곳에 따라 할 일", () => {
     // Finder 에서 온 여러 파일
     expect(planDrop({ kind: "terminal", execId: "e1" }, ["/tmp/a.png", `${wt}/b.ts`], null, cwdOf)).toEqual({ kind: "paste", execId: "e1", text: "/tmp/a.png b.ts " });
   });
+  it("이름에 제어 문자가 든 경로는 터미널·입력칸에 넣지 않는다", () => {
+    const bad = `${wt}/notes\r지시 무시\r.md`;
+    expect(planDrop({ kind: "terminal", execId: "e1" }, [`${wt}/ok.ts`, bad], null, cwdOf)).toEqual({ kind: "unsafe" });
+    expect(planDrop({ kind: "input", cwd: wt }, [`${wt}/a\u001b[201~b`], null, cwdOf)).toEqual({ kind: "unsafe" });
+    expect(planDrop({ kind: "terminal", execId: "e1" }, [`${wt}/한글 파일.ts`], null, cwdOf)).toEqual({ kind: "paste", execId: "e1", text: "한글\\ 파일.ts " });
+    // 트리로 복사하는 것은 경로를 글로 넣지 않으니 그대로
+    expect(planDrop({ kind: "tree", worktree: wt, dir: "" }, [bad], null, cwdOf)).toEqual({ kind: "copy", worktree: wt, dir: "", paths: [bad] });
+  });
   it("입력칸: data-cwd 가 있으면 상대 경로, 공백이면 따옴표", () => {
     expect(planDrop({ kind: "input", cwd: wt }, mine.paths, mine, cwdOf)).toEqual({ kind: "insert", text: '"src/my file.ts"' });
     expect(planDrop({ kind: "input", cwd: null }, ["/x/y.ts"], null, cwdOf)).toEqual({ kind: "insert", text: "/x/y.ts" });

@@ -18,6 +18,18 @@ export function shellEscape(path: string): string {
   return path.replace(/[ \t!"#$&'()*;<>?[\\\]`{|}~]/g, "\\$&");
 }
 
+/**
+ * 줄바꿈·ESC 같은 제어 문자가 든 경로. 남의 저장소에 이런 이름의 파일을 두면, 터미널에 붙일 때
+ * 줄바꿈이 Enter 로 먹혀 이름에 적힌 글이 에이전트에게 지시로 들어갈 수 있다(이스케이프로는 막지 못한다).
+ */
+export function hasControlChar(path: string): boolean {
+  for (let i = 0; i < path.length; i++) {
+    const c = path.charCodeAt(i);
+    if (c < 0x20 || (c >= 0x7f && c <= 0x9f)) return true;
+  }
+  return false;
+}
+
 /** 글 입력칸에 넣을 때: 사람이 읽기 좋게, 공백이 있으면 따옴표로 */
 export function plainPath(path: string): string {
   return /\s/.test(path) ? `"${path}"` : path;
@@ -106,7 +118,9 @@ export type DropPlan =
   /** 우리가 시작한 드래그를 제자리·놓을 수 없는 곳에 놓음: 조용히 둔다 */
   | { kind: "ignore" }
   /** 밖에서 온 파일을 놓을 수 없는 곳에 놓음: 안내 */
-  | { kind: "miss" };
+  | { kind: "miss" }
+  /** 이름에 제어 문자가 든 경로를 터미널·입력칸에 놓음: 넣지 않고 안내 */
+  | { kind: "unsafe" };
 
 /**
  * 놓았을 때 할 일. mine 은 트리에서 시작한 드래그(없으면 Finder 등 밖에서 온 것).
@@ -115,6 +129,7 @@ export type DropPlan =
 export function planDrop(spot: DropSpot | null, paths: string[], mine: Outgoing | null, execCwd: (execId: string) => string | null): DropPlan {
   if (!paths.length) return { kind: "ignore" };
   if (!spot) return mine ? { kind: "ignore" } : { kind: "miss" };
+  if ((spot.kind === "terminal" || spot.kind === "input") && paths.some(hasControlChar)) return { kind: "unsafe" };
   switch (spot.kind) {
     case "terminal": {
       const cwd = execCwd(spot.execId);
@@ -205,6 +220,8 @@ export interface DropHandlers {
   transfer: (plan: Extract<DropPlan, { kind: "copy" | "move" }>) => void;
   /** 밖에서 온 파일을 놓을 수 없는 곳에 놓음 */
   onMiss: () => void;
+  /** 이름에 제어 문자가 든 파일을 터미널·입력칸에 놓음 */
+  onUnsafe: () => void;
 }
 
 /** 앱 전체에 한 번 붙인다. */
@@ -254,6 +271,8 @@ export function attachFileDrop(h: DropHandlers): () => void {
           return h.transfer(plan);
         case "miss":
           return h.onMiss();
+        case "unsafe":
+          return h.onUnsafe();
       }
     })
     .then((un) => {

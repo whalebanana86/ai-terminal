@@ -14,6 +14,7 @@ pub mod graph;
 pub mod handoff;
 pub mod procs;
 pub mod pty;
+pub mod trust;
 pub mod sessions;
 pub mod watch;
 pub mod updates;
@@ -66,6 +67,8 @@ pub fn run() {
                 let _ = h.emit(name, payload);
             });
             let core = core::AppCore::new(db, events);
+            // git 을 부르기 전에 믿는 저장소를 읽는다(믿지 않은 저장소는 설정의 실행 명령을 끈다)
+            core.load_trust();
             // 업데이트 전 버전이 맡겨 둔 에이전트(터미널)를 이어받는다
             match handoff::adopt(&core, &data_dir) {
                 Ok(0) => {}
@@ -119,12 +122,15 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
+            commands::handoff_notice,
             usage::subscription_usage,
             updates::check_update,
             updates::install_update,
             updates::open_update_download,
             commands::repo_list,
             commands::repo_add,
+            commands::repo_trust_info,
+            commands::repo_trust,
             commands::repo_set_pinned,
             commands::git_worktrees,
             commands::git_graph,

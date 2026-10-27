@@ -101,8 +101,19 @@ export default {
 
   // 앱 알림
   "에이전트 프로세스가 종료되었습니다 (코드 {code})": "Agent process exited (code {code})",
+  "에이전트 프로세스가 종료되었습니다": "Agent process exited",
+  // 저장소 믿기(설정의 실행 명령)
+  "이 저장소를 믿을까요?": "Trust this repository?",
+  "이 저장소의 Git 설정(.git)에 실행되는 명령이 있어요. 남에게 받은 저장소라면 열기만 해도 실행될 수 있어 지금은 꺼 두었어요.":
+    "This repository's Git settings (.git) contain commands that Git runs. If you got this repository from someone else, they could run just by opening it, so they are turned off for now.",
+  "직접 만들었거나 믿을 수 있는 저장소면 '믿기'를 누르세요. 믿지 않으면 명령을 끈 채로 보여 줘요(Git LFS 처럼 변환을 쓰는 파일은 바뀐 것처럼 보일 수 있어요).":
+    "If you made this repository or trust it, choose Trust. Otherwise it stays open with the commands turned off (files that use conversions, such as Git LFS, may look modified).",
+  "믿기": "Trust",
+  "이 저장소 설정의 실행 명령 {n}개를 끈 채로 보고 있어요.": "Viewing with {n} command(s) from this repository's settings turned off.",
+  "확인…": "Review…",
   // 파일 끌어다 놓기(터미널·입력칸·파일 트리)
   "터미널·입력칸에 놓으면 경로가 들어가고, 파일 트리의 폴더에 놓으면 복사돼요": "Drop onto a terminal or text field to insert the path, or onto a folder in the file tree to copy it there",
+  "이름에 줄바꿈 같은 제어 문자가 든 파일은 경로로 넣지 않아요": "Files whose names contain control characters such as line breaks aren't inserted as paths",
   "끌기를 시작하지 못했어요: {error}": "Couldn't start dragging: {error}",
   "{names} 외 {n}개": "{names} and {n} more",
   "{dir} 폴더에 복사했어요: {names}": "Copied to {dir}: {names}",

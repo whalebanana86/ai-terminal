@@ -338,9 +338,8 @@ export const useStore = create<State>((set, get) => ({
     const tabs = get().fileTabs;
     if (v) return set({ fileTabs: tabs.map((x) => (x.id === id ? { ...x, viewer: v } : x)) });
     // 닫으면 옆 탭(없으면 에이전트)을 보여 준다
-    const i = tabs.findIndex((x) => x.id === id);
     const rest = tabs.filter((x) => x.id !== id);
-    const active = get().activeTab === id ? (rest[Math.min(i, rest.length - 1)]?.id ?? null) : get().activeTab;
+    const active = get().activeTab === id ? nextTab(get(), [id]) : get().activeTab;
     set({ fileTabs: rest, activeTab: active });
   },
   setActiveTab: (id) => set({ activeTab: id }),
@@ -349,10 +348,7 @@ export const useStore = create<State>((set, get) => ({
     const active = get().activeTab;
     const rest = tabs.filter((x) => !ids.includes(x.id));
     if (!active || !ids.includes(active)) return set({ fileTabs: rest });
-    // 닫힌 지금 탭 자리에서 가장 가까운 남은 탭(없으면 에이전트)
-    const i = tabs.findIndex((x) => x.id === active);
-    const next = tabs.slice(i + 1).find((x) => !ids.includes(x.id)) ?? [...tabs.slice(0, i)].reverse().find((x) => !ids.includes(x.id));
-    set({ fileTabs: rest, activeTab: next?.id ?? null });
+    set({ fileTabs: rest, activeTab: nextTab(get(), ids) });
   },
 
   toast: (kind, text) => {
@@ -523,6 +519,17 @@ export function useShownViewer(worktree: string | null | undefined): Viewer {
 export function repoKeyOf(s: Pick<State, "repos">, path: string | null | undefined): string | null {
   if (!path) return null;
   return s.repos.find((r) => r.worktrees.some((w) => w.path === path))?.id ?? path;
+}
+
+/** 지금 탭을 닫으면 볼 탭: 닫힌 자리에서 가장 가까운, 같은 저장소의 남은 탭(없으면 에이전트).
+ *  다른 저장소의 탭은 숨어 있어 고르면 빈 화면이 된다. */
+function nextTab(s: State, closing: string[]): string | null {
+  const tabs = s.fileTabs;
+  const i = tabs.findIndex((x) => x.id === s.activeTab);
+  if (i < 0) return null;
+  const repo = repoKeyOf(s, tabs[i].worktree);
+  const ok = (x: FileTab) => !closing.includes(x.id) && repoKeyOf(s, x.worktree) === repo;
+  return (tabs.slice(i + 1).find(ok) ?? [...tabs.slice(0, i)].reverse().find(ok))?.id ?? null;
 }
 
 /** 지금 저장소에서 연 가운데 파일 탭들 */
