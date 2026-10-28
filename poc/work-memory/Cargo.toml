@@ -1,0 +1,18 @@
+[package]
+name = "work-memory-poc"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# 앱과 떨어진 시험 크레이트. 빌드 결과물은 CARGO_TARGET_DIR 로 저장소 밖에 둔다.
+[workspace]
+
+[dependencies]
+# ONNX Runtime 은 실행 파일에 묶지 않고 실행 중에 불러온다(macOS 14 이상 Apple Silicon 전용 라이브러리라서)
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "load-dynamic", "coreml", "api-31"] }
+tokenizers = { version = "0.22", default-features = false, features = ["fancy-regex"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+libc = "0.2"

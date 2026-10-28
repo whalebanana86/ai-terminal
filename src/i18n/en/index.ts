@@ -5,9 +5,11 @@ import backend from "./backend";
 import common from "./common";
 import extensions from "./extensions";
 import git from "./git";
+import licenses from "./licenses";
+import memory from "./memory";
 import ui from "./ui";
 
 /** 이름을 붙여 둬서 같은 열쇠를 서로 다르게 번역한 곳을 테스트가 짚어 줄 수 있게 */
-export const parts: Record<string, Record<string, string>> = { common, agent, git, actions, ui, backend, extensions };
+export const parts: Record<string, Record<string, string>> = { common, agent, git, actions, ui, backend, extensions, memory, licenses };
 const en: Record<string, string> = Object.assign({}, ...Object.values(parts));
 export default en;

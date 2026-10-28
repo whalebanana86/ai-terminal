@@ -98,6 +98,20 @@ pub struct StartRequest {
     pub sandbox: Option<String>,
     /// 앱 터미널 바탕의 밝기(dark | light). Claude 테마를 여기에 맞춘다.
     pub theme: Option<String>,
+    /// 새 세션에 넣을 지난 작업 기억(작업 기억 → 기억 담아 새로 시작)
+    pub memory: Option<MemoryInject>,
+}
+
+/// 새 세션에 넣을 기억. Claude 는 이번 실행에만 붙인 SessionStart 훅이 `file` 을 출력해 컨텍스트에 넣고,
+/// Codex 는 첫 지시 앞에 `text` 를 붙인다(이번 실행에만 훅을 붙일 방법이 없다).
+pub struct MemoryInject {
+    pub text: String,
+    pub file: PathBuf,
+}
+
+/// 셸 명령에 넣을 작은따옴표 인용
+fn shell_quote(p: &Path) -> String {
+    format!("'{}'", p.to_string_lossy().replace('\'', "'\\''"))
 }
 
 pub struct AppCore {
@@ -550,20 +564,42 @@ impl AppCore {
             }
             _ => bail!(tr!("지원하지 않는 실행 요청입니다", "Unsupported launch request")),
         };
-        // Claude 테마를 앱 터미널 바탕에 맞춘다. 사용자의 Claude 테마가 반대 밝기면(예: 밝은 테마에 어두운 바탕)
-        // 색을 직접 정한 글자가 검정으로 칠해져 바탕에 묻힌다. 이 실행에만 적용되고 사용자 설정 파일은 건드리지 않는다.
-        if program == "claude"
-            && let Some(base) = req.theme.as_deref().filter(|t| matches!(*t, "dark" | "light"))
-        {
-            args.push("--settings".into());
-            args.push(json!({ "theme": claude_theme(base, configured_claude_theme().as_deref()) }).to_string());
+        // 이번 실행에만 덧붙이는 Claude 설정(사용자 설정 파일은 건드리지 않는다)
+        if program == "claude" {
+            let mut settings = serde_json::Map::new();
+            // Claude 테마를 앱 터미널 바탕에 맞춘다. 사용자의 Claude 테마가 반대 밝기면(예: 밝은 테마에 어두운 바탕)
+            // 색을 직접 정한 글자가 검정으로 칠해져 바탕에 묻힌다.
+            if let Some(base) = req.theme.as_deref().filter(|t| matches!(*t, "dark" | "light")) {
+                settings.insert("theme".into(), json!(claude_theme(base, configured_claude_theme().as_deref())));
+            }
+            // 기억 담아 새로 시작: 시작할 때 기억 파일을 출력하는 훅. 사용자 훅과 합쳐져 함께 돈다.
+            if req.mode == "new"
+                && let Some(m) = &req.memory
+            {
+                let command = format!("/bin/cat {}", shell_quote(&m.file));
+                settings.insert("hooks".into(), json!({ "SessionStart": [{ "matcher": "startup", "hooks": [{ "type": "command", "command": command }] }] }));
+            }
+            if !settings.is_empty() {
+                args.push("--settings".into());
+                args.push(Value::Object(settings).to_string());
+            }
         }
         let program = {
             // Original interactive CLI terminal and optional first instruction.
             if req.mode == "new" {
-                if let Some(p) = req.prompt.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
+                let prompt = req.prompt.as_deref().map(str::trim).filter(|p| !p.is_empty());
+                let prompt = match (&req.memory, program.as_str()) {
+                    // Codex: 기억을 첫 지시 앞에 붙인다. 지시가 없으면 기다리라고 한다.
+                    (Some(m), "codex") => Some(format!(
+                        "{}\n\n{}",
+                        m.text.trim(),
+                        prompt.map(str::to_string).unwrap_or_else(|| tr!("위 기록은 참고만 하고, 다음 요청을 기다려 주세요.", "Use the notes above only as reference and wait for my next request."))
+                    )),
+                    _ => prompt.map(str::to_string),
+                };
+                if let Some(p) = prompt {
                     args.push("--".into());
-                    args.push(p.to_string());
+                    args.push(p);
                 }
             }
             if program == "codex" {
@@ -928,6 +964,56 @@ mod tests {
     }
 
     #[test]
+    fn memory_goes_into_claude_start_hook_and_codex_first_prompt() {
+        let _g = HOME_LOCK.lock();
+        let (tmp, main, _wt) = fixture();
+        let home = tmp.path().join("home-mem");
+        std::fs::create_dir_all(&home).unwrap();
+        unsafe { std::env::set_var("AITERM_HOME", &home) };
+        let fake = tmp.path().join("fake-mem.sh");
+        // echo 는 백슬래시를 해석하므로 printf 로 인자를 그대로 찍는다
+        std::fs::write(&fake, "#!/bin/sh\nprintf '%s\\n' \"ARGS:$*\"\necho END\nsleep 5\n").unwrap();
+        std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        unsafe {
+            std::env::set_var("AITERM_CLAUDE_BIN", &fake);
+            std::env::set_var("AITERM_CODEX_BIN", &fake);
+        }
+        let core = AppCore::new(Db::open_in_memory().unwrap(), Arc::new(|_, _| {}));
+        // 따옴표·공백이 든 경로여도 훅 명령이 기억을 그대로 출력한다
+        let file = tmp.path().join("mem 'x'.txt");
+        std::fs::write(&file, "지난 기록: 로그인 버그").unwrap();
+        let wait = |id: &str| {
+            let mut out = String::new();
+            for _ in 0..100 {
+                out = core.pty.output_text(id).unwrap();
+                if out.contains("END") {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            out
+        };
+        let c = core
+            .start(StartRequest { agent: "claude".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 200, rows: 24, force: false, prompt: None, sandbox: None, theme: Some("dark".into()), memory: Some(MemoryInject { text: "지난 기록: 로그인 버그".into(), file: file.clone() }) })
+            .unwrap();
+        let out = wait(&c.id);
+        let command = format!("/bin/cat {}", shell_quote(&file));
+        let expected = json!({ "hooks": { "SessionStart": [{ "matcher": "startup", "hooks": [{ "type": "command", "command": command }] }] }, "theme": "dark" }).to_string();
+        assert!(out.replace("\r\n", "").replace('\n', "").contains(&expected), "{out}");
+        let printed = std::process::Command::new("/bin/sh").arg("-c").arg(&command).output().unwrap();
+        assert_eq!(String::from_utf8_lossy(&printed.stdout), "지난 기록: 로그인 버그");
+        // Codex 는 기억을 첫 지시 앞에 붙이고, 지시가 없으면 기다리라고 한다
+        let x = core
+            .start(StartRequest { agent: "codex".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 200, rows: 24, force: false, prompt: None, sandbox: None, theme: None, memory: Some(MemoryInject { text: "지난 기록: 로그인 버그".into(), file }) })
+            .unwrap();
+        let out = wait(&x.id);
+        assert!(out.contains("-- 지난 기록: 로그인 버그"), "{out}");
+        assert!(out.contains("다음 요청을 기다려 주세요"), "{out}");
+        let _ = core.pty.kill(&c.id);
+        let _ = core.pty.kill(&x.id);
+    }
+
+    #[test]
     fn resume_uses_recorded_cwd_and_codex_new_links_later() {
         let _g = HOME_LOCK.lock();
         let (tmp, main, wt) = fixture();
@@ -949,7 +1035,7 @@ mod tests {
         let core = AppCore::new(Db::open_in_memory().unwrap(), Arc::new(|_, _| {}));
         core.list_sessions().unwrap();
         let info = core
-            .start(StartRequest { agent: "claude".into(), mode: "resume".into(), session_id: Some("claude:c9".into()), cwd: None, cols: 80, rows: 24, force: false, prompt: None, sandbox: None, theme: None })
+            .start(StartRequest { agent: "claude".into(), mode: "resume".into(), session_id: Some("claude:c9".into()), cwd: None, cols: 80, rows: 24, force: false, prompt: None, sandbox: None, theme: None, memory: None })
             .unwrap();
         assert_eq!(info.branch_at_start.as_deref(), Some("feature"));
         assert_eq!(info.worktree_path.as_deref(), Some(wt.to_str().unwrap()));
@@ -967,7 +1053,7 @@ mod tests {
 
         // 새 세션의 첫 지시는 `--` 뒤 인자로 넘어간다
         let first = core
-            .start(StartRequest { agent: "claude".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false, prompt: Some("-v 로 시작하는 지시".into()), sandbox: None, theme: Some("dark".into()) })
+            .start(StartRequest { agent: "claude".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false, prompt: Some("-v 로 시작하는 지시".into()), sandbox: None, theme: Some("dark".into()), memory: None })
             .unwrap();
         let mut out = String::new();
         for _ in 0..100 {
@@ -983,7 +1069,7 @@ mod tests {
 
         // Codex 새 실행: 시작 후 같은 cwd 에 생긴 스레드와 연결된다
         let info = core
-            .start(StartRequest { agent: "codex".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false, prompt: None, sandbox: None, theme: None })
+            .start(StartRequest { agent: "codex".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false, prompt: None, sandbox: None, theme: None, memory: None })
             .unwrap();
         assert!(info.session_id.is_none());
         let mut output = String::new();
@@ -1005,7 +1091,7 @@ mod tests {
 
         // 같은 폴더에서 두 번째 새 실행: 이미 연결된 스레드를 다시 가져가지 않는다.
         let second = core
-            .start(StartRequest { agent: "codex".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false, prompt: None, sandbox: None, theme: None })
+            .start(StartRequest { agent: "codex".into(), mode: "new".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false, prompt: None, sandbox: None, theme: None, memory: None })
             .unwrap();
         core.list_sessions().unwrap();
         let e2 = core.exec_list().into_iter().find(|e| e.id == second.id).unwrap();
@@ -1019,7 +1105,7 @@ mod tests {
         assert_eq!(e2.session_id.as_deref(), Some("codex:fresh2"));
         // The compatibility alias also preserves the first instruction.
         let native = core
-            .start(StartRequest { agent: "codex".into(), mode: "new-native".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false, prompt: Some("-v instruction".into()), sandbox: Some("read-only".into()), theme: None })
+            .start(StartRequest { agent: "codex".into(), mode: "new-native".into(), session_id: None, cwd: Some(main.to_string_lossy().into()), cols: 80, rows: 24, force: false, prompt: Some("-v instruction".into()), sandbox: Some("read-only".into()), theme: None, memory: None })
             .unwrap();
         assert_eq!(native.kind, "new");
         let mut output = String::new();

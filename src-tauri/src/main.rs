@@ -6,5 +6,9 @@ fn main() {
     if let Some(code) = ai_terminal_lib::handoff::keeper_from_args() {
         std::process::exit(code);
     }
+    // 작업 기억의 임베딩 도우미로 띄워진 경우(창 없음)
+    if let Some(code) = ai_terminal_lib::memory_worker::worker_from_args() {
+        std::process::exit(code);
+    }
     ai_terminal_lib::run()
 }
