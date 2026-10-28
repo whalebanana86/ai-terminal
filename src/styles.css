@@ -2794,3 +2794,63 @@ li:hover .hover-only,
 .mem-close {
   color: var(--accent);
 }
+
+/* ── 오픈소스 라이선스 ── */
+.licenses-modal {
+  width: min(640px, 94vw);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.licenses-body {
+  overflow: auto;
+  min-height: 0;
+  flex: 1;
+}
+.licenses-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.licenses-row {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  text-align: left;
+  font-size: 12px;
+}
+.licenses-row:hover {
+  background: var(--bg-1);
+}
+.licenses-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.licenses-license {
+  flex-shrink: 0;
+  color: var(--fg-faint);
+}
+.licenses-text {
+  padding: 4px 6px 10px;
+}
+.licenses-text pre {
+  white-space: pre-wrap;
+  font-size: 11px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  padding: 8px;
+  max-height: 260px;
+  overflow: auto;
+  user-select: text;
+}
+.settings-foot {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}

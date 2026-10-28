@@ -7,22 +7,25 @@ import { getExternalEditor, setExternalEditor } from "../externalEditor";
 import { lang, setLang, t } from "../i18n";
 import { useStore } from "../store";
 import { useMemoryStatus } from "../panels/MemoryStart";
+import { LicensesDialog } from "./Licenses";
 import { getThemePref, setThemePref, type ThemePref } from "../theme";
 
 /** 설정 창(언어·화면 모드·기능·외부 편집기). 맥 메뉴 막대의 "코드행방 → 설정… (⌘,)" 이 open-settings 를 보내면 열린다. */
 export function SettingsDialog() {
   const [open, setOpen] = useState(false);
   const [theme, setTheme] = useState<ThemePref>(getThemePref);
+  const [licenses, setLicenses] = useState(false);
   useEffect(() => {
     const un = listen("open-settings", () => setOpen(true));
     return () => void un.then((f) => f());
   }, []);
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    // 라이선스 창이 떠 있으면 그것만 닫는다
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && (licenses ? setLicenses(false) : setOpen(false));
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [open]);
+  }, [open, licenses]);
   if (!open) return null;
   const pickTheme = (p: ThemePref) => {
     setTheme(p);
@@ -72,7 +75,14 @@ export function SettingsDialog() {
           ))}
         </div>
         <MemorySection />
+        <div className="settings-row settings-foot">
+          <span className="settings-label">{t("오픈소스 라이선스")}</span>
+          <button className="btn btn-small" onClick={() => setLicenses(true)} data-testid="open-licenses">
+            {t("보기")}
+          </button>
+        </div>
       </div>
+      {licenses && <LicensesDialog onClose={() => setLicenses(false)} />}
     </div>
   );
 }

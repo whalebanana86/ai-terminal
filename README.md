@@ -193,6 +193,7 @@ Codex는 설치된 CLI의 `account/rateLimits/read`를 사용합니다. Claude�
   - **스틱맨** — 처음엔 켜짐.
   - **구독 한도 표시** — 처음엔 켜짐. 끄면 로그인 정보를 읽지 않아요.
 - **작업 기억** — 처음엔 꺼짐. 켜면 지난 대화·오류·수정 내역을 이 맥 안에 보관하고(Claude Code 는 30일 지난 대화를 지워요) 뜻으로 찾아서, **기억 담아 새로** 창에 관련 기록을 띄워 줘요. 켤 때 검색 모델(약 380MB)을 한 번 내려받아요. Apple Silicon + macOS 14 이상에서 쓸 수 있어요.
+- **오픈소스 라이선스**: 함께 쓰는 오픈소스의 라이선스 목록과 원문을 볼 수 있어요.
 
 ### 단축키
 
@@ -327,3 +328,5 @@ scripts/make_screenshots.sh --no-video  # 그림만
 ## 라이선스
 
 MIT. GitKraken 의 정보 구조를 참고했지만 코드와 고유 디자인은 쓰지 않았다. 커밋 그래프 레인 알고리즘은 직접 구현했다(vscode-git-graph·gitamine 코드는 라이선스 때문에 쓰지 않음).
+
+함께 쓰는 오픈소스(Rust·JavaScript 라이브러리, 글꼴, 작업 기억이 내려받는 모델·ONNX Runtime)의 라이선스와 원문은 앱의 **설정 → 오픈소스 라이선스**에서 볼 수 있다. 의존성을 바꾸면 `node scripts/licenses.mjs` 로 목록(`src/generated/third-party-licenses.json`)을 다시 만든다 — 직접 의존성이 빠지면 `pnpm test` 가 알려 준다.

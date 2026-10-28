@@ -186,13 +186,15 @@ scripts/promo/make_promo.sh   # 30-second promo video for X/Threads in promo/ (1
 scripts/package_release.sh 0.1.0   # universal app → build/release/ DMG, zip, SHA256SUMS (a v* tag does this on GitHub Actions and publishes a Release)
 ```
 
-**Settings** (menu bar **Code Whereabouts → Settings…**, `⌘,`): language (한국어 / English, follows macOS at first), appearance (system / light / dark; the terminal and code colours follow), external editor, and **Features**: File editing (off by default), Stickman (on), Subscription limits (on; when off, login details aren't read). Features that are off aren't loaded at all. **Work memory** (off by default; Apple Silicon + macOS 14 or later) keeps past conversations, errors and edits on this Mac (Claude Code deletes conversations after 30 days) and finds them by meaning for **Fresh with memory**; turning it on downloads a search model (about 380 MB) once.
+**Settings** (menu bar **Code Whereabouts → Settings…**, `⌘,`): language (한국어 / English, follows macOS at first), appearance (system / light / dark; the terminal and code colours follow), external editor, and **Features**: File editing (off by default), Stickman (on), Subscription limits (on; when off, login details aren't read). Features that are off aren't loaded at all. **Work memory** (off by default; Apple Silicon + macOS 14 or later) keeps past conversations, errors and edits on this Mac (Claude Code deletes conversations after 30 days) and finds them by meaning for **Fresh with memory**; turning it on downloads a search model (about 380 MB) once. **Open source licenses** lists the licenses and full texts of the open source software it uses.
 
 Not yet: notarized builds, Intel check, line-level staging, 3-way merge editor, interactive rebase, stash; in file editing, creating/renaming/deleting files, autocomplete (LSP), multiple file tabs.
 
 ## License
 
 MIT. Inspired by GitKraken's information layout; no GitKraken code or proprietary design is used. The commit-graph lane layout is our own implementation (vscode-git-graph and gitamine code is not used because of their licenses).
+
+Licenses and full texts of the open source software it uses (Rust and JavaScript libraries, the font, and the model and ONNX Runtime that Work memory downloads) are in the app under **Settings → Open source licenses**. After changing dependencies, regenerate the list (`src/generated/third-party-licenses.json`) with `node scripts/licenses.mjs`; `pnpm test` flags missing direct dependencies.
 
 ### Updates from the app menu
 
