@@ -371,6 +371,13 @@ code,
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
 }
+.git-tabs {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.git-tabs > .spacer {
+  flex: 1 1 0;
+}
 .tabs button {
   background: none;
   border: none;
@@ -440,8 +447,10 @@ code,
 }
 .graph {
   flex: 1;
+  min-width: 0;
   min-height: 80px;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   outline: none;
 }
 .grow {
@@ -762,7 +771,8 @@ code,
   list-style: none;
   margin: 0;
   padding: 6px;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 .wt-list li {
   padding: 6px 8px;
@@ -1397,7 +1407,9 @@ button.center-tab {
 }
 .branch-groups {
   flex: 1;
-  overflow: auto;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 2px 6px 10px;
 }
 .branch-groups h4 {
@@ -1416,9 +1428,16 @@ button.center-tab {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  overflow: hidden;
   padding: 2px 4px;
   border-radius: 5px;
   white-space: nowrap;
+}
+.branch-list .ref {
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .branch-list li:hover {
   background: var(--bg-3);
@@ -1436,7 +1455,9 @@ button.center-tab {
 /* ── 스테이징 ── */
 .changes-scroll {
   flex: 1;
-  overflow: auto;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 2px 4px;
 }
 .changes-head {

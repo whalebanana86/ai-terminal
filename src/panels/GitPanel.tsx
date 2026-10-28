@@ -277,7 +277,7 @@ export function GitPanel() {
         {op?.operation && <OpBanner worktree={wtPath} op={op} onChanged={load} />}
       </div>
 
-      <div className="tabs" role="tablist">
+      <div className="tabs git-tabs" role="tablist">
         {(
           [
             ["graph", t("그래프"), null],

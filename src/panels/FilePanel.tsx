@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink, FolderOpen, Trash2 } from "lucide-react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { api, errorText, type ChangeKind, type DirEntry, type FileContent, type FileDiff, type WorktreeStatus } from "../api";
@@ -251,13 +251,25 @@ function FileTree({ worktree }: { worktree: string }) {
 
 // ───────────────────────── 보기 (미리보기 / diff) ─────────────────────────
 
+/** 파일 뷰어는 탭 전환 시 언마운트되므로 파일마다 마지막 스크롤을 보관한다. */
+const viewerScrollTops = new Map<string, number>();
+
 /** 파일 하나 보기(내용·변경·일부 담기·확장 탭). 오른쪽 아래 칸과 가운데 칸 탭이 함께 쓴다. onViewer(null) = 닫기 */
 export function FileViewer({ worktree, viewer, onViewer }: { worktree: string; viewer: NonNullable<Viewer>; onViewer: (v: Viewer) => void }) {
   const openViewer = onViewer;
+  const scrollKey = `${worktree}\u0000${viewer.kind === "commit-file" ? `${viewer.sha}:` : ""}${viewer.rel}`;
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const lastScroll = useRef({ key: scrollKey, top: viewerScrollTops.get(scrollKey) ?? 0 });
   const fileTick = useFileTick(viewer.rel, worktree);
   // 화면 모드가 바뀌면 코드 색(밝게/어둡게 테마)을 다시 칠한다
   const [themeTick, setThemeTick] = useState(0);
   useEffect(() => onThemeChange(() => setThemeTick((n) => n + 1)), []);
+  useLayoutEffect(() => {
+    const top = viewerScrollTops.get(scrollKey) ?? 0;
+    lastScroll.current = { key: scrollKey, top };
+    if (bodyRef.current) bodyRef.current.scrollTop = top;
+    return () => viewerScrollTops.set(lastScroll.current.key, lastScroll.current.top);
+  }, [scrollKey]);
   const [content, setContent] = useState<FileContent | null>(null);
   const [diff, setDiff] = useState<FileDiff[] | null>(null);
   const [lines, setLines] = useState<string[] | null>(null);
@@ -355,7 +367,15 @@ export function FileViewer({ worktree, viewer, onViewer }: { worktree: string; v
         </button>
       </div>
       {err && <div className="banner banner-error">{err}</div>}
-      <div className="viewer-body">
+      <div
+        className="viewer-body"
+        ref={bodyRef}
+        onScroll={(e) => {
+          const top = e.currentTarget.scrollTop;
+          lastScroll.current = { key: scrollKey, top };
+          viewerScrollTops.set(scrollKey, top);
+        }}
+      >
         {isImage ? (
           viewer.kind === "commit-file" ? (
             <ImageBox worktree={worktree} rel={viewer.rel} rev={viewer.sha} label={t("커밋 {sha}", { sha: viewer.sha.slice(0, 7) })} />
