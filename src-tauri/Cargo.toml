@@ -1,6 +1,6 @@
 [package]
 name = "ai-terminal"
-version = "0.10.4"
+version = "0.11.0"
 description = "Code Whereabouts - See where AI works and what it changes"
 authors = ["AI Terminal contributors"]
 license = "MIT"
@@ -44,6 +44,12 @@ tauri-plugin-updater = "2"
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider"] }
 semver = "1"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+# 작업 기억: 임베딩 모델은 도우미 프로세스에서만 돈다. ONNX Runtime 은 실행 파일에 묶지 않고
+# 기능을 켠 맥(Apple Silicon, macOS 14 이상)에서 내려받은 라이브러리를 실행 중에 불러온다.
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "load-dynamic", "api-31"] }
+tokenizers = { version = "0.22", default-features = false, features = ["fancy-regex"] }
+sha2 = "0.10"
+regex = "1"
 
 [dev-dependencies]
 tempfile = "3"

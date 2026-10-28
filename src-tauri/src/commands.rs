@@ -16,6 +16,7 @@ use crate::watch::WorkspaceWatcher;
 pub struct AppState {
     pub core: Arc<AppCore>,
     pub watcher: Option<Arc<WorkspaceWatcher>>,
+    pub memory: Arc<crate::memory::Memory>,
 }
 
 type Res<T> = Result<T, String>;
@@ -478,12 +479,19 @@ pub struct StartArgs {
     pub prompt: Option<String>,
     pub sandbox: Option<String>,
     pub theme: Option<String>,
+    /// 새 세션에 넣을 지난 작업 기억(기억 담아 새로 시작)
+    pub memory: Option<String>,
 }
 
 #[tauri::command]
 pub async fn exec_start(state: State<'_, AppState>, args: StartArgs) -> Res<ExecInfo> {
     let core = state.core.clone();
+    let mem = state.memory.clone();
     blocking(move || {
+        let memory = match args.memory.as_deref().map(str::trim).filter(|m| !m.is_empty()) {
+            Some(text) => Some(crate::core::MemoryInject { text: text.to_string(), file: mem.write_inject(text)? }),
+            None => None,
+        };
         core.start(StartRequest {
             agent: args.agent,
             mode: args.mode,
@@ -495,6 +503,7 @@ pub async fn exec_start(state: State<'_, AppState>, args: StartArgs) -> Res<Exec
             prompt: args.prompt,
             sandbox: args.sandbox,
             theme: args.theme,
+            memory,
         })
     })
     .await
@@ -672,6 +681,68 @@ pub async fn git_worktree_remove(state: State<'_, AppState>, path: String, targe
             anyhow::bail!("EXTERNAL_AGENTS:{live}");
         }
         gitops::worktree_remove(Path::new(&path), &target, force)
+    })
+    .await
+}
+
+// ───────────── 작업 기억 ─────────────
+
+#[tauri::command]
+pub async fn memory_status(state: State<'_, AppState>) -> Res<crate::memory::MemoryStatus> {
+    let mem = state.memory.clone();
+    blocking(move || Ok(mem.status())).await
+}
+
+/// 켜면 모델·ONNX Runtime 을 (아직 없으면) 내려받기 시작한다. 진행은 memory-status 이벤트로 알린다.
+#[tauri::command]
+pub async fn memory_set_enabled(state: State<'_, AppState>, on: bool) -> Res<crate::memory::MemoryStatus> {
+    let mem = state.memory.clone();
+    let m = mem.clone();
+    blocking(move || m.set_enabled(on)).await?;
+    if on && !crate::memory_fetch::ready(mem.dir()) && mem.begin_download() {
+        let m = mem.clone();
+        tauri::async_runtime::spawn(async move {
+            let dir = m.dir().to_path_buf();
+            let p = m.clone();
+            let r = crate::memory_fetch::fetch_all(&dir, move |done, _| p.download_progress(done)).await;
+            m.end_download(r);
+        });
+    }
+    Ok(mem.status())
+}
+
+#[tauri::command]
+pub async fn memory_clear(state: State<'_, AppState>) -> Res<()> {
+    let mem = state.memory.clone();
+    blocking(move || mem.clear()).await
+}
+
+#[tauri::command]
+pub async fn memory_remove_model(state: State<'_, AppState>) -> Res<()> {
+    let mem = state.memory.clone();
+    blocking(move || mem.remove_model()).await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemorySearchArgs {
+    pub query: String,
+    /// 이 폴더가 속한 저장소의 기록만(all 이면 전체)
+    pub cwd: Option<String>,
+    #[serde(default)]
+    pub all: bool,
+    /// 이 세션에서 이 시각(밀리초) 이후의 턴은 뺀다(최근 대화로 따로 넣으니까)
+    pub exclude_session: Option<String>,
+    pub exclude_after: Option<i64>,
+    pub limit: Option<usize>,
+}
+
+#[tauri::command]
+pub async fn memory_search(state: State<'_, AppState>, args: MemorySearchArgs) -> Res<Vec<crate::memory::MemoryHit>> {
+    let mem = state.memory.clone();
+    blocking(move || {
+        let exclude = args.exclude_session.as_deref().zip(args.exclude_after);
+        mem.search(&args.query, args.cwd.as_deref(), args.all, exclude, args.limit.unwrap_or(8).min(20))
     })
     .await
 }

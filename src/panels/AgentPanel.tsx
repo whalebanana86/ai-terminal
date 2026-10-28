@@ -2,7 +2,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { createContext, Fragment, lazy, memo, Suspense, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Group, Panel, Separator, useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { api, errorText, externalRunning, type Agent, type LinkedSession, type LiveRun, type Transcript, type WorktreeStatus } from "../api";
-import { GitBranch, Info, PanelTopClose, PanelTopOpen, Play, Plus, RefreshCw, Square } from "lucide-react";
+import { BookmarkPlus, GitBranch, Info, PanelTopClose, PanelTopOpen, Play, Plus, RefreshCw, Square } from "lucide-react";
 import { AgentBadge, Empty, WtDot } from "../components/Overlays";
 import { baseName, branchLabel, branchState, clientLabel, externalRunOf, kindLabel, kindLetter, relativeTime, relativeTo } from "../logic";
 import { useSelectedSession, useStore, visibleTabs } from "../store";
@@ -11,6 +11,7 @@ import { t } from "../i18n";
 import { currentTheme } from "../theme";
 import { useExtensionOn } from "../extensions";
 import { CenterFileView, CenterTabBar } from "./CenterTabs";
+import { MemoryStartDialog } from "./MemoryStart";
 // 터미널(xterm + WebGL, 약 460KB)은 실제로 띄울 때만 불러온다.
 const TerminalView = lazy(() => import("./TerminalView").then((m) => ({ default: m.TerminalView })));
 
@@ -278,6 +279,7 @@ function SessionDetail() {
   const list = useContext(ListToggle);
   const execs = useStore((s) => s.execs);
   const [tab, setTab] = useState<DetailTab>("talk");
+  const [fresh, setFresh] = useState(false);
   const toast = useStore((s) => s.toast);
   const refreshExecs = useStore((s) => s.refreshExecs);
   const ask = useStore((s) => s.ask);
@@ -330,8 +332,10 @@ function SessionDetail() {
             ext={ext}
             canContinue={session.cwdExists && !pending}
             onTerminal={resume}
+            onFresh={() => setFresh(true)}
             onStop={stop}
           />
+          {fresh && <MemoryStartDialog session={session} onClose={() => setFresh(false)} />}
           {ext && !running && (
             <div className="banner banner-ext" data-testid="external-banner">
               {t("{client}에서 열려 있는 대화입니다 (PID {pid}). 여기서 동시에 이어가면 기록이 섞일 수 있어요.", { client: clientLabel(ext.client), pid: ext.pid })}
@@ -393,6 +397,7 @@ function SessionHeader({
   ext,
   canContinue,
   onTerminal,
+  onFresh,
   onStop,
 }: {
   s: LinkedSession;
@@ -400,6 +405,7 @@ function SessionHeader({
   ext: LiveRun | null;
   canContinue: boolean;
   onTerminal: () => void;
+  onFresh: () => void;
   onStop: () => void;
 }) {
   const bs = branchState(s);
@@ -426,11 +432,16 @@ function SessionHeader({
           </button>
         ) : (
           canContinue && (
+            <>
+            <button className="btn btn-small" onClick={onFresh} data-testid="fresh-with-memory" title={t("지난 대화 전체 대신 최근 대화와 고른 기억만 담아 새 세션을 열어요")}>
+              <BookmarkPlus size={12} aria-hidden /> {t("기억 담아 새로")}
+            </button>
             <div className="split-btn">
               <button className="btn btn-small btn-primary" onClick={onTerminal} data-testid="continue" title={t("원본 CLI 터미널로 이어가기")}>
                 <Play size={12} aria-hidden /> {t("이어가기")}
               </button>
             </div>
+            </>
           )
         )}
       </div>

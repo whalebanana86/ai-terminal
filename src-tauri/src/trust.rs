@@ -47,6 +47,15 @@ pub fn trust(cwd: &Path) -> Option<String> {
     Some(id)
 }
 
+/// 경로가 속한 저장소 id(공유 git 폴더의 실제 경로). git 을 부르지 않는다. 저장소 밖이면 None.
+pub fn repo_id(cwd: &Path) -> Option<String> {
+    git_dirs(cwd).map(|(_, common)| common.to_string_lossy().into_owned())
+}
+
+pub fn is_trusted_id(id: &str) -> bool {
+    TRUSTED.read().contains(id)
+}
+
 /// 믿지 않은 저장소에서 꺼 둔 항목. 믿었거나 없으면 빈 목록.
 pub fn untrusted_items(cwd: &Path) -> Vec<String> {
     match untrusted_risk(cwd) {

@@ -169,6 +169,7 @@ UI 는 셋이 다르면 경고 배지를 띄운다. 어떤 값도 체크아웃�
   이어받기는 실행 기록을 되살린 뒤에 읽기 스레드를 시작하고(넘기는 사이 끝난 에이전트), 이어받지 못하면 화면에 한 번 알린다(`handoff_notice`).
 - **파일 감시**: 파일 id 캐시 없는 디바운서(감시 등록 때 하위 전체를 훑지 않음), 무시 폴더 목록 20초마다 갱신, 감시 루트의 inode 가 바뀌면 다시 등록.
 - **저장소 믿기**(`trust.rs`): git 을 부를 때마다 `.git` 을 찾아 올라가(git 을 부르지 않음) 저장소를 알아내고, 믿지 않은 저장소면 그 저장소 설정(`git config --list --show-scope` 의 local·worktree, include 로 끌어온 것 포함)과 `.git/hooks` 에서 실행 명령을 찾아 `-c` 로 끈다(필터 clean/smudge/process 빈 값 + required=false, hooksPath=/dev/null, sshCommand=ssh, gpg 프로그램 기본값, credential helper 비움, ext 프로토콜 금지). 결과는 설정·훅 폴더 수정 시각으로 캐시. 믿는 목록은 kv `trusted_repos`, 처음엔 등록된 저장소 전부.
+- **작업 기억**(`memory.rs`·`memory_worker.rs`·`memory_fetch.rs`, 설계 [WORK_MEMORY.md](WORK_MEMORY.md)): Apple Silicon + macOS 14 이상에서만. 기록 감시가 `poke` 하면 `memory` 스레드가 Claude·Codex 기록을 파일별 읽은 위치(`sources`)부터 이어 읽어 끝난 턴을 `memory/memory.sqlite3`(`turns` 원문 zstd + `chunks` 검색 조각 + 256차원 int8 벡터)에 넣는다. 비밀값은 저장·임베딩 전에 가린다. 임베딩은 앱 실행 파일을 `--memory-worker <dylib> <모델>` 로 다시 띄운 도우미가 표준 입출력 JSON 으로 하고(ONNX Runtime 은 `ort` `load-dynamic` 으로 도우미에서만 불러온다 — 실행 파일에 링크하지 않아 유니버설·macOS 12 빌드가 그대로), 2분 쉬면 끝낸다. 검색은 앱이 벡터를 메모리에 올려 전수 내적. 새 세션 주입은 Claude 는 이번 실행의 `--settings` 에 SessionStart(`startup`) 훅(`/bin/cat <기억 파일>`), Codex 는 첫 지시 앞.
 - **Git 실행 고정 옵션**: `GIT_OPTIONAL_LOCKS=0`, `GIT_LITERAL_PATHSPECS=1`(check-ignore 제외), `core.fsmonitor=false`, `log.showSignature=false`(gpg.program 실행 방지), `diff.noprefix=false`, `diff.mnemonicPrefix=false`, `core.quotepath=false`, diff 는 `--no-ext-diff --no-textconv`.
 
 ## 10. 2차 작업에서 추가된 구조

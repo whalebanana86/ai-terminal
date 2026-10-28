@@ -108,7 +108,7 @@ fn file_stamp(p: &Path) -> Option<(u64, i64)> {
     Some((m.len(), mtime))
 }
 
-fn truncate_chars(s: &str, n: usize) -> String {
+pub(crate) fn truncate_chars(s: &str, n: usize) -> String {
     if s.chars().count() <= n {
         s.to_string()
     } else {
@@ -118,12 +118,12 @@ fn truncate_chars(s: &str, n: usize) -> String {
     }
 }
 
-fn one_line(s: &str, n: usize) -> String {
+pub(crate) fn one_line(s: &str, n: usize) -> String {
     truncate_chars(&s.split_whitespace().collect::<Vec<_>>().join(" "), n)
 }
 
 /// 압축(.zst) 여부와 관계없이 줄 단위로 읽는다.
-fn open_lines(path: &Path) -> Result<Box<dyn BufRead>> {
+pub(crate) fn open_lines(path: &Path) -> Result<Box<dyn BufRead>> {
     let f = File::open(path).with_context(|| tr!("{} 를 열 수 없습니다", "Can't open {}", path.display()))?;
     if path.extension().is_some_and(|e| e == "zst") {
         Ok(Box::new(BufReader::new(zstd::stream::read::Decoder::new(f)?)))
@@ -254,7 +254,7 @@ fn claude_queued_text(v: &Value) -> Option<String> {
 }
 
 /// 사람이 보낸 요청: 보통 user 메시지 또는 일하는 중에 대기열로 보낸 것
-fn claude_human_text(v: &Value) -> Option<String> {
+pub(crate) fn claude_human_text(v: &Value) -> Option<String> {
     claude_user_text(v).or_else(|| claude_queued_text(v))
 }
 
@@ -424,7 +424,7 @@ pub struct RolloutHeader {
     pub first_prompt: Option<String>,
 }
 
-fn is_codex_noise(text: &str) -> bool {
+pub(crate) fn is_codex_noise(text: &str) -> bool {
     let t = text.trim_start();
     t.is_empty()
         || t.starts_with("<environment_context>")
