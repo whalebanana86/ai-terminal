@@ -240,6 +240,34 @@ export interface TranscriptItem {
   isError: boolean;
 }
 
+/** 작업 기억 상태(설정 창·기억 담아 새로 시작) */
+export interface MemoryStatus {
+  supported: boolean;
+  enabled: boolean;
+  state: "unsupported" | "off" | "download" | "downloading" | "indexing" | "ready";
+  downloaded: number;
+  downloadTotal: number;
+  turns: number;
+  chunks: number;
+  embedded: number;
+  dbBytes: number;
+  modelBytes: number;
+  error: string | null;
+}
+
+/** 의미로 찾은 지난 턴(요청 하나와 그 일) */
+export interface MemoryHit {
+  id: number;
+  session: string;
+  agent: Agent;
+  ts: number;
+  project: string;
+  user: string;
+  assistant: string;
+  files: string[];
+  score: number;
+}
+
 export interface TouchedFile {
   path: string;
   op: string;
@@ -348,7 +376,8 @@ export const api = {
   fsReadImage: (worktree: string, rel: string, rev?: string) => invoke<ArrayBuffer>("fs_read_image", { worktree, rel, rev: rev ?? null }),
   sessions: () => invoke<LinkedSession[]>("sessions_list"),
   transcript: (id: string) => invoke<Transcript>("session_transcript", { id }),
-  execStart: (args: { agent: Agent; mode: "new" | "new-native" | "resume" | "resume-native"; sessionId?: string; cwd?: string; cols: number; rows: number; force?: boolean; prompt?: string; sandbox?: string; theme?: Theme }) =>
+  /** memory: 새 세션에 넣을 지난 작업 기억(Claude 는 시작 훅, Codex 는 첫 지시 앞) */
+  execStart: (args: { agent: Agent; mode: "new" | "new-native" | "resume" | "resume-native"; sessionId?: string; cwd?: string; cols: number; rows: number; force?: boolean; prompt?: string; sandbox?: string; theme?: Theme; memory?: string }) =>
     invoke<ExecInfo>("exec_start", { args }),
   /** replayed: 붙자마자 재생한 앞선 출력 양(바이트) */
   execAttach: (id: string, onData: Channel<ArrayBuffer | number[] | string>) => invoke<{ sinkId: number; replayed: number }>("exec_attach", { id, onData }),
@@ -358,6 +387,12 @@ export const api = {
   execKill: (id: string) => invoke<void>("exec_kill", { id }),
   execList: () => invoke<ExecInfo[]>("exec_list"),
   handoffNotice: () => invoke<string | null>("handoff_notice"),
+  memoryStatus: () => invoke<MemoryStatus>("memory_status"),
+  memorySetEnabled: (on: boolean) => invoke<MemoryStatus>("memory_set_enabled", { on }),
+  memoryClear: () => invoke<void>("memory_clear"),
+  memoryRemoveModel: () => invoke<void>("memory_remove_model"),
+  /** cwd 가 속한 저장소의 기록에서(all 이면 전체) 찾는다. excludeSession 의 excludeAfter 이후 턴은 뺀다. */
+  memorySearch: (args: { query: string; cwd?: string | null; all?: boolean; excludeSession?: string; excludeAfter?: number; limit?: number }) => invoke<MemoryHit[]>("memory_search", { args }),
   watchSet: (worktrees: string[]) => invoke<void>("watch_set", { worktrees }),
   kvGet: (key: string) => invoke<string | null>("kv_get", { key }),
   kvSet: (key: string, value: string) => invoke<void>("kv_set", { key, value }),

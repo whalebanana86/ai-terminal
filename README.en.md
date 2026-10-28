@@ -103,6 +103,7 @@ The coloured line under the title bar is the colour of the worktree you are look
 
 - **Continue (이어가기)** opens the original CLI terminal:
   - **Original CLI terminal** — the real `claude` / `codex` UI inside the app, with your slash commands, login and subscription.
+- **Fresh with memory** opens a new session with only **the last few turns plus past records you pick**, instead of sending the whole long conversation again. It saves tokens and keeps stale context out; you can preview and choose what goes in.
 - **＋ New session** (`⌘N`) starts a new agent in the worktree you choose, optionally with a first instruction, or in a brand-new worktree so it doesn't collide with other agents.
 - Run several at once; switching sessions doesn't stop running agents.
 
@@ -157,7 +158,8 @@ Turn on **File editing** in Settings → **Features** and files are **editable a
 - No account. Choosing Check for Updates contacts GitHub for release metadata and update files. No repository paths or conversation contents are sent (the UI remains locked down by CSP).
 - Claude Code and Codex logs are **read only**.
 - The app only writes your files when the **File editing** feature is on (off by default, a macOS confirmation to turn on).
-- The only traffic is what you start: Git remote actions, and the Claude Code / Codex CLIs you launch.
+- The only traffic is what you start: Git remote actions, the one-time search model download when you turn on Work memory (Hugging Face / GitHub, checksum-verified), and the Claude Code / Codex CLIs you launch.
+- With Work memory on, copies of conversation logs stay in the app's data folder on this Mac only. Values that look like API keys or passwords are masked before saving, records from untrusted repositories are never suggested, and search runs locally.
 - Hard-to-undo actions (checkout, pull, push, discard) always confirm, and warn about uncommitted changes or agents running in that worktree.
 - If a newly added repository's Git settings (.git) contain commands Git would run (filters, hooks, …), they stay **off until you trust the repository**, so opening a repository from someone else can't run them.
 
@@ -165,7 +167,7 @@ Turn on **File editing** in Settings → **Features** and files are **editable a
 
 ## Details for developers
 
-- **Stack:** Tauri 2 (Rust) + React + TypeScript, xterm.js (WebGL), Shiki (languages loaded on demand), the `git` CLI (your credentials and hooks as is), portable-pty, notify, SQLite for app state (no conversation content).
+- **Stack:** Tauri 2 (Rust) + React + TypeScript, xterm.js (WebGL), Shiki (languages loaded on demand), the `git` CLI (your credentials and hooks as is), portable-pty, notify, SQLite for app state (no conversation content; Work memory, when on, keeps its own local copy in `memory/memory.sqlite3`), ONNX Runtime loaded at run time for Work memory only.
 - **Model:** Repository → Worktree → Branch/HEAD, linked to AgentSession (a CLI conversation) and AgentExecution (one run started by the app). See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - **Logs read:** `~/.claude/projects/*/<id>.jsonl`, `~/.claude/sessions/<pid>.json`, `~/.codex/state_*.sqlite` (read-only), `~/.codex/sessions/**/rollout-*.jsonl[.zst]`, `~/.codex/thread-writer-locks/`. `CLAUDE_CONFIG_DIR` and `CODEX_HOME` are honoured.
 - **Linking a session to a worktree:** the last recorded cwd wins (resume always runs in the first cwd, because `claude --resume` looks up the log by its starting folder). Sessions started in a parent folder that is not a repository are linked to the repository folder they worked in most recently (from the cwd values in the last 2 MB of the log). Running sessions are detected with libproc, without spawning `ps` or `lsof`.
@@ -184,7 +186,7 @@ scripts/promo/make_promo.sh   # 30-second promo video for X/Threads in promo/ (1
 scripts/package_release.sh 0.1.0   # universal app → build/release/ DMG, zip, SHA256SUMS (a v* tag does this on GitHub Actions and publishes a Release)
 ```
 
-**Settings** (menu bar **Code Whereabouts → Settings…**, `⌘,`): language (한국어 / English, follows macOS at first), appearance (system / light / dark; the terminal and code colours follow), external editor, and **Features**: File editing (off by default), Stickman (on), Subscription limits (on; when off, login details aren't read). Features that are off aren't loaded at all.
+**Settings** (menu bar **Code Whereabouts → Settings…**, `⌘,`): language (한국어 / English, follows macOS at first), appearance (system / light / dark; the terminal and code colours follow), external editor, and **Features**: File editing (off by default), Stickman (on), Subscription limits (on; when off, login details aren't read). Features that are off aren't loaded at all. **Work memory** (off by default; Apple Silicon + macOS 14 or later) keeps past conversations, errors and edits on this Mac (Claude Code deletes conversations after 30 days) and finds them by meaning for **Fresh with memory**; turning it on downloads a search model (about 380 MB) once.
 
 Not yet: notarized builds, Intel check, line-level staging, 3-way merge editor, interactive rebase, stash; in file editing, creating/renaming/deleting files, autocomplete (LSP), multiple file tabs.
 

@@ -12,6 +12,9 @@ pub mod git;
 pub mod gitops;
 pub mod graph;
 pub mod handoff;
+pub mod memory;
+pub mod memory_fetch;
+pub mod memory_worker;
 pub mod procs;
 pub mod pty;
 pub mod trust;
@@ -66,7 +69,10 @@ pub fn run() {
             let events: core::EventSink = Arc::new(move |name, payload| {
                 let _ = h.emit(name, payload);
             });
-            let core = core::AppCore::new(db, events);
+            let core = core::AppCore::new(db, events.clone());
+            // 작업 기억: 지난 대화를 보관하고 의미로 찾는다(쓸 수 있는 맥에서만 감시 스레드를 띄운다)
+            let memory = memory::Memory::new(data_dir.join("memory"), events);
+            memory.start();
             // git 을 부르기 전에 믿는 저장소를 읽는다(믿지 않은 저장소는 설정의 실행 명령을 끈다)
             core.load_trust();
             // 업데이트 전 버전이 맡겨 둔 에이전트(터미널)를 이어받는다
@@ -85,10 +91,12 @@ pub fn run() {
             .map(Arc::new);
 
             let h = handle.clone();
+            let mem = memory.clone();
             match watch::SessionWatcher::new(
                 sessions::claude_dir().join("projects"),
                 sessions::codex_dir(),
                 Arc::new(move |paths| {
+                    mem.poke();
                     let _ = h.emit("sessions-changed", paths);
                 }),
             ) {
@@ -117,7 +125,7 @@ pub fn run() {
                     std::thread::sleep(std::time::Duration::from_secs(if visible { 5 } else { 15 }));
                 })?;
             }
-            app.manage(AppState { core, watcher });
+            app.manage(AppState { core, watcher, memory });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -193,6 +201,11 @@ pub fn run() {
             commands::git_op_control,
             commands::git_resolve,
             commands::git_op_state,
+            commands::memory_status,
+            commands::memory_set_enabled,
+            commands::memory_clear,
+            commands::memory_remove_model,
+            commands::memory_search,
         ])
         .build(tauri::generate_context!())
         .expect("코드행방을 시작하지 못했습니다")
