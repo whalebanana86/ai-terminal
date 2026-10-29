@@ -140,7 +140,8 @@ function ExternalEditorRow() {
   );
 }
 
-const mb = (n: number) => `${Math.round(n / 1e6).toLocaleString()} MB`;
+// 1MB 가 안 되면 KB 로("0 MB" 로 보이지 않게)
+const mb = (n: number) => (n < 1e6 ? `${Math.max(1, Math.round(n / 1e3)).toLocaleString()} KB` : `${Math.round(n / 1e6).toLocaleString()} MB`);
 
 /** 작업 기억: 지난 대화를 이 맥 안에 보관하고 의미로 찾는다. 켜면 모델을 한 번 내려받는다. */
 function MemorySection() {

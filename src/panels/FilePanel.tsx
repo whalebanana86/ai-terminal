@@ -268,7 +268,9 @@ export function FileViewer({ worktree, viewer, onViewer }: { worktree: string; v
     const top = viewerScrollTops.get(scrollKey) ?? 0;
     lastScroll.current = { key: scrollKey, top };
     if (bodyRef.current) bodyRef.current.scrollTop = top;
-    return () => viewerScrollTops.set(lastScroll.current.key, lastScroll.current.top);
+    return () => {
+      viewerScrollTops.set(lastScroll.current.key, lastScroll.current.top);
+    };
   }, [scrollKey]);
   const [content, setContent] = useState<FileContent | null>(null);
   const [diff, setDiff] = useState<FileDiff[] | null>(null);
