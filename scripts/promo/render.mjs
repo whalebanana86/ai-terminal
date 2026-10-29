@@ -16,10 +16,12 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME, args
 if (mode === "shot") {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
   let html = readFileSync(input, "utf8").replace(/<script\b[\s\S]*?<\/script>/g, "");
-  // 개발 서버의 글꼴·그림 경로가 풀리게
-  if (a) html = html.replace(/<head>/i, `<head><base href="${a}">`);
+  // 빌드한 화면을 띄운 서버에서 글꼴·그림·스타일 경로가 풀리게(앱 안 주소 tauri://localhost/ 도 바꾼다)
+  if (a) html = html.replace(/tauri:\/\/localhost\//g, a).replace(/<head>/i, `<head><base href="${a}">`);
   await page.setContent(html, { waitUntil: "load" });
   await page.evaluate(() => document.fonts.ready);
+  // 화면 구조에는 스크롤 위치가 없다: 장면에서 data-promo-scroll 로 적어 둔 위치로 되돌린다
+  await page.evaluate(() => document.querySelectorAll("[data-promo-scroll]").forEach((e) => (e.scrollTop = Number(e.dataset.promoScroll))));
   await page.waitForTimeout(300);
   await page.screenshot({ path: out });
 } else if (mode === "fontshot") {

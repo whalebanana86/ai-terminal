@@ -1,7 +1,10 @@
 // 소개 영상용 장면 만들기. scripts/promo/make_promo.sh 가 데모 앱(automation 빌드)에 scripts/demo/steps.js 다음에 넣는다.
-// 장면마다 화면을 맞춰 두면 셸이 화면 구조를 떠서 그림으로 만든다. 예시 저장소 경로는 DEMO_WORK 로 바뀐다.
+// 장면마다 화면을 맞춰 두면 셸이 화면 구조를 떠서 그림으로 만든다. 예시 저장소 경로는 DEMO_WORK 로, 화면 언어는 DEMO_LANG 으로 바뀐다.
+// (2026-10-28 판: 0.8~0.11 새 기능 — 기억 담아 새로·작업 기억·브랜치 색·저장소 믿기. 이전 판은 git 기록에)
 (() => {
   const W = "DEMO_WORK";
+  // 영어판은 예시 세션 제목·버튼 글자가 영어다(scripts/demo/make_demo.py 의 DEMO_LANG=en)
+  const T = (ko, en) => ("DEMO_LANG" === "en" ? en : ko);
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const st = () => window.__aitermStore.getState();
   const inv = window.__TAURI_INTERNALS__.invoke;
@@ -9,7 +12,7 @@
   const $$ = (q, root = document) => [...root.querySelectorAll(q)];
   const until = async (f, ms = 8000) => {
     for (let i = 0; i < ms / 100; i++) {
-      const v = f();
+      const v = await f();
       if (v) return v;
       await wait(100);
     }
@@ -17,96 +20,101 @@
   };
   const click = (el) => el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   const select = async (title) => {
+    await st().refreshSessions();
     st().selectSession(st().sessions.find((s) => s.title === title).id);
     await wait(1200);
   };
-  const expand = async (name) => {
-    const li = $$(".tree-row.dir").find((l) => $(".name", l).innerText === name && $(".twisty", l).innerText.includes("▸"));
-    if (li) {
-      click(li);
-      await wait(350);
-    }
+  const tab = async (name) => {
+    click($(`.tabs [data-tab=${name}]`));
+    await wait(900);
   };
-  const cm = () => $(".cm-content")?.cmTile?.view;
-  const LOGIN = `${W}/todo-app-login`;
+  const escape = () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  const closeModal = async () => {
+    const back = $$(".modal-backdrop").pop();
+    if (back) back.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    await wait(300);
+  };
 
   window.__promo = {
     async setup() {
-      await window.__aitermExt.getState().set("editor", true);
       // 영상에 실제 구독 사용률(이 맥의 로그인)이 찍히지 않게
       await window.__aitermExt.getState().set("usage", false);
-      await wait(300);
-      return 1;
+      await inv("repo_trust", { worktree: `${W}/todo-app` });
+      // 작업 기억: 켜고(모델이 없으면 받는다) 예시 기록 정리가 끝날 때까지 기다린다
+      await inv("memory_set_enabled", { on: true });
+      const s = await until(async () => {
+        const x = await inv("memory_status");
+        return x.state === "ready" && x.turns > 0 && x;
+      }, 900000);
+      return `${s.turns}턴`;
     },
-    /** 장면 1: 파일을 열면 가운데 칸 탭에서 바로 편집 */
-    async editor() {
-      await select("로그인 화면 붙이기");
-      await expand("src");
-      await expand("lib");
-      await expand("pages");
-      click($$(".tree-row.file").find((l) => $(".name", l).innerText === "validate.ts"));
-      await wait(700);
-      click($$(".tree-row.file").find((l) => $(".name", l).innerText === "Login.tsx"));
-      await until(() => cm() && cm().state.doc.length > 0);
-      await wait(600);
-      const v = cm();
-      const at = v.state.doc.toString().indexOf("<form>") + "<form>".length;
-      const add = "\n      {/* 이메일·비밀번호 칸 */}\n      <input type=\"email\" placeholder=\"이메일\" />\n      <input type=\"password\" placeholder=\"비밀번호\" />\n      <button>로그인</button>\n    ";
-      v.dispatch({ changes: { from: at, to: at + "…".length, insert: add }, selection: { anchor: at + add.length - 5 }, userEvent: "input.type" });
-      v.focus();
+    /** 장면: 기억 담아 새로 — 직전 대화 + 관련된 지난 작업 */
+    async memoryStart() {
+      await select(T("로그인 화면 붙이기", "Add login screen"));
+      click(await until(() => $("[data-testid=fresh-with-memory]")));
+      await until(() => $("[data-testid=memory-hits] li"), 20000);
+      await wait(400);
+      // 위쪽 관련 기록 두 개를 골라 담는다(사용자가 고르는 모습)
+      for (const box of $$("[data-testid=memory-hits] li input").slice(0, 2)) if (!box.checked) click(box);
       await wait(500);
+      return $$("[data-testid=memory-hits] li input:checked").length;
+    },
+    /** 장면: 넣을 글 미리 보기 */
+    async memoryPreview() {
+      const b = $$("[data-testid=memory-start] .link-btn").find((x) => x.innerText.includes(T("미리 보기", "Preview")));
+      click(b);
+      await until(() => $(".mem-preview"));
+      await wait(300);
+      // 미리 보기가 보이게 창을 끝까지 내리고 위치를 적어 둔다(그림을 그릴 때 되돌린다)
+      for (const el of [$("[data-testid=memory-start]"), $(".mem-preview")]) {
+        el.scrollTop = el.scrollHeight;
+        el.dataset.promoScroll = String(el.scrollTop);
+      }
+      const m = $("[data-testid=memory-start]");
+      await wait(300);
+      return m.scrollTop;
+    },
+    async closeMemory() {
+      await closeModal();
       return 1;
     },
-    /** 장면 2: 고치는 사이 AI 가 같은 파일을 바꾸면 덮어쓰지 않고 묻는다 */
-    async protect() {
-      const now = await inv("fs_read_for_edit", { worktree: LOGIN, rel: "src/pages/Login.tsx" });
-      await inv("fs_save", { args: { worktree: LOGIN, rel: "src/pages/Login.tsx", text: now.text.replace("export function Login() {", "// AI: 폼 상태를 훅으로 뺐어요\nexport function Login() {"), crlf: now.crlf, bom: now.bom, expected: now.hash, force: false } });
-      await until(() => $("[data-testid=outside-note]"));
-      await wait(300);
-      click($('[data-action="save-file"]'));
-      await until(() => $("[data-testid=outside-note]")?.textContent.includes("저장하지 않았어요"));
+    /** 장면: 설정 → 작업 기억 */
+    async memorySettings() {
+      await inv("plugin:event|emit", { event: "open-settings", payload: null });
+      await until(() => $("[data-testid=memory-settings] .mem-state"));
+      await wait(500);
+      return $("[data-testid=memory-settings] .mem-state").innerText;
+    },
+    async closeSettings() {
+      escape();
       await wait(400);
       return 1;
     },
-    /** 장면 3: 설정 → 기능 */
-    async settings() {
-      await inv("plugin:event|emit", { event: "open-settings", payload: null });
-      await until(() => $("[data-testid=settings-dialog]"));
-      await wait(500);
-      return 1;
-    },
-    async closeSettings() {
-      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-      await wait(300);
-      // 장면 2 의 저장 안 한 수정은 버리고(다시 불러오기) 탭을 닫는다
-      const reload = $('[data-action="reload"]');
-      if (reload) {
-        click(reload);
-        await wait(500);
-      }
-      st().closeTabs(st().fileTabs.map((x) => x.id));
-      await wait(300);
-      return 1;
-    },
-    /** 장면 4: 그래프의 🤖(AI 와 함께 쓴 커밋)과 커밋 상세의 공동 작성자 */
+    /** 장면: 그래프와 브랜치 탭의 같은 브랜치 색 */
     async graph() {
-      await select("정렬 버그 고치기");
-      click($(".tabs [data-tab=graph]") ?? $$(".tabs button").find((b) => b.innerText.trim() === "그래프"));
-      await wait(800);
-      const row = await until(() => $$(".grow").find((r) => r.innerText.includes("정렬이 끝난 일을 섞던 문제 고침")));
-      click(row);
-      await until(() => $(".cd-people, .cd-coauthor"));
-      await wait(500);
-      return $$(".grow .gai svg").length;
-    },
-    /** 장면 5: 세션 목록을 접어 대화·터미널을 크게 */
-    async listOpen() {
-      if ($("[data-action=toggle-session-list]")?.getAttribute("aria-pressed") === "true") click($("[data-action=toggle-session-list]"));
-      await wait(600);
+      await select(T("정렬 버그 고치기", "Fix sorting bug"));
+      await tab("graph");
       return 1;
     },
-    async listClosed() {
-      click($("[data-action=toggle-session-list]"));
+    async branches() {
+      await tab("branches");
+      return 1;
+    },
+    /** 장면: 남의 저장소를 처음 열면 — Git 설정 속 실행 명령은 믿기 전엔 꺼 둔다 */
+    async trust() {
+      const lib = `${W}/shared-lib`;
+      await inv("repo_add", { path: lib });
+      await st().refreshRepos();
+      st().setFocusWorktree(lib);
+      await until(() => $$(".modal h3").find((h) => h.innerText.includes(T("믿을까요", "Trust this"))), 10000);
+      await wait(500);
+      return 1;
+    },
+    async closeTrust() {
+      const b = $$(".modal button").find((x) => x.innerText.trim() === T("취소", "Cancel"));
+      if (b) click(b);
+      await wait(300);
+      st().setFocusWorktree(`${W}/todo-app`);
       await wait(800);
       return 1;
     },
