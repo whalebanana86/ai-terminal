@@ -59,11 +59,12 @@ export const EXTENSIONS: ExtensionDef[] = [
     ],
   },
   {
+    // 예전 스틱맨 자리. 켜고 끈 설정을 이어 쓰려고 id 는 그대로 둔다
     id: "stickman",
-    title: () => t("스틱맨"),
-    description: () => t("위쪽 막대 오른쪽에서 요청 종류마다 동작하고 오늘 요청 수를 세요."),
+    title: () => t("부기"),
+    description: () => t("위쪽 막대 오른쪽의 부엉이 부기가 요청 종류마다 동작하고 오늘 요청 수를 세요. 앉은 가지 색은 지금 보는 워크트리 색이에요."),
     defaultEnabled: true,
-    topbar: lazy(() => import("../components/StickBuddy").then((m) => ({ default: m.StickBuddy }))),
+    topbar: lazy(() => import("../components/BukiBuddy").then((m) => ({ default: m.BukiBuddy }))),
   },
   {
     id: "usage",

@@ -1,5 +1,7 @@
 # Code Whereabouts
 
+<img src="docs/buki.svg" width="91" align="right" alt="Buki: a purple pixel owl sitting on a pink branch">
+
 **See where AI works and what it changes**
 
 Formerly AI Terminal. Existing repositories and session settings are preserved. Older releases may still use the `AI-Terminal-…` filename. The app bundle is `코드행방.app`; macOS uses the localized display name **Code Whereabouts** in English.
@@ -186,7 +188,7 @@ scripts/promo/make_promo.sh   # 30-second promo video for X/Threads in promo/ (1
 scripts/package_release.sh 0.1.0   # universal app → build/release/ DMG, zip, SHA256SUMS (a v* tag does this on GitHub Actions and publishes a Release)
 ```
 
-**Settings** (menu bar **Code Whereabouts → Settings…**, `⌘,`): language (한국어 / English, follows macOS at first), appearance (system / light / dark; the terminal and code colours follow), external editor, and **Features**: File editing (off by default), Stickman (on), Subscription limits (on; when off, login details aren't read). Features that are off aren't loaded at all. **Work memory** (off by default; Apple Silicon + macOS 14 or later) keeps past conversations, errors and edits on this Mac (Claude Code deletes conversations after 30 days) and finds them by meaning for **Fresh with memory**; turning it on downloads a search model (about 380 MB) once. **Open source licenses** lists the licenses and full texts of the open source software it uses.
+**Settings** (menu bar **Code Whereabouts → Settings…**, `⌘,`): language (한국어 / English, follows macOS at first), appearance (system / light / dark; the terminal and code colours follow), external editor, and **Features**: File editing (off by default), Buki (on; the owl at the right of the top bar acts out each kind of request and counts today's requests, and the branch it sits on takes the color of the worktree you're viewing), Subscription limits (on; when off, login details aren't read). Features that are off aren't loaded at all. **Work memory** (off by default; Apple Silicon + macOS 14 or later) keeps past conversations, errors and edits on this Mac (Claude Code deletes conversations after 30 days) and finds them by meaning for **Fresh with memory**; turning it on downloads a search model (about 380 MB) once. **Open source licenses** lists the licenses and full texts of the open source software it uses.
 
 Not yet: notarized builds, Intel check, line-level staging, 3-way merge editor, interactive rebase, stash; in file editing, creating/renaming/deleting files, autocomplete (LSP), multiple file tabs.
 

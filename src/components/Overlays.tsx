@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { t } from "../i18n";
 import { useStore } from "../store";
 import { useWtColor } from "../wtColors";
+import type { BukiPose } from "../buki";
+import { Buki } from "./Buki";
 
 export function Toasts() {
   const toasts = useStore((s) => s.toasts);
@@ -63,9 +65,11 @@ export function AgentBadge({ agent, small }: { agent: string; small?: boolean })
   );
 }
 
-export function Empty({ title, children }: { title: string; children?: React.ReactNode }) {
+/** buki: 부기를 위에 크게. 자주 뜨는 작은 빈 칸에는 넣지 않는다(첫 화면·세션 고르기 같은 큰 빈 칸만) */
+export function Empty({ title, children, buki }: { title: string; children?: React.ReactNode; buki?: BukiPose }) {
   return (
     <div className="empty">
+      {buki && <Buki px={4} pose={buki} className="empty-buki" />}
       <div className="empty-title">{title}</div>
       {children && <div className="empty-body">{children}</div>}
     </div>

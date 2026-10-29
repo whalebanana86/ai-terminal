@@ -6,6 +6,7 @@ import { t } from "../i18n";
 import { composeMemory, MEMORY_LIMIT, turnsFromTranscript, type RecentTurn } from "../memoryCompose";
 import { useStore } from "../store";
 import { currentTheme } from "../theme";
+import { Buki } from "../components/Buki";
 
 /** 넣을 최근 턴 수 */
 const RECENT = 3;
@@ -205,7 +206,10 @@ export function MemoryStartDialog({ session, onClose }: { session: LinkedSession
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
       <div className="modal modal-wide memory-start" role="dialog" aria-modal="true" aria-label={t("기억 담아 새로 시작")} onMouseDown={(e) => e.stopPropagation()} data-testid="memory-start">
-        <h3>{t("기억 담아 새로 시작")}</h3>
+        <h3 className="buki-title">
+          <Buki px={2} pose={searching ? "look-r" : hits?.length === 0 ? "puzzled" : status && !status.enabled ? "sleep" : "idle"} />
+          {t("기억 담아 새로 시작")}
+        </h3>
         <p className="muted small">{t("지난 대화 전체를 다시 보내는 대신, 고른 기록만 새 세션에 넣어요. 토큰을 아끼고 오래된 맥락이 섞이지 않아요.")}</p>
 
         <h4 className="mem-h">{t("직전 대화")}</h4>

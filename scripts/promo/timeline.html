@@ -23,6 +23,7 @@ html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#07090d
 .big .sub{font-size:38px;color:#a9b6c8;margin-top:22px;font-weight:600}
 .chip{display:inline-block;margin-top:40px;padding:12px 28px;border-radius:40px;background:#1c3b57;color:#8fd3ff;font-size:30px;font-weight:700;border:1px solid #2e5f88}
 .url{margin-top:34px;font-size:40px;font-weight:700;color:#e8eef6}
+.big .buki{width:190px;height:152px;margin-bottom:34px}
 .ok{color:#7ee787}
 .note .cap{top:150px}
 .handoff{position:absolute;left:0;right:0;top:420px;display:flex;justify-content:center;align-items:center;gap:56px}
@@ -114,6 +115,12 @@ for (const sc of S) {
     el.innerHTML = brand + `<div class="cap"><h1>${sc.h}</h1><p>${sc.s}</p></div><div class="card"></div>`;
     sc.im = loadImg(sc.img);
     el.querySelector(".card").appendChild(sc.im);
+  }
+  // 시작·끝 화면 맨 위에 부기(docs/buki.svg 를 make_promo.sh 가 옆에 둔다)
+  if (sc.kind === "title" || sc.kind === "outro") {
+    const b = loadImg("buki.svg");
+    b.className = "buki";
+    el.querySelector(".big").prepend(b);
   }
   sc.el = el;
   sc.capEl = el.querySelector(".cap");

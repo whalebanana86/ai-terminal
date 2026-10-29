@@ -7,6 +7,8 @@ import { getExternalEditor, setExternalEditor } from "../externalEditor";
 import { lang, setLang, t } from "../i18n";
 import { useStore } from "../store";
 import { useMemoryStatus } from "../panels/MemoryStart";
+import { Buki } from "./Buki";
+import type { BukiPose } from "../buki";
 import { LicensesDialog } from "./Licenses";
 import { getThemePref, setThemePref, type ThemePref } from "../theme";
 
@@ -177,7 +179,10 @@ function MemorySection() {
         </span>
         <input type="checkbox" className="switch" role="switch" checked={st.enabled} disabled={busy || !st.supported} onChange={() => void run(() => api.memorySetEnabled(!st.enabled))} aria-label={t("지난 작업 기억하기")} />
       </label>
-      <MemoryState st={st} onRetry={() => void run(() => api.memorySetEnabled(true))} />
+      <div className="mem-head">
+        <Buki px={2} pose={memoryPose(st)} />
+        <MemoryState st={st} onRetry={() => void run(() => api.memorySetEnabled(true))} />
+      </div>
       {st.supported && (st.turns > 0 || st.modelBytes > 0) && (
         <div className="mem-actions">
           {st.turns > 0 && (
@@ -194,6 +199,15 @@ function MemorySection() {
       )}
     </div>
   );
+}
+
+/** 작업 기억 상태에 맞는 부기 모습: 꺼짐은 졸기, 받기·정리는 두리번, 실패는 갸웃 */
+function memoryPose(st: MemoryStatus): BukiPose {
+  if (st.error || st.state === "download") return "puzzled";
+  if (!st.supported || st.state === "off" || st.state === "unsupported") return "sleep";
+  if (st.state === "downloading") return "look-r";
+  if (st.state === "indexing") return "look-l";
+  return "idle";
 }
 
 function MemoryState({ st, onRetry }: { st: MemoryStatus; onRetry: () => void }) {

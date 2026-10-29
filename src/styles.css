@@ -331,6 +331,16 @@ code,
   font-weight: 600;
   margin-bottom: 6px;
 }
+.empty-buki {
+  display: block;
+  margin: 0 auto 12px;
+}
+/* 대화상자 제목 옆 부기(기억 담아 새로·업데이트) */
+.buki-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 .loading {
   padding: 16px;
   color: var(--fg-dim);
@@ -2092,15 +2102,15 @@ li:hover .hover-only,
   max-height: none;
 }
 
-/* ── 위쪽 막대 스틱맨: 요청이 오면 그 종류의 동작을 한 번 하고 개수를 올린다 ── */
-.stick-buddy {
+/* ── 위쪽 막대 부기(BukiBuddy): 요청이 오면 그 종류의 동작을 한 번 하고 개수를 올린다 ── */
+.buki-buddy {
   position: relative;
   display: flex;
   align-items: center;
   gap: 2px;
   -webkit-app-region: no-drag;
 }
-.stick-counts {
+.buddy-counts {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -2110,183 +2120,149 @@ li:hover .hover-only,
   background: var(--bg-2);
   cursor: pointer;
 }
-.stick-counts:hover {
+.buddy-counts:hover {
   border-color: var(--accent-2);
 }
-.stick-count {
+.buddy-count {
   display: inline-flex;
   align-items: center;
   gap: 2px;
   font-size: 10.5px;
   font-variant-numeric: tabular-nums;
 }
-.stick-count b {
+.buddy-count b {
   display: inline-block;
   min-width: 8px;
   color: var(--fg);
   font-weight: 600;
 }
-.stick-count b.bump {
-  animation: stick-bump 0.6s ease-out;
+.buddy-count b.bump {
+  animation: buddy-bump 0.6s ease-out;
 }
-@keyframes stick-bump {
+@keyframes buddy-bump {
   0% { transform: scale(1); }
   30% { transform: scale(1.7); color: var(--accent); }
   100% { transform: scale(1); }
 }
-.stickman {
-  color: var(--fg);
-  overflow: visible;
+.buddy-buki {
   cursor: pointer;
-  flex: none;
 }
-.stickman g,
-.stickman text {
+
+/* ── 부기(components/Buki.tsx, 픽셀 그림은 src/buki.ts): 겹(눈·소품)은 늘 그려 두고 모습·동작에 따라 보인다 ── */
+.buki {
+  flex: none;
+  overflow: visible;
+}
+.buki g {
   transform-box: view-box;
 }
-/* 소품은 평소엔 숨김 */
-.stickman .p-add,
-.stickman .p-box,
-.stickman .p-trash,
-.stickman .p-bug,
-.stickman .p-spark,
-.stickman .p-what,
-.stickman .p-hammer {
+.buki .owl > g,
+.buki .props > g {
   opacity: 0;
 }
-.stickman .fig { transform-origin: 24px 33px; }
-.stickman .arm-l,
-.stickman .arm-r { transform-origin: 24px 14px; }
-.stickman .leg-l,
-.stickman .leg-r { transform-origin: 24px 22px; }
+.buki.pose-blink .l-shut,
+.buki.pose-sleep .l-shut,
+.buki.pose-sleep .l-z,
+.buki.pose-happy .l-happy,
+.buki.pose-look-l .l-lookL,
+.buki.pose-look-r .l-lookR,
+.buki.pose-puzzled .l-lookR,
+.buki.pose-puzzled .l-what {
+  opacity: 1;
+}
+/* 요청 동작(1.6초, BukiBuddy). 움직임은 픽셀 한 칸씩 끊어서(steps) */
+.buki[class*="act-"] .owl,
+.buki[class*="act-"] .owl > g,
+.buki[class*="act-"] .props > g {
+  animation-duration: 1.6s;
+  animation-timing-function: steps(1, end);
+}
+/* 추가: 웃으며 깡충 뛰고, 초록 + 가 떠오른다 */
+.buki.act-add .owl { animation-name: bk-hop; }
+.buki.act-add .l-happy { animation-name: bk-show-20-80; }
+.buki.act-add .l-plus { animation-name: bk-rise; }
+/* 수정: 렌치를 들고 가지를 콕콕 쫀다 */
+.buki.act-modify .owl { animation-name: bk-peck; }
+.buki.act-modify .l-wrench { animation-name: bk-show-10-85; }
+/* 삭제: 오른쪽을 보며 상자를 떨어뜨린다 */
+.buki.act-delete .l-lookR { animation-name: bk-show-0-80; }
+.buki.act-delete .l-box { animation-name: bk-drop; }
+/* 버그: 벌레를 보다가 콕 먹고 웃는다 */
+.buki.act-bug .owl { animation-name: bk-lunge; }
+.buki.act-bug .l-lookR,
+.buki.act-bug .l-bug { animation-name: bk-show-0-50; }
+.buki.act-bug .l-happy { animation-name: bk-show-55-95; }
+/* 질문: 오른쪽 위를 보며 ? */
+.buki.act-question .l-lookR,
+.buki.act-question .l-what { animation-name: bk-show-10-85; }
+/* 대답만("진행해" 등): 웃으며 끄덕 */
+.buki.act-none .owl { animation-name: bk-nod; }
+.buki.act-none .l-happy { animation-name: bk-show-15-70; }
 
-/* 추가: 웅크렸다 뛰며 두 팔을 들고, 초록 + 를 개수 쪽으로 던진다 */
-.act-add .fig { animation: st-jump 1.6s ease-in-out; }
-.act-add .arm-l { animation: st-arm-up-l 1.6s ease-in-out; }
-.act-add .arm-r { animation: st-arm-up-r 1.6s ease-in-out; }
-.act-add .p-add { transform-origin: 24px 3px; animation: st-plus 1.6s ease-in-out; }
-@keyframes st-jump {
-  0%, 100% { transform: none; }
-  18% { transform: translateY(2px); }
-  38% { transform: translateY(-5px); }
-  55% { transform: none; }
+@keyframes bk-show-0-50 { 0% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes bk-show-0-80 { 0% { opacity: 1; } 80%, 100% { opacity: 0; } }
+@keyframes bk-show-10-85 { 0% { opacity: 0; } 10% { opacity: 1; } 85%, 100% { opacity: 0; } }
+@keyframes bk-show-15-70 { 0% { opacity: 0; } 15% { opacity: 1; } 70%, 100% { opacity: 0; } }
+@keyframes bk-show-20-80 { 0% { opacity: 0; } 20% { opacity: 1; } 80%, 100% { opacity: 0; } }
+@keyframes bk-show-55-95 { 0% { opacity: 0; } 55% { opacity: 1; } 95%, 100% { opacity: 0; } }
+@keyframes bk-hop {
+  0% { transform: none; }
+  20% { transform: translateY(-2px); }
+  30% { transform: translateY(-3px); }
+  42% { transform: translateY(-2px); }
+  52%, 100% { transform: none; }
 }
-@keyframes st-arm-up-l {
-  0%, 100% { transform: none; }
-  30%, 70% { transform: rotate(95deg); }
+@keyframes bk-peck {
+  0% { transform: none; }
+  15% { transform: translateY(1px); }
+  25% { transform: none; }
+  35% { transform: translateY(1px); }
+  45% { transform: none; }
+  55% { transform: translateY(1px); }
+  65%, 100% { transform: none; }
 }
-@keyframes st-arm-up-r {
-  0%, 100% { transform: none; }
-  30%, 70% { transform: rotate(-95deg); }
+@keyframes bk-lunge {
+  0% { transform: none; }
+  40% { transform: translateX(1px); }
+  55%, 100% { transform: none; }
 }
-@keyframes st-plus {
-  0%, 25% { opacity: 0; transform: translateY(-2px) scale(0.4); }
-  38% { opacity: 1; transform: translateY(-9px) scale(1.15); }
-  60% { opacity: 1; transform: translateY(-9px) scale(1); }
-  /* 개수는 스틱맨 오른쪽에 있다 */
-  100% { opacity: 0; transform: translate(46px, -2px) scale(0.5); }
+@keyframes bk-nod {
+  0% { transform: none; }
+  20% { transform: translateY(1px); }
+  40% { transform: none; }
+  55% { transform: translateY(1px); }
+  70%, 100% { transform: none; }
 }
-
-/* 수정: 망치를 세 번 내리친다 */
-.act-modify .p-hammer { animation: st-show 1.6s linear; }
-.act-modify .arm-r { animation: st-hammer 1.6s ease-in-out; }
-.act-modify .p-spark { animation: st-spark3 1.6s linear; }
-@keyframes st-show {
-  0% { opacity: 0; }
-  8%, 92% { opacity: 1; }
-  100% { opacity: 0; }
-}
-@keyframes st-hammer {
-  0%, 100% { transform: none; }
-  12% { transform: rotate(-85deg); }
-  26% { transform: rotate(12deg); }
-  40% { transform: rotate(-85deg); }
-  54% { transform: rotate(12deg); }
-  68% { transform: rotate(-85deg); }
-  82% { transform: rotate(12deg); }
-}
-@keyframes st-spark3 {
-  0%, 24%, 32%, 52%, 60%, 80%, 88%, 100% { opacity: 0; }
-  27%, 55%, 83% { opacity: 1; }
-}
-
-/* 삭제: 상자를 걷어차 휴지통에 넣는다 */
-.act-delete .p-trash { animation: st-show 1.6s linear; }
-.act-delete .leg-r { animation: st-kick 1.6s ease-in-out; }
-.act-delete .p-box { transform-origin: 33px 31px; animation: st-box 1.6s ease-in-out; }
-@keyframes st-kick {
-  0%, 100% { transform: none; }
-  25% { transform: rotate(18deg); }
-  38% { transform: rotate(-60deg); }
-  55% { transform: none; }
-}
-@keyframes st-box {
-  0% { opacity: 0; transform: none; }
-  10%, 36% { opacity: 1; transform: none; }
-  62% { opacity: 1; transform: translate(10px, -14px) rotate(160deg); }
-  80% { opacity: 1; transform: translate(19px, -2px) rotate(300deg) scale(0.85); }
-  92%, 100% { opacity: 0; transform: translate(19px, 1px) rotate(320deg) scale(0.6); }
-}
-
-/* 버그·오류: 기어 오는 벌레를 보고 놀랐다가 밟는다 */
-.act-bug .p-bug { transform-origin: 58px 34px; animation: st-bug 1.6s ease-in-out; }
-.act-bug .fig { animation: st-startle 1.6s ease-in-out; }
-.act-bug .leg-r { animation: st-stomp 1.6s ease-in-out; }
-.act-bug .p-spark { animation: st-spark1 1.6s linear; }
-@keyframes st-bug {
-  0% { opacity: 0; transform: translateX(4px); }
-  8% { opacity: 1; transform: translateX(0); }
-  45%, 58% { opacity: 1; transform: translateX(-23px); }
-  64% { opacity: 1; transform: translateX(-23px) scale(1.4, 0.3); }
-  86%, 100% { opacity: 0; transform: translateX(-23px) scale(1.4, 0.3); }
-}
-@keyframes st-startle {
-  0%, 30%, 100% { transform: none; }
-  40% { transform: translate(-2px, -3px) rotate(-6deg); }
+@keyframes bk-rise {
+  0% { opacity: 0; transform: translateY(2px); }
+  10% { opacity: 1; transform: translateY(2px); }
+  30% { transform: translateY(1px); }
   50% { transform: none; }
+  70% { transform: translateY(-1px); }
+  85%, 100% { opacity: 0; transform: translateY(-1px); }
 }
-@keyframes st-stomp {
-  0%, 48%, 100% { transform: none; }
-  56% { transform: rotate(-45deg); }
-  63% { transform: rotate(-8deg); }
+@keyframes bk-drop {
+  0% { opacity: 1; transform: none; }
+  35% { transform: translateY(1px); }
+  45% { transform: translateY(2px); }
+  55% { transform: translateY(4px); }
+  65% { transform: translateY(6px); }
+  72%, 100% { opacity: 0; transform: translateY(6px); }
 }
-@keyframes st-spark1 {
-  0%, 62%, 80%, 100% { opacity: 0; }
-  66%, 74% { opacity: 1; }
-}
-
-/* 평소 서성이기는 StickBuddy 의 타이머가 SVG 속성으로 움직인다(CSS 애니메이션은 CPU 를 더 씀). */
-.stick-buddy.paused .stickman,
-.stick-buddy.paused .stickman * {
+/* 창이 가려지면 동작도 멈춘다 */
+.buki-buddy.paused .buki,
+.buki-buddy.paused .buki * {
   animation-play-state: paused !important;
 }
-
-/* 질문: 고개를 갸웃하며 ? */
-.act-question .fig { animation: st-tilt 1.6s ease-in-out; }
-.act-question .p-what { animation: st-what 1.6s ease-in-out; }
-/* 어디에도 안 맞는 대답("진행해" 등): 고개만 끄덕 */
-.act-none .head { animation: st-nod 1.6s ease-in-out; }
-@keyframes st-nod {
-  0%, 100% { transform: none; }
-  20%, 50% { transform: translateY(2px); }
-  35% { transform: none; }
-}
-@keyframes st-tilt {
-  0%, 100% { transform: none; }
-  25%, 70% { transform: rotate(9deg); }
-}
-@keyframes st-what {
-  0%, 15%, 90%, 100% { opacity: 0; transform: none; }
-  30%, 75% { opacity: 1; transform: translateY(-3px); }
-}
 @media (prefers-reduced-motion: reduce) {
-  .stickman *,
-  .stick-count b.bump {
+  .buki,
+  .buki *,
+  .buddy-count b.bump {
     animation: none !important;
   }
 }
 
-.stick-pop {
+.buddy-pop {
   position: absolute;
   right: 0;
   top: 34px;
@@ -2298,41 +2274,41 @@ li:hover .hover-only,
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
   padding: 10px 0 6px;
 }
-.stick-pop-head {
+.buddy-pop-head {
   display: flex;
   flex-direction: column;
   gap: 2px;
   padding: 0 12px 8px;
   border-bottom: 1px solid var(--line);
 }
-.stick-pop ul {
+.buddy-pop ul {
   list-style: none;
   margin: 0;
   padding: 4px 0;
   max-height: 320px;
   overflow: auto;
 }
-.stick-pop li {
+.buddy-pop li {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 4px 12px;
   font-size: 12px;
 }
-.stick-pop-kind {
+.buddy-pop-kind {
   width: 14px;
   display: inline-grid;
   place-items: center;
   flex: none;
 }
-.stick-pop-text {
+.buddy-pop-text {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.stick-pop-foot {
+.buddy-pop-foot {
   padding: 6px 12px 2px;
   border-top: 1px solid var(--line);
 }
@@ -2627,27 +2603,27 @@ li:hover .hover-only,
 [data-theme="light"] .icon-btn.danger:hover:not(:disabled) { background: #cf222e; }
 [data-theme="light"] .icon-btn.danger { border-color: #f5c2c7; background: #ffeef0; }
 [data-theme="light"] .img-stage { background-color: #eceef1; background-image: conic-gradient(#dfe2e7 25%, transparent 0 50%, #dfe2e7 0 75%, transparent 0); }
-[data-theme="light"] .stick-pop { box-shadow: 0 12px 32px #0002; }
-[data-theme="light"] .stick-count b.bump { color: var(--accent); }
+[data-theme="light"] .buddy-pop { box-shadow: 0 12px 32px #0002; }
+[data-theme="light"] .buddy-count b.bump { color: var(--accent); }
 
 /* 오늘 요청 목록: 줄을 누르면 그 동작을 다시 본다 */
-.stick-pop-item {
+.buddy-pop-item {
   cursor: pointer;
   border-radius: 6px;
   margin: 0 4px;
 }
-.stick-pop-item:hover,
-.stick-pop-item:focus-visible {
+.buddy-pop-item:hover,
+.buddy-pop-item:focus-visible {
   background: var(--bg-3);
   outline: none;
 }
-.stick-pop-play {
+.buddy-pop-play {
   flex: none;
   color: var(--accent);
   opacity: 0;
 }
-.stick-pop-item:hover .stick-pop-play,
-.stick-pop-item:focus-visible .stick-pop-play {
+.buddy-pop-item:hover .buddy-pop-play,
+.buddy-pop-item:focus-visible .buddy-pop-play {
   opacity: 1;
 }
 
@@ -2796,6 +2772,16 @@ li:hover .hover-only,
   border-radius: 6px;
   padding: 8px;
   user-select: text;
+}
+/* 설정 → 작업 기억: 상태 줄 왼쪽 부기 */
+.mem-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.mem-head .mem-state {
+  flex: 1;
+  min-width: 0;
 }
 .mem-state {
   display: flex;

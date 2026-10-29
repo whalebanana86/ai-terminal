@@ -4,11 +4,13 @@ import { t } from "../i18n";
 import { relativeTime } from "../logic";
 import { takeNewRequests, type RequestKind, type SeenRequest } from "../requestKind";
 import { useStore } from "../store";
+import { Buki, type BukiAct } from "./Buki";
+import type { BukiPose } from "../buki";
 
 /**
- * 위쪽 막대 오른쪽 끝의 스틱맨. AI 에게 새 요청이 가면(앱 채팅·앱 터미널·바깥 터미널 모두, 기록 파일로 알아챈다)
- * 요청을 추가·수정·삭제·버그로 나눠 그에 맞는 동작을 한 번 하고, 그 종류의 오늘 개수를 올린다.
- * 요청이 없을 때는 좌우로 서성인다(창이 가려지면 멈춤).
+ * 위쪽 막대 오른쪽 끝의 부기(가지에 앉은 부엉이, 예전 스틱맨 자리). AI 에게 새 요청이 가면(앱 채팅·앱 터미널·바깥 터미널 모두,
+ * 기록 파일로 알아챈다) 요청을 추가·수정·삭제·버그·질문으로 나눠 그에 맞는 동작을 한 번 하고, 그 종류의 오늘 개수를 올린다.
+ * 앉은 가지 색 = 지금 보는 워크트리 색. 요청이 없을 때는 가끔 눈을 깜빡이거나 두리번거린다(창이 가려지거나 쉬는 동안엔 멈춤).
  */
 
 const KINDS: { kind: RequestKind; label: string; icon: LucideIcon; color: string }[] = [
@@ -18,7 +20,7 @@ const KINDS: { kind: RequestKind; label: string; icon: LucideIcon; color: string
   { kind: "bug", label: t("버그·오류"), icon: Bug, color: "#c792ff" },
   { kind: "question", label: t("질문"), icon: MessageCircleQuestion, color: "#e2c08d" },
 ];
-const KEY = "aiterm.stick.v1";
+const KEY = "aiterm.stick.v1"; // 스틱맨 때 이름 그대로(오늘 개수를 이어 쓴다)
 const ACT_MS = 1600;
 
 type Counts = Record<RequestKind, number>;
@@ -54,9 +56,9 @@ function load(): Saved {
 }
 
 /** none is reserved for an empty legacy/test request. */
-type Act = RequestKind | "none";
+type Act = BukiAct; // 요청 종류(RequestKind) + 대답만(none)
 
-export function StickBuddy() {
+export function BukiBuddy() {
   const sessions = useStore((s) => s.sessions);
   const [saved, setSaved] = useState<Saved>(load);
   const [act, setAct] = useState<{ kind: Act; n: number } | null>(null);
@@ -68,7 +70,6 @@ export function StickBuddy() {
   const seen = useRef(new Map<string, number>());
   const startedAt = useRef(Date.now());
   const box = useRef<HTMLDivElement>(null);
-  const svgRef = useRef<SVGSVGElement>(null);
   const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   const count = useCallback((r: SeenRequest) => {
@@ -147,7 +148,7 @@ export function StickBuddy() {
   const testable = useStore((s) => !!s.info?.automation) || import.meta.env.DEV;
   useEffect(() => {
     if (!testable) return;
-    (window as unknown as { __aitermStick?: unknown }).__aitermStick = {
+    (window as unknown as { __aitermBuki?: unknown }).__aitermBuki = {
       play: (kind: RequestKind | null, text = "테스트 요청") => push([{ sessionId: "test", title: "테스트", text, at: Date.now(), kind }]),
       state: () => ({ counts: load().counts, playing: playing.current }),
     };
@@ -163,107 +164,38 @@ export function StickBuddy() {
 
   const awake = useAwake();
 
-  // 평소에는 좌우로 서성인다. CSS 애니메이션은 WebKit 이 매 프레임 스타일을 다시 계산해 CPU 를 꽤 써서(측정 +6~11%),
-  // 타이머로 초당 몇 번만 자세(속성)를 바꾼다. 요청 동작 중이거나 창이 가려지거나 사용자가 쉬는 동안에는 멈춘다.
+  // 평소에는 몇 초에 한 번 눈을 깜빡이거나 두리번거린다. 타이머로 모습 이름만 바꾼다(CSS 애니메이션·짧은 주기 타이머는
+  // 쉬는 동안에도 화면을 다시 그려 CPU 를 쓴다). 요청 동작 중이거나 창이 가려지거나 사용자가 쉬는 동안에는 멈춘다.
+  const [idle, setIdle] = useState<BukiPose>("idle");
   useEffect(() => {
     if (act || hidden || reduced || !awake) return;
-    const svg = svgRef.current;
-    if (!svg) return;
-    const part = (c: string) => svg.querySelector<SVGGElement>(`.${c}`);
-    const fig = part("fig");
-    const limbs = [part("leg-l"), part("arm-r"), part("leg-r"), part("arm-l")];
-    let x = -8;
-    let dir = 1;
-    let rest = 0;
-    let step = 0;
-    const tick = () => {
-      if (rest > 0) {
-        // 끝에 닿으면 잠깐 서서 쉰다
-        rest--;
-        limbs.forEach((l) => l && (l.style.transform = ""));
-      } else {
-        step++;
-        x += dir * 1.5;
-        if (x >= 9 || x <= -8) {
-          dir = -dir;
-          rest = 4;
-        }
-        const a = step % 2 ? 16 : -16;
-        // 축(엉덩이·어깨)은 CSS transform-origin 에 있다. 왼다리·오른팔 / 오른다리·왼팔이 서로 반대로 흔든다
-        limbs.forEach((l, i) => l && (l.style.transform = `rotate(${i < 2 ? a : -a}deg)`));
-      }
-      if (fig) fig.style.transform = `translateX(${x}px)`;
+    let timer = 0;
+    const next = () => {
+      timer = window.setTimeout(() => {
+        const r = Math.random();
+        const pose: BukiPose = r < 0.5 ? "blink" : r < 0.75 ? "look-l" : "look-r";
+        setIdle(pose);
+        timer = window.setTimeout(() => {
+          setIdle("idle");
+          next();
+        }, pose === "blink" ? 160 : 1100);
+      }, 2500 + Math.random() * 3500);
     };
-    const t = window.setInterval(tick, 230);
+    next();
     return () => {
-      window.clearInterval(t);
-      if (fig) fig.style.transform = "";
-      limbs.forEach((l) => l && (l.style.transform = ""));
+      window.clearTimeout(timer);
+      setIdle("idle");
     };
   }, [act, hidden, reduced, awake]);
 
   const total = KINDS.reduce((n, k) => n + saved.counts[k.kind], 0);
   const now = Date.now();
   return (
-    <div className={`stick-buddy${hidden ? " paused" : ""}`} ref={box} data-testid="stick-buddy">
-      <svg
-        ref={svgRef}
-        className={`stickman ${act ? `act-${act.kind}` : "idle"}`}
-        key={act?.n ?? 0}
-        width={42}
-        height={25}
-        viewBox="0 0 60 36"
-        aria-hidden
-        onClick={() => setOpen(!open)}
-      >
-        {/* 소품 */}
-        <g className="p-add" stroke="#4fd18b" strokeWidth={2.6} strokeLinecap="round">
-          <line x1={24} y1={-1} x2={24} y2={7} />
-          <line x1={20} y1={3} x2={28} y2={3} />
-        </g>
-        <g className="p-box">
-          <rect x={30} y={28} width={6} height={6} rx={1} fill="#ff8a5b" />
-          <path d="M31.5 29.5l3 3m0-3l-3 3" stroke="#15171c" strokeWidth={1.2} />
-        </g>
-        <g className="p-trash" stroke="#9aa3b5" strokeWidth={1.4} fill="none">
-          <path d="M48 25h8M49 25l1 9h4l1-9" />
-        </g>
-        <g className="p-bug">
-          <ellipse cx={58} cy={32} rx={3.2} ry={2.2} fill="#c792ff" />
-          <circle cx={55} cy={31.4} r={1.3} fill="#c792ff" />
-          <path d="M56.5 30l-1-1.6M59.5 30l1-1.6M56.5 34l-1 1.4M59.5 34l1 1.4" stroke="#c792ff" strokeWidth={0.9} />
-        </g>
-        <g className="p-spark" stroke="#ffd166" strokeWidth={1.3} strokeLinecap="round">
-          <path d="M36 27l3-2M37 30l4 0M36 33l3 2" />
-        </g>
-        <text className="p-what" x={30} y={7} fontSize={9} fontWeight={700} fill="#9aa3b5">
-          ?
-        </text>
-        {/* 사람 */}
-        <g className="fig" stroke="currentColor" strokeWidth={2} strokeLinecap="round" fill="none">
-          <circle className="head" cx={24} cy={7} r={4} />
-          <line x1={24} y1={11} x2={24} y2={22} />
-          <g className="arm-l">
-            <line x1={24} y1={14} x2={18} y2={20} />
-          </g>
-          <g className="arm-r">
-            <line x1={24} y1={14} x2={30} y2={20} />
-            <g className="p-hammer">
-              <line x1={30} y1={20} x2={34} y2={14} stroke="#c9a86a" strokeWidth={1.8} />
-              <rect x={31.5} y={10.5} width={6} height={3.6} rx={0.8} transform="rotate(33 34.5 12.3)" fill="#4cc2ff" stroke="none" />
-            </g>
-          </g>
-          <g className="leg-l">
-            <line x1={24} y1={22} x2={20} y2={33} />
-          </g>
-          <g className="leg-r">
-            <line x1={24} y1={22} x2={28} y2={33} />
-          </g>
-        </g>
-      </svg>
-      <button className="stick-counts" onClick={() => setOpen(!open)} title={t("오늘 AI 에게 보낸 요청 (눌러서 목록)")} aria-label={t("오늘 요청 {n}개", { n: total })} aria-expanded={open}>
+    <div className={`buki-buddy${hidden ? " paused" : ""}`} ref={box} data-testid="buki-buddy">
+      <Buki key={act?.n ?? 0} className="buddy-buki" pose={idle} act={act?.kind} onClick={() => setOpen(!open)} />
+      <button className="buddy-counts" onClick={() => setOpen(!open)} title={t("오늘 AI 에게 보낸 요청 (눌러서 목록)")} aria-label={t("오늘 요청 {n}개", { n: total })} aria-expanded={open}>
         {KINDS.map(({ kind, label, icon: Icon, color }) => (
-          <span key={kind} className="stick-count" data-kind={kind} title={`${label} ${saved.counts[kind]}`} style={{ color }}>
+          <span key={kind} className="buddy-count" data-kind={kind} title={`${label} ${saved.counts[kind]}`} style={{ color }}>
             <Icon size={11} strokeWidth={2.4} aria-hidden />
             <b key={bump?.kind === kind ? bump.n : 0} className={bump?.kind === kind ? "bump" : ""}>
               {saved.counts[kind]}
@@ -272,8 +204,8 @@ export function StickBuddy() {
         ))}
       </button>
       {open && (
-        <div className="stick-pop" role="dialog" aria-label={t("오늘 받은 요청")}>
-          <div className="stick-pop-head">
+        <div className="buddy-pop" role="dialog" aria-label={t("오늘 받은 요청")}>
+          <div className="buddy-pop-head">
             <b>{t("오늘 AI 에게 보낸 요청")}</b>
             <span className="muted small">
               {KINDS.map((k) => `${k.label} ${saved.counts[k.kind]}`).join(" · ")}
@@ -287,27 +219,27 @@ export function StickBuddy() {
                 // 누르면 그 요청에 맞는 동작을 한 번 더 보여 준다(못 보고 지나간 동작 다시 보기)
                 <li
                   key={`${r.sessionId}:${r.at}:${i}`}
-                  className="stick-pop-item"
+                  className="buddy-pop-item"
                   role="button"
                   tabIndex={0}
-                  title={`${r.text}\n${t("눌러서 스틱맨 동작 다시 보기")}`}
+                  title={`${r.text}\n${t("눌러서 부기 동작 다시 보기")}`}
                   onClick={() => push([{ ...r, replay: true }])}
                   onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), push([{ ...r, replay: true }]))}
                   data-kind={r.kind ?? "none"}
                 >
-                  <span className="stick-pop-kind" style={{ color: k?.color ?? "var(--fg-faint)" }}>
+                  <span className="buddy-pop-kind" style={{ color: k?.color ?? "var(--fg-faint)" }}>
                     {Icon ? <Icon size={12} aria-hidden /> : "·"}
                   </span>
-                  <span className="stick-pop-text">{r.text}</span>
-                  <span className="muted small stick-pop-time">{relativeTime(r.at, now)}</span>
-                  <Play size={11} className="stick-pop-play" aria-hidden />
+                  <span className="buddy-pop-text">{r.text}</span>
+                  <span className="muted small buddy-pop-time">{relativeTime(r.at, now)}</span>
+                  <Play size={11} className="buddy-pop-play" aria-hidden />
                 </li>
               );
             })}
             {!saved.recent.length && <li className="muted small">{t("아직 없어요. AI 에게 요청을 보내면 여기에 쌓여요.")}</li>}
           </ul>
-          <div className="muted small stick-pop-foot">
-            {t("줄을 누르면 스틱맨이 그 동작을 다시 해요.")}{" "}
+          <div className="muted small buddy-pop-foot">
+            {t("줄을 누르면 부기가 그 동작을 다시 해요.")}{" "}
             {t("요청 글자로 추가·수정·삭제·버그·질문을 나눠요(앱 안에서만, 어디에도 보내지 않음). 분류하기 어려운 요청은 추가로 세어요. 하루가 지나면 0 부터.")}
           </div>
         </div>
