@@ -1,0 +1,3 @@
+# 릴리즈의 소스 묶음(GitHub 의 Source code zip·tar.gz = git archive)에서 뺄 것. 저장소에는 그대로 남는다.
+# 소개 영상 만드는 도구(X·스레드 홍보용)는 앱과 상관없어 배포본에 넣지 않는다.
+/scripts/promo export-ignore
