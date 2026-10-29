@@ -359,7 +359,7 @@ function SessionDetail() {
       <div className="detail-body">
         <TerminalHost selectedExecId={tab === "talk" ? exec?.id ?? null : null} />
         {!session ? (
-          <Empty title={t("세션을 고르세요")}>
+          <Empty title={t("세션을 고르세요")} buki="idle">
             {t("위 목록에서 대화를 고르면 왼쪽 Git 과 오른쪽 파일이 그 대화가 작업한 워크트리를 보여 줍니다.")}
             {list.collapsed && (
               <div style={{ marginTop: 8 }}>

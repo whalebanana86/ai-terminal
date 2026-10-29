@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useEffect, useRef, useState } from "react";
 import { errorText } from "../api";
 import { t } from "../i18n";
+import { Buki } from "./Buki";
 
 interface UpdateInfo {
   currentVersion: string;
@@ -73,7 +74,10 @@ export function UpdateDialog() {
   return (
     <div className="modal-backdrop" onMouseDown={(e) => { if (!installing && e.target === e.currentTarget) setOpen(false); }}>
       <div className="modal update-modal" role="dialog" aria-modal="true" aria-labelledby="update-title" data-testid="update-dialog">
-        <h3 id="update-title">{t("업데이트 확인")}</h3>
+        <h3 id="update-title" className="buki-title">
+          <Buki px={2} pose={phase === "checking" ? "look-r" : phase === "error" ? "puzzled" : info?.available ? "happy" : "idle"} />
+          {t("업데이트 확인")}
+        </h3>
         <div role="status" aria-live="polite">
           {phase === "checking" && <p>{t("새 버전을 확인하는 중…")}</p>}
           {phase === "error" && <p>{t("업데이트를 확인하지 못했습니다. 인터넷 연결을 확인하고 다시 시도해 주세요.")}</p>}

@@ -109,6 +109,7 @@ fi
 
 echo "── 영상"
 sed "s|const LANG = \"ko\"|const LANG = \"$PROMO_LANG\"|" "$HERE/timeline.html" > "$SCENES/timeline.html"
+cp "$ROOT/docs/buki.svg" "$SCENES/buki.svg"
 rm -rf "$WORKDIR/frames"
 DUR=$(sed -n 's/.*const DURATION = \([0-9.]*\).*/\1/p' "$HERE/timeline.html")
 render frames "$SCENES/timeline.html" "$WORKDIR/frames" "$DUR" 30

@@ -1,4 +1,4 @@
-/** 영어 사전: ui (위쪽 막대·상태줄·스틱맨·파일 패널·공통 대화상자·앱 알림) */
+/** 영어 사전: ui (위쪽 막대·상태줄·부기·파일 패널·공통 대화상자·앱 알림) */
 export default {
   "{name} 탭 닫기": "Close {name} tab",
   "탭 닫기": "Close tab",
@@ -32,7 +32,7 @@ export default {
   "이 앱은 대화·코드를 외부로 보내지 않습니다": "This app never sends your conversations or code anywhere",
   "로컬 전용": "Local only",
 
-  // 스틱맨(오늘 보낸 요청)
+  // 부기(오늘 보낸 요청)
   추가: "Add",
   수정: "Modify",
   삭제: "Delete",
@@ -124,8 +124,8 @@ export default {
   "옮기지 못했어요: {name} — {reason}": "Couldn't move {name}: {reason}",
   "(외 {n}개)": "(+{n} more)",
   "세션과 저장소를 읽는 중…": "Loading sessions and repositories…",
-  "눌러서 스틱맨 동작 다시 보기": "Click to replay the stick figure's action",
-  "줄을 누르면 스틱맨이 그 동작을 다시 해요.": "Click a row to replay its action.",
+  "눌러서 부기 동작 다시 보기": "Click to replay Buki's action",
+  "줄을 누르면 부기가 그 동작을 다시 해요.": "Click a row to replay its action.",
   "업데이트 확인": "Check for Updates",
   "새 버전을 확인하는 중…": "Checking for a new version…",
   "업데이트를 확인하지 못했습니다. 인터넷 연결을 확인하고 다시 시도해 주세요.": "Could not check for updates. Check your internet connection and try again.",

@@ -222,11 +222,11 @@ try {
   await ext.getState().set("stickman", false);
   await ext.getState().set("usage", false);
   await wait(300);
-  check(!$(".stick-buddy") && !$(".subscription-usage"), "스틱맨·구독 한도 끄기");
+  check(!$(".buki-buddy") && !$(".subscription-usage"), "부기·구독 한도 끄기");
   check((await inv("subscription_usage")).length === 0, "구독 한도를 끄면 조회하지 않음");
   await ext.getState().set("stickman", true);
   await ext.getState().set("usage", true);
-  check(!!(await until(() => $(".stick-buddy") && $(".subscription-usage"))), "다시 켜면 보임");
+  check(!!(await until(() => $(".buki-buddy") && $(".subscription-usage"))), "다시 켜면 보임");
 } catch (e) {
   results.push(`오류 ${e && e.stack ? e.stack : e}`);
 } finally {

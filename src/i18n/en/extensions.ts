@@ -7,8 +7,9 @@ export default {
   "파일 편집": "File editing",
   "파일을 열면 바로 고칠 수 있어요(가운데 칸 탭으로 크게). 켜면 앱이 워크트리 안 파일을 저장할 수 있어요.":
     "Files are editable as soon as you open them (as large tabs in the center pane). When on, the app can save files inside your worktrees.",
-  스틱맨: "Stickman",
-  "위쪽 막대 오른쪽에서 요청 종류마다 동작하고 오늘 요청 수를 세요.": "Acts out each kind of request at the right of the top bar and counts today's requests.",
+  부기: "Buki",
+  "위쪽 막대 오른쪽의 부엉이 부기가 요청 종류마다 동작하고 오늘 요청 수를 세요. 앉은 가지 색은 지금 보는 워크트리 색이에요.":
+    "Buki the owl, at the right of the top bar, acts out each kind of request and counts today's requests. The branch it sits on takes the color of the worktree you're viewing.",
   "구독 한도 표시": "Subscription limits",
   "아래 상태줄에 Claude·Codex 의 5시간·주간 한도 사용률을 보여 줘요. 끄면 로그인 정보를 읽지 않아요.":
     "Shows Claude and Codex 5-hour and weekly limit usage in the status bar. When off, login details aren't read.",
