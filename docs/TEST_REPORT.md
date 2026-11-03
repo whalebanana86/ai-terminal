@@ -240,6 +240,7 @@
 
 - **파일 아이콘**: `src/fileIcons.tsx` — 아이콘 묶음을 넣지 않고 이미 쓰는 lucide 모양에 언어 색. 이름 전체(package.json, Cargo.toml, Dockerfile, .gitignore, CLAUDE.md…) → 접두어(README, LICENSE, .env, tsconfig) → 확장자 순. 단위 테스트 4.
 - **그림 보기**: `fs_read_image` 가 그림 바이트를 JSON 변환 없이(`tauri::ipc::Response`) 돌려주고 화면은 `blob:` URL 로 그린다(CSP `img-src` 에 `blob:` 추가). 워크트리 안·그림 확장자·40MB 이하만. `rev` 는 `HEAD` 또는 커밋 해시만 받는다(옵션 주입 방지). 바뀐 그림은 마지막 커밋과 나란히. Rust 테스트(지금/HEAD 내용, 그림 아닌 파일·워크트리 밖·이상한 rev 거부).
+- **PDF 보기**(2026-11-03): 같은 `fs_read_image` 가 PDF(100MB 이하)도 돌려주고 화면은 `blob:` iframe 으로 맥 WebKit PDF 보기에 맡긴다(CSP `frame-src` 를 `'none'` → `blob:`). ↗ 는 PDF 만 기본 앱으로(`open_in_editor` 의 `default`, 링크를 푼 실제 파일이 .pdf 일 때만). Rust 테스트(PDF 지금/HEAD·대소문자·워크트리 밖, 기본 앱은 PDF 만·링크 대상 검사), vitest(isPdf·편집 탭 안 뜸), 시험 앱에서 내용·변경·커밋 보기 iframe 이 PDF 플러그인 문서로 열리고 CSP 위반 0.
 - **README**: ai_worklog README 구성(시연 GIF → 이 앱은 뭐예요 → 왜 → 설치 → 쓰는 방법 → 안전 → 개발자용)을 따라 한국어·영어 두 벌. 그림 8장과 30초 시연(GIF 3.6MB·MP4 0.6MB)은 `scripts/make_screenshots.sh` 가 지어낸 예시 데이터(`scripts/demo/make_demo.py`: 할 일 앱 저장소·워크트리 3개·Claude 4개·Codex 2개 세션, 가짜 claude 채팅)로 만든다. 앱 ID 를 바꾼 개발 빌드(`dev.aiterminal.demo`)와 가짜 HOME 이라 실제 기록·설치된 앱 설정은 건드리지 않는다.
   - 캡처 함정: 창이 잠깐 화면 밖이면 `screencapture -l` 이 작은 미리보기(930×580)로 찍힌다 → 크기를 보고 다시 찍는다. GIF 는 프레임 전체를 저장하면 30MB 가 넘어서 `mpdecimate` 로 같은 화면을 빼고 바뀐 영역만 저장(`-gifflags +offsetting+transdiff`).
   - 가짜 claude 함정: 앱이 보내는 JSON 은 키가 알파벳순이라 `"allow"` 가 `control_response` 보다 앞에 온다.

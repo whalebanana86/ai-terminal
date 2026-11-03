@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fileIconSpec, folderIconSpec } from "./fileIcons";
+import { fileIconSpec, folderIconSpec, isPdf } from "./fileIcons";
 
 describe("fileIconSpec", () => {
   const kind = (n: string) => fileIconSpec(n).kind;
@@ -31,5 +31,12 @@ describe("fileIconSpec", () => {
   it("폴더", () => {
     expect(folderIconSpec("src", false).kind).toBe("folder");
     expect(folderIconSpec(".git", true).kind).toBe("git-folder");
+  });
+});
+
+describe("isPdf", () => {
+  it("확장자 .pdf 만(대소문자 무관), 이름이 .pdf 뿐인 파일은 아님", () => {
+    expect(["a.pdf", "docs/Spec.PDF", "x.y.pdf"].every(isPdf)).toBe(true);
+    expect([".pdf", "docs/.pdf", "a.pdf.txt", "pdf", "a.pdfx"].some(isPdf)).toBe(false);
   });
 });

@@ -15,8 +15,8 @@ export interface FileModeSlot {
   key: `ext:${string}`;
   label: () => string;
   title?: () => string;
-  /** 이 파일에서 탭을 보여 줄지 */
-  available: (f: { rel: string; isImage: boolean }) => boolean;
+  /** 이 파일에서 탭을 보여 줄지. media = 그림·PDF 처럼 글 대신 그대로 보여 주는 파일 */
+  available: (f: { rel: string; media: boolean }) => boolean;
   /** 탭 옆에 • 를 찍을지(예: 저장하지 않은 수정) */
   useBadge?: (worktree: string, rel: string) => boolean;
   /** "preview" 면 따로 탭을 더하지 않고 '내용' 을 이 화면으로 바꾼다(파일 편집: 열면 바로 고치기) */
@@ -52,7 +52,7 @@ export const EXTENSIONS: ExtensionDef[] = [
         label: () => t("내용"),
         title: () => t("열면 바로 고칠 수 있어요 (⌘S 저장)"),
         replaces: "preview",
-        available: (f) => !f.isImage,
+        available: (f) => !f.media,
         useBadge: useHasDraft,
         View: lazy(() => import("./editor/EditorPane")),
       },

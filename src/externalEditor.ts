@@ -28,3 +28,12 @@ export async function openExternal(worktree: string, rel: string) {
     useStore.getState().toast("error", t("외부 편집기로 열지 못했어요: {error}", { error: errorText(e) }));
   }
 }
+
+/** 맥에서 그 파일 종류의 기본 앱(미리보기 등)으로 열기. 백엔드가 PDF 만 받는다. */
+export async function openInDefaultApp(worktree: string, rel: string) {
+  try {
+    await api.openInEditor(worktree, rel, "default");
+  } catch (e) {
+    useStore.getState().toast("error", t("기본 앱으로 열지 못했어요: {error}", { error: errorText(e) }));
+  }
+}

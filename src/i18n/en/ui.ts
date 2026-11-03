@@ -75,6 +75,10 @@ export default {
   "이 형식은 그릴 수 없습니다": "Can't display this format",
   "마지막 커밋에는 없던 그림이에요": "This image isn't in the last commit",
   "지금은 없는 그림이에요(지워짐)": "This image no longer exists (deleted)",
+  "마지막 커밋에는 없던 PDF예요": "This PDF isn't in the last commit",
+  "지금은 없는 PDF예요(지워짐)": "This PDF no longer exists (deleted)",
+  "기본 앱으로 열기 (미리보기 등)": "Open in the default app (Preview, etc.)",
+  "기본 앱으로 열지 못했어요: {error}": "Couldn't open in the default app: {error}",
 
   // 파일 패널: 일부 담기
   "이 부분의 변경 버리기": "Discard changes in this hunk",

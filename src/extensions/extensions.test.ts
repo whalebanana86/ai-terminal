@@ -46,7 +46,10 @@ describe("확장 기능", () => {
     expect(by.editor.fileModes?.map((m) => m.key)).toEqual(["ext:editor"]);
     // 따로 탭을 더하지 않고 '내용' 을 편집 화면으로 바꾼다
     expect(by.editor.fileModes?.[0].replaces).toBe("preview");
-    expect(by.editor.fileModes?.[0].available({ rel: "a.png", isImage: true })).toBe(false);
+    // 그림·PDF 는 고치지 않고 그대로 보여 준다
+    expect(by.editor.fileModes?.[0].available({ rel: "a.png", media: true })).toBe(false);
+    expect(by.editor.fileModes?.[0].available({ rel: "a.pdf", media: true })).toBe(false);
+    expect(by.editor.fileModes?.[0].available({ rel: "a.ts", media: false })).toBe(true);
     expect(by.stickman.topbar).toBeTruthy();
     expect(by.usage.statusbar).toBeTruthy();
   });
