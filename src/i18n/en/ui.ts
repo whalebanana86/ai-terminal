@@ -79,6 +79,14 @@ export default {
   "지금은 없는 PDF예요(지워짐)": "This PDF no longer exists (deleted)",
   "기본 앱으로 열기 (미리보기 등)": "Open in the default app (Preview, etc.)",
   "기본 앱으로 열지 못했어요: {error}": "Couldn't open in the default app: {error}",
+  미리보기: "Preview",
+  "md 를 꼴 갖춘 문서로 보기": "View the Markdown as a formatted document",
+  "브라우저로 열기 (꼴 갖춘 문서, 한글 안 깨짐)": "Open in browser (formatted, no garbled text)",
+  "브라우저로 열지 못했어요: {error}": "Couldn't open in the browser: {error}",
+  "링크를 열지 못했어요: {error}": "Couldn't open the link: {error}",
+  "인터넷 그림": "Web image",
+  그림: "Image",
+  "못 찾은 그림": "Missing image",
 
   // 파일 패널: 일부 담기
   "이 부분의 변경 버리기": "Discard changes in this hunk",

@@ -142,6 +142,11 @@ export function isPdf(path: string): boolean {
   return /[^/]\.pdf$/i.test(path);
 }
 
+/** md 로 그릴 파일인지(확장자만 본다. Rust mdpage::is_markdown 과 같은 목록) */
+export function isMarkdown(path: string): boolean {
+  return /[^/]\.(md|markdown|mdown|mkd)$/i.test(path);
+}
+
 /** 파일 이름으로 아이콘을 고른다(이름 전체 → 접두어 → 확장자 순). */
 export function fileIconSpec(name: string): IconSpec {
   const lower = name.toLowerCase();

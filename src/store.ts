@@ -4,6 +4,7 @@ import { lang, t } from "./i18n";
 import { api, errorText, type AppInfo, type ExecInfo, type LinkedSession, type LiveRun, type RepoSummary } from "./api";
 import { mergeSessions } from "./logic";
 import { useExtensions } from "./extensions";
+import { isMarkdown } from "./fileIcons";
 
 /** 세 패널이 바라보는 워크트리. 조회 전용이며 절대 체크아웃을 일으키지 않는다. */
 export interface Focus {
@@ -13,8 +14,8 @@ export interface Focus {
 }
 
 export type Viewer =
-  /** mode 의 "ext:…" 는 확장 기능이 더한 탭(예: 파일 편집) */
-  | { kind: "file"; rel: string; mode: "preview" | "diff" | "stage" | `ext:${string}` }
+  /** mode 의 "ext:…" 는 확장 기능이 더한 탭(예: 파일 편집). render = md 를 꼴 갖춘 문서로(미리보기) */
+  | { kind: "file"; rel: string; mode: "preview" | "render" | "diff" | "stage" | `ext:${string}` }
   | { kind: "commit-file"; sha: string; rel: string }
   | null;
 
@@ -27,6 +28,11 @@ export interface FileTab {
 
 export function fileTabId(worktree: string, v: NonNullable<Viewer>): string {
   return `${worktree}\u0000${v.kind === "commit-file" ? `${v.sha}:` : ""}${v.rel}`;
+}
+
+/** md 는 처음 열 때 꼴 갖춘 미리보기로('내용' 으로 열려던 것만. 변경 보기는 그대로) */
+function mdFirst(v: NonNullable<Viewer>): NonNullable<Viewer> {
+  return v.kind === "file" && v.mode === "preview" && isMarkdown(v.rel) ? { ...v, mode: "render" } : v;
 }
 
 /** 파일 편집을 켜면 파일은 오른쪽 아래 대신 가운데 칸 탭으로 연다 */
@@ -327,11 +333,15 @@ export const useStore = create<State>((set, get) => ({
 
   openViewer: (v, opts) => {
     const wt = get().focus?.worktreePath;
-    if (!v || !wt || !filesInMiddle()) return set({ viewer: v });
+    if (!v || !wt || !filesInMiddle()) {
+      // 보던 파일의 모드 바꾸기('내용' 탭 등)는 그대로, 새로 여는 md 만 미리보기로
+      const cur = get().viewer;
+      return set({ viewer: v && !(cur && cur.kind === v.kind && cur.rel === v.rel) ? mdFirst(v) : v });
+    }
     const id = fileTabId(wt, v);
     const tabs = get().fileTabs;
     const has = tabs.find((x) => x.id === id);
-    const fileTabs = has ? (opts?.keepMode ? tabs : tabs.map((x) => (x.id === id ? { ...x, viewer: v } : x))) : [...tabs, { id, worktree: wt, viewer: v }];
+    const fileTabs = has ? (opts?.keepMode ? tabs : tabs.map((x) => (x.id === id ? { ...x, viewer: v } : x))) : [...tabs, { id, worktree: wt, viewer: mdFirst(v) }];
     set({ fileTabs, activeTab: id, viewer: null });
   },
   setTabViewer: (id, v) => {
@@ -574,6 +584,8 @@ useExtensions.subscribe((now, prev) => {
 export function exposeForAutomation() {
   (window as unknown as { __aitermStore: typeof useStore }).__aitermStore = useStore;
   (window as unknown as { __aitermExt: typeof useExtensions }).__aitermExt = useExtensions;
+  // md 변환(필요할 때 불러옴): 시험에서 브라우저용 본문을 직접 만들어 본다
+  (window as unknown as { __aitermMd: () => Promise<typeof import("./markdown")> }).__aitermMd = () => import("./markdown");
 }
 
 function rememberTab(path: string, selected?: string | null) {

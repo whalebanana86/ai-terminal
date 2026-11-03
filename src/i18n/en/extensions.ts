@@ -4,6 +4,10 @@ export default {
   기능: "Features",
   "외부 편집기": "External editor",
   "자동 (설치된 편집기)": "Automatic (installed editor)",
+  브라우저: "Browser",
+  "md 를 브라우저로 열 때와 md 안의 링크를 열 때": "Used to open Markdown in a browser and to open links inside Markdown",
+  "맥 기본 브라우저 ({name})": "Mac default browser ({name})",
+  "맥 기본 브라우저": "Mac default browser",
   "파일 편집": "File editing",
   "파일을 열면 바로 고칠 수 있어요(가운데 칸 탭으로 크게). 켜면 앱이 워크트리 안 파일을 저장할 수 있어요.":
     "Files are editable as soon as you open them (as large tabs in the center pane). When on, the app can save files inside your worktrees.",

@@ -383,6 +383,31 @@ pub async fn open_in_editor(state: State<'_, AppState>, worktree: String, rel: S
     .await
 }
 
+/// md 를 꼴 갖춘 HTML 로 기본 브라우저에서 연다. body = 화면이 그리고 거른 본문(mdpage 가 UTF-8·CSP 틀에 넣는다).
+#[tauri::command]
+pub async fn md_open_in_browser(app: tauri::AppHandle, state: State<'_, AppState>, worktree: String, rel: String, body: String, browser: String) -> Res<()> {
+    use tauri::Manager;
+    let cache = app.path().app_cache_dir().map_err(|e| e.to_string())?;
+    let core = state.core.clone();
+    blocking(move || {
+        core.ensure_known(&worktree)?;
+        crate::mdpage::open_markdown(&cache, Path::new(&worktree), &rel, &body, &browser).map(|_| ())
+    })
+    .await
+}
+
+/// md 미리보기의 바깥 링크(http·https 는 고른 브라우저, mailto 는 메일 앱)를 연다.
+#[tauri::command]
+pub async fn open_url(url: String, browser: String) -> Res<()> {
+    blocking(move || crate::mdpage::open_url(&url, &browser)).await
+}
+
+/// 설정의 "브라우저" 고르기: 맥 기본 브라우저 이름과 설치된 브라우저 목록
+#[tauri::command]
+pub async fn browsers_installed() -> Res<crate::mdpage::Browsers> {
+    blocking(|| Ok(crate::mdpage::browsers())).await
+}
+
 /// 내 수정 워크트리(edit/<AI 브랜치>)를 찾거나 만들어 경로를 돌려준다.
 #[tauri::command]
 pub async fn git_edit_worktree(state: State<'_, AppState>, path: String) -> Res<String> {

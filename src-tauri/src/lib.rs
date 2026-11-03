@@ -15,6 +15,7 @@ pub mod handoff;
 pub mod memory;
 pub mod memory_fetch;
 pub mod memory_worker;
+pub mod mdpage;
 pub mod procs;
 pub mod pty;
 pub mod trust;
@@ -163,6 +164,9 @@ pub fn run() {
             commands::fs_save,
             commands::editors_installed,
             commands::open_in_editor,
+            commands::md_open_in_browser,
+            commands::open_url,
+            commands::browsers_installed,
             commands::extensions_list,
             commands::extension_set,
             commands::repo_probe,
