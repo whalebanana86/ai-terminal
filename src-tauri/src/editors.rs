@@ -24,7 +24,7 @@ pub struct EditorApp {
     pub name: String,
 }
 
-fn app_path(name: &str) -> Option<PathBuf> {
+pub(crate) fn app_path(name: &str) -> Option<PathBuf> {
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let dirs = [Some(PathBuf::from("/Applications")), home.map(|h| h.join("Applications")), Some(PathBuf::from("/System/Applications"))];
     dirs.into_iter().flatten().map(|d| d.join(format!("{name}.app"))).find(|p| p.is_dir())

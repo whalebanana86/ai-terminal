@@ -1,9 +1,9 @@
 import { listen } from "@tauri-apps/api/event";
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { api, errorText, type EditorApp, type MemoryStatus } from "../api";
+import { api, errorText, type Browsers, type EditorApp, type MemoryStatus } from "../api";
 import { EXTENSIONS, useExtensions, type ExtensionId } from "../extensions";
-import { getExternalEditor, setExternalEditor } from "../externalEditor";
+import { getBrowser, getExternalEditor, setBrowser, setExternalEditor } from "../externalEditor";
 import { lang, setLang, t } from "../i18n";
 import { useStore } from "../store";
 import { useMemoryStatus } from "../panels/MemoryStart";
@@ -70,6 +70,7 @@ export function SettingsDialog() {
           </div>
         </div>
         <ExternalEditorRow />
+        <BrowserRow />
         <div className="settings-section">
           <h4>{t("기능")}</h4>
           {EXTENSIONS.map((e) => (
@@ -133,6 +134,36 @@ function ExternalEditorRow() {
       <select className="settings-select" value={value} onChange={(e) => choose(e.target.value)} aria-label={t("외부 편집기")} data-testid="external-editor">
         <option value="auto">{t("자동 (설치된 편집기)")}</option>
         {(apps ?? []).map((a) => (
+          <option key={a.id} value={a.id}>
+            {a.name}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+/** md 를 '브라우저로 열기' 할 때와 md 안 링크를 열 때 쓸 브라우저 */
+function BrowserRow() {
+  const [list, setList] = useState<Browsers | null>(null);
+  const [pick, setPick] = useState(getBrowser);
+  useEffect(() => {
+    api.browsersInstalled().then(setList, () => setList({ defaultName: null, installed: [] }));
+  }, []);
+  const choose = (id: string) => {
+    setPick(id);
+    setBrowser(id);
+  };
+  // 고른 브라우저를 지웠으면 기본 브라우저처럼 보여 준다
+  const value = pick === "default" || list?.installed.some((a) => a.id === pick) ? pick : "default";
+  return (
+    <div className="settings-row">
+      <span className="settings-label" title={t("md 를 브라우저로 열 때와 md 안의 링크를 열 때")}>
+        {t("브라우저")}
+      </span>
+      <select className="settings-select" value={value} onChange={(e) => choose(e.target.value)} aria-label={t("브라우저")} data-testid="browser">
+        <option value="default">{list?.defaultName ? t("맥 기본 브라우저 ({name})", { name: list.defaultName }) : t("맥 기본 브라우저")}</option>
+        {(list?.installed ?? []).map((a) => (
           <option key={a.id} value={a.id}>
             {a.name}
           </option>

@@ -221,6 +221,12 @@ export interface ExtState {
   enabled: boolean;
 }
 
+/** 설정의 "브라우저": 맥 기본 브라우저 이름과 설치된 브라우저 */
+export interface Browsers {
+  defaultName: string | null;
+  installed: EditorApp[];
+}
+
 export interface EditorApp {
   id: string;
   name: string;
@@ -408,6 +414,10 @@ export const api = {
     invoke<SaveOutcome>("fs_save", { args }),
   editorsInstalled: () => invoke<EditorApp[]>("editors_installed"),
   openInEditor: (worktree: string, rel: string, editor: string) => invoke<void>("open_in_editor", { worktree, rel, editor }),
+  browsersInstalled: () => invoke<Browsers>("browsers_installed"),
+  /** body = renderMarkdown 으로 그리고 거른 본문. 백엔드가 UTF-8·CSP 틀에 넣어 브라우저로 연다 */
+  mdOpenInBrowser: (worktree: string, rel: string, body: string, browser: string) => invoke<void>("md_open_in_browser", { worktree, rel, body, browser }),
+  openUrl: (url: string, browser: string) => invoke<void>("open_url", { url, browser }),
   editWorktree: (path: string) => invoke<string>("git_edit_worktree", { path }),
 
   liveRuns: () => invoke<LiveRun[]>("live_runs"),

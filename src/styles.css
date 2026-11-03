@@ -2104,6 +2104,73 @@ li:hover .hover-only,
   max-height: none;
 }
 
+/* md 미리보기: 꼴 갖춘 문서(GitHub README 처럼). 색은 앱 화면 모드를 따른다 */
+.md-body {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 16px 24px 48px;
+  font: 14px/1.65 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+.md-body h1,
+.md-body h2,
+.md-body h3,
+.md-body h4 {
+  margin: 1.4em 0 0.6em;
+  line-height: 1.3;
+}
+.md-body h1,
+.md-body h2 {
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--line);
+}
+.md-body h1 { font-size: 1.8em; }
+.md-body h2 { font-size: 1.4em; }
+.md-body h3 { font-size: 1.15em; }
+.md-body > :first-child { margin-top: 0; }
+.md-body a[href] { color: var(--accent); text-decoration: none; cursor: pointer; }
+.md-body a[href]:hover { text-decoration: underline; }
+.md-body code {
+  font: 0.88em/1.45 var(--mono);
+  background: var(--bg-2);
+  padding: 0.15em 0.4em;
+  border-radius: 5px;
+}
+.md-body pre {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px 14px;
+  overflow: auto;
+}
+.md-body pre code {
+  background: none;
+  padding: 0;
+  font-size: 12px;
+}
+.md-body blockquote {
+  margin: 0;
+  padding: 0 1em;
+  color: var(--fg-dim);
+  border-left: 3px solid var(--line-2);
+}
+.md-body table {
+  border-collapse: collapse;
+  display: block;
+  overflow: auto;
+}
+.md-body th,
+.md-body td {
+  border: 1px solid var(--line);
+  padding: 5px 12px;
+}
+.md-body tr:nth-child(2n) { background: var(--bg-1); }
+.md-body img { max-width: 100%; }
+.md-body hr { border: 0; border-top: 1px solid var(--line); margin: 20px 0; }
+.md-body li > input[type="checkbox"] { margin: 0 0.4em 0 0; vertical-align: -1px; }
+.md-body .md-img-missing { color: var(--fg-faint); font-size: 12px; }
+
 /* PDF 미리보기: 맥 WebKit 의 PDF 보기를 칸에 꽉 채운다(쪽 넘김·확대·글 고르기는 그 안에서) */
 .pdf-stage {
   position: relative;

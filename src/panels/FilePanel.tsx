@@ -1,11 +1,11 @@
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ExternalLink, FolderOpen, Trash2 } from "lucide-react";
+import { ExternalLink, FolderOpen, Globe, Trash2 } from "lucide-react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { api, errorText, type ChangeKind, type DirEntry, type FileContent, type FileDiff, type WorktreeStatus } from "../api";
 import { Empty, WtDot } from "../components/Overlays";
 import { useExtensionOn, useFileModes, type FileModeSlot } from "../extensions";
-import { openExternal, openInDefaultApp } from "../externalEditor";
-import { FileIcon, imageMime, isPdf as isPdfPath } from "../fileIcons";
+import { openExternal, openInDefaultApp, openLink, openMarkdownInBrowser } from "../externalEditor";
+import { FileIcon, imageMime, isMarkdown, isPdf as isPdfPath } from "../fileIcons";
 import { useFileTick } from "../fileTick";
 import { escapeHtml, highlightLines } from "../highlight";
 import { t } from "../i18n";
@@ -281,6 +281,8 @@ export function FileViewer({ worktree, viewer, onViewer }: { worktree: string; v
   const isPdf = !isImage && isPdfPath(viewer.rel);
   const media = isImage || isPdf;
   const MediaBox = isPdf ? PdfBox : ImageBox;
+  // md 는 '미리보기'(꼴 갖춘 문서)가 따로 있다. 크롬에 끌어다 놓으면 한글이 깨져서(인코딩 표시가 없어 EUC-KR 로 읽음) 앱 안·브라우저로 열기를 둔다
+  const isMd = viewer.kind === "file" && isMarkdown(viewer.rel);
   const extModes = useFileModes();
   // '내용' 을 대신하는 확장(파일 편집: 열면 바로 고치기). 고칠 수 없는 파일이면 원래 내용 보기로(noEdit)
   const replacer = viewer.kind === "file" ? (extModes.find((m) => m.replaces === "preview" && m.available({ rel: viewer.rel, media })) ?? null) : null;
@@ -291,7 +293,7 @@ export function FileViewer({ worktree, viewer, onViewer }: { worktree: string; v
   // 예전 '편집' 탭 주소는 '내용' 으로, 꺼진 확장 탭도 '내용' 으로
   const wanted = extModes.find((m) => m.key === asked)?.replaces ?? asked;
   const extTab = tabModes.find((m) => m.key === wanted) ?? null;
-  const mode = wanted.startsWith("ext:") && !extTab ? "preview" : wanted;
+  const mode = (wanted.startsWith("ext:") && !extTab) || (wanted === "render" && !isMd) ? "preview" : wanted;
   const ext = extTab ?? (mode === "preview" && replacer && !noEditReason ? replacer : null);
   const key = viewer.kind === "commit-file" ? `${viewer.sha}:${viewer.rel}` : `${viewer.rel}:${mode}:${ext?.key ?? ""}`;
 
@@ -308,8 +310,8 @@ export function FileViewer({ worktree, viewer, onViewer }: { worktree: string; v
         } else if (mode === "diff") {
           const d = await api.diffFile(worktree, viewer.rel);
           if (alive) setDiff(d);
-        } else if (mode === "stage" || ext) {
-          // StageView·확장 탭이 직접 읽는다
+        } else if (mode === "render" || mode === "stage" || ext) {
+          // MarkdownView·StageView·확장 탭이 직접 읽는다
         } else {
           const c = await api.fsRead(worktree, viewer.rel);
           if (!alive) return;
@@ -340,6 +342,11 @@ export function FileViewer({ worktree, viewer, onViewer }: { worktree: string; v
         <span className="spacer" />
         {viewer.kind === "file" && (
           <div className="seg">
+            {isMd && (
+              <button className={mode === "render" ? "on" : ""} onClick={() => openViewer({ ...viewer, mode: "render" })} data-mode="render" title={t("md 를 꼴 갖춘 문서로 보기")}>
+                {t("미리보기")}
+              </button>
+            )}
             {replacer ? (
               <ModeTab slot={replacer} worktree={worktree} rel={viewer.rel} on={mode === "preview"} onClick={() => openViewer({ ...viewer, mode: "preview" })} dataMode="preview" />
             ) : (
@@ -361,6 +368,11 @@ export function FileViewer({ worktree, viewer, onViewer }: { worktree: string; v
                 <ModeTab key={m.key} slot={m} worktree={worktree} rel={viewer.rel} on={mode === m.key} onClick={() => openViewer({ ...viewer, mode: m.key })} />
               ))}
           </div>
+        )}
+        {isMd && (
+          <button className="icon-btn ghost" onClick={() => void openMarkdownInBrowser(worktree, viewer.rel)} title={t("브라우저로 열기 (꼴 갖춘 문서, 한글 안 깨짐)")} aria-label={t("브라우저로 열기 (꼴 갖춘 문서, 한글 안 깨짐)")} data-action="open-browser">
+            <Globe size={14} aria-hidden />
+          </button>
         )}
         {viewer.kind === "file" && !media && (
           <button className="icon-btn ghost" onClick={() => void openExternal(worktree, viewer.rel)} title={t("외부 편집기로 열기")} aria-label={t("외부 편집기로 열기")} data-action="open-external">
@@ -397,6 +409,8 @@ export function FileViewer({ worktree, viewer, onViewer }: { worktree: string; v
           ) : (
             <MediaBox worktree={worktree} rel={viewer.rel} label={t("지금")} />
           )
+        ) : mode === "render" && viewer.kind === "file" ? (
+          <MarkdownView worktree={worktree} rel={viewer.rel} />
         ) : ext && viewer.kind === "file" ? (
           <Suspense fallback={<div className="loading">…</div>}>
             <ext.View
@@ -545,6 +559,119 @@ function PdfBox({ worktree, rel, rev, label }: MediaProps) {
         )}
       </div>
     </figure>
+  );
+}
+
+// 코드 블록 언어 이름 → highlightLines 가 아는 확장자
+const LANG_EXT: Record<string, string> = { typescript: "ts", javascript: "js", rust: "rs", python: "py", shell: "sh", console: "sh", ruby: "rb", kotlin: "kt", csharp: "cs", markdown: "md" };
+
+/** 인터넷 그림·못 찾은 그림 자리: [그림: 설명] 글자로(앱 CSP 는 인터넷 그림을 막는다) */
+function imagePlaceholder(img: HTMLImageElement, label: string): HTMLElement {
+  const span = document.createElement("span");
+  span.className = "md-img-missing";
+  span.textContent = img.alt ? `[${label}: ${img.alt}]` : `[${label}]`;
+  span.title = img.dataset.src ?? "";
+  return span;
+}
+
+/**
+ * md 를 꼴 갖춘 문서로(미리보기). renderMarkdown 이 거른 HTML 을 그린 뒤, 그림은 워크트리에서 읽어 blob 으로 바꾸고,
+ * 링크는 웹뷰가 다른 주소로 넘어가지 않게 모두 직접 처리한다(앵커 = 그 제목으로, 저장소 파일 = 파일 보기, 바깥 = 고른 브라우저).
+ */
+function MarkdownView({ worktree, rel }: { worktree: string; rel: string }) {
+  const fileTick = useFileTick(rel, worktree);
+  const [themeTick, setThemeTick] = useState(0);
+  useEffect(() => onThemeChange(() => setThemeTick((n) => n + 1)), []);
+  const [doc, setDoc] = useState<{ html: string; truncated: boolean; md: typeof import("../markdown") } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let alive = true;
+    Promise.all([import("../markdown"), api.fsRead(worktree, rel)]).then(
+      ([md, c]) => {
+        if (!alive) return;
+        if (c.text === null) return setErr(t("바이너리 파일"));
+        setDoc({ html: md.renderMarkdown(c.text, { app: true }), truncated: c.truncated, md });
+        setErr(null);
+      },
+      (e) => alive && setErr(errorText(e)),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [worktree, rel, fileTick]);
+
+  // 그림: 워크트리 안 그림 파일만 읽어 보여 준다. 글이 바뀌어 HTML 을 새로 그릴 때만 다시
+  useEffect(() => {
+    const root = ref.current;
+    if (!root || !doc) return;
+    let alive = true;
+    const made: string[] = [];
+    for (const img of root.querySelectorAll<HTMLImageElement>("img[data-src]")) {
+      const src = img.dataset.src ?? "";
+      if (/^data:image\//i.test(src)) {
+        img.src = src;
+        continue;
+      }
+      const target = doc.md.linkTarget(rel, src);
+      const mime = target.kind === "file" ? imageMime(target.rel) : null;
+      if (target.kind !== "file" || !mime) {
+        img.replaceWith(imagePlaceholder(img, target.kind === "external" ? t("인터넷 그림") : t("그림")));
+        continue;
+      }
+      api.fsReadImage(worktree, target.rel).then(
+        (buf) => {
+          if (!alive) return;
+          const u = URL.createObjectURL(new Blob([buf], { type: mime }));
+          made.push(u);
+          img.src = u;
+        },
+        () => alive && img.replaceWith(imagePlaceholder(img, t("못 찾은 그림"))),
+      );
+    }
+    return () => {
+      alive = false;
+      made.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [doc, worktree, rel]);
+
+  // 코드 블록 색칠(화면 모드가 바뀌면 다시)
+  useEffect(() => {
+    const root = ref.current;
+    if (!root || !doc) return;
+    let alive = true;
+    for (const code of root.querySelectorAll<HTMLElement>("pre > code[class*='language-']")) {
+      const lang = /language-([\w+#-]+)/.exec(code.className)?.[1]?.toLowerCase();
+      if (!lang) continue;
+      void highlightLines(code.textContent ?? "", `x.${LANG_EXT[lang] ?? lang}`).then((lines) => {
+        if (alive && lines) code.innerHTML = lines.join("\n");
+      });
+    }
+    return () => {
+      alive = false;
+    };
+  }, [doc, themeTick]);
+
+  const onLink = (e: React.MouseEvent) => {
+    const a = (e.target as HTMLElement).closest("a");
+    if (!a || !doc || !ref.current?.contains(a)) return;
+    e.preventDefault();
+    if (e.type !== "click") return;
+    const target = doc.md.linkTarget(rel, a.getAttribute("href"));
+    if (target.kind === "anchor") {
+      const id = CSS.escape(target.id);
+      ref.current.querySelector(`[id="user-content-${id}"], [id="${id}"]`)?.scrollIntoView({ block: "start" });
+    } else if (target.kind === "external") void openLink(target.url);
+    else if (target.kind === "file") useStore.getState().openViewer({ kind: "file", rel: target.rel, mode: "preview" });
+  };
+
+  if (err) return <div className="banner banner-error">{err}</div>;
+  if (!doc) return <div className="loading">…</div>;
+  return (
+    <>
+      {doc.truncated && <div className="banner">{t("처음 1MB 만 보여 줍니다")}</div>}
+      <div className="md-body" ref={ref} onClick={onLink} onAuxClick={onLink} data-testid="md-preview" dangerouslySetInnerHTML={{ __html: doc.html }} />
+    </>
   );
 }
 
