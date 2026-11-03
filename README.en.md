@@ -81,7 +81,7 @@ Then use **＋ 저장소 추가** (Add repository) at the top to pick a Git repo
 |---|---|
 | Left — **Git** | Commit graph drawn like a metro map (one colour per worktree), worktrees, changes and commit, branches |
 | Middle — **Agents** | Conversations that worked in the current worktree (today, yesterday, this week…), the selected conversation, Continue |
-| Right — **Files** | The worktree's real files with M/U/D marks; click for content, diff or image |
+| Right — **Files** | The worktree's real files with M/U/D marks; click for content, diff, image or PDF |
 
 In the graph, 🤖 marks a commit **co-written by an AI** (a `Co-authored-by` trailer from Claude, Codex, Copilot, Cursor or Gemini). Repositories with several authors show an initials circle per commit (hover for name and email); single-author repositories drop that column so commit subjects get the space. Clicking a commit shows the author's email, co-authors (AI or people) and the committer when different.
 
@@ -122,13 +122,14 @@ The coloured line under the title bar is the colour of the worktree you are look
 
 ![Graph context menu with a branch submenu](docs/screenshots/graph-menu.png)
 
-### Files: content, diff and images
+### Files: content, diff, images and PDFs
 
 ![Image file: last commit and current version side by side](docs/screenshots/image.png)
 
 - File-type icons (TypeScript, Rust, images, config, README…).
 - Content with syntax highlighting, diff against the last commit, or stage parts.
 - Images (png, jpg, gif, webp, svg…) are shown as images; a changed image is shown **next to its last committed version**. Click to toggle actual size.
+- PDFs open right in the app (the built-in macOS PDF view, so paging, zoom and text selection work as usual). A changed PDF is shown next to its last committed version, and **↗** opens it in the default app such as Preview.
 - Everything refreshes when an agent or editor changes files.
 - **Drag and drop**: drag a file or folder from the tree onto a terminal or text field to insert its path (relative when it's inside the agent's working folder), onto another folder to move it, or out to Finder or another app to copy the real file. Drop files from Finder onto a tree folder to copy them in (a taken name becomes "name 2"; nothing is overwritten).
 - **↗** in the file viewer opens the file in your external editor (VS Code, Cursor, Zed…, chosen in Settings).

@@ -125,28 +125,42 @@ pub const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "svg", "i
 /// 그림 미리보기 크기 상한
 pub const MAX_IMAGE_BYTES: u64 = 40 * 1024 * 1024;
 
-pub fn is_image(rel: &str) -> bool {
-    Path::new(rel)
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| IMAGE_EXTS.contains(&e.to_ascii_lowercase().as_str()))
+/// PDF 미리보기 크기 상한(그림보다 큰 문서가 흔하다)
+pub const MAX_PDF_BYTES: u64 = 100 * 1024 * 1024;
+
+fn ext_lower(rel: &str) -> Option<String> {
+    Path::new(rel).extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase())
 }
 
-/// 그림 파일 바이트(워크트리 안, 그림 확장자, 크기 상한). rev 가 있으면 그 커밋의 내용(예: HEAD)을 git 에서 읽는다.
+pub fn is_image(rel: &str) -> bool {
+    ext_lower(rel).is_some_and(|e| IMAGE_EXTS.contains(&e.as_str()))
+}
+
+pub fn is_pdf(rel: &str) -> bool {
+    ext_lower(rel).as_deref() == Some("pdf")
+}
+
+/// 그림·PDF 파일 바이트(워크트리 안, 그림·PDF 확장자, 크기 상한). rev 가 있으면 그 커밋의 내용(예: HEAD)을 git 에서 읽는다.
 pub fn read_image(worktree: &Path, rel: &str, rev: Option<&str>) -> Result<Vec<u8>> {
-    if !is_image(rel) {
-        bail!(tr!("그림 파일이 아닙니다: {rel}", "Not an image file: {rel}"));
+    let pdf = is_pdf(rel);
+    if !pdf && !is_image(rel) {
+        bail!(tr!("그림이나 PDF 파일이 아닙니다: {rel}", "Not an image or PDF file: {rel}"));
     }
+    let too_big = |size: u64| -> Result<()> {
+        let mb = size / 1024 / 1024;
+        match (pdf, size > if pdf { MAX_PDF_BYTES } else { MAX_IMAGE_BYTES }) {
+            (_, false) => Ok(()),
+            (true, true) => bail!(tr!("PDF 가 너무 큽니다 ({mb} MB)", "PDF is too large ({mb} MB)")),
+            (false, true) => bail!(tr!("그림이 너무 큽니다 ({mb} MB)", "Image is too large ({mb} MB)")),
+        }
+    };
     if let Some(rev) = rev {
         crate::git::safe_rel_path(rel)?;
         if rev != "HEAD" && !(rev.len() >= 7 && rev.len() <= 64 && rev.chars().all(|c| c.is_ascii_hexdigit())) {
             bail!(tr!("알 수 없는 커밋: {rev}", "Unknown commit: {rev}"));
         }
         let spec = format!("{rev}:{rel}");
-        let size: u64 = crate::git::run(worktree, &["cat-file", "-s", &spec])?.trim().parse().unwrap_or(u64::MAX);
-        if size > MAX_IMAGE_BYTES {
-            bail!(tr!("그림이 너무 큽니다 ({} MB)", "Image is too large ({} MB)", size / 1024 / 1024));
-        }
+        too_big(crate::git::run(worktree, &["cat-file", "-s", &spec])?.trim().parse().unwrap_or(u64::MAX))?;
         return crate::git::run_bytes(worktree, &["cat-file", "blob", &spec]);
     }
     let p = resolve_inside(worktree, rel)?;
@@ -154,9 +168,7 @@ pub fn read_image(worktree: &Path, rel: &str, rev: Option<&str>) -> Result<Vec<u
     if !meta.is_file() {
         bail!(tr!("일반 파일이 아니라 볼 수 없습니다", "Not a regular file, so it can't be shown"));
     }
-    if meta.len() > MAX_IMAGE_BYTES {
-        bail!(tr!("그림이 너무 큽니다 ({} MB)", "Image is too large ({} MB)", meta.len() / 1024 / 1024));
-    }
+    too_big(meta.len())?;
     Ok(std::fs::read(&p)?)
 }
 
@@ -665,6 +677,22 @@ mod tests {
         assert!(read_image(w, "note.txt", None).is_err(), "그림이 아닌 파일은 거부");
         assert!(read_image(w, "../x.png", None).is_err(), "워크트리 밖 거부");
         assert!(read_image(w, "a.png", Some("--output=/tmp/x")).is_err(), "이상한 rev 거부");
+    }
+
+    #[test]
+    fn reads_pdf_now_and_from_head() {
+        let d = tempfile::tempdir().unwrap();
+        let w = d.path();
+        let g = |args: &[&str]| assert!(std::process::Command::new("git").arg("-C").arg(w).args(args).output().unwrap().status.success());
+        g(&["init", "-q"]);
+        std::fs::write(w.join("Doc.PDF"), b"%PDF-1.4 v1").unwrap();
+        g(&["add", "-A"]);
+        g(&["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"]);
+        std::fs::write(w.join("Doc.PDF"), b"%PDF-1.4 v2").unwrap();
+        assert!(is_pdf("Doc.PDF") && !is_pdf("pdf") && !is_pdf("a.pdf.txt"));
+        assert_eq!(read_image(w, "Doc.PDF", None).unwrap(), b"%PDF-1.4 v2", "확장자 대소문자 무관");
+        assert_eq!(read_image(w, "Doc.PDF", Some("HEAD")).unwrap(), b"%PDF-1.4 v1", "마지막 커밋의 PDF");
+        assert!(read_image(w, "../x.pdf", None).is_err(), "워크트리 밖 거부");
     }
 
     #[test]

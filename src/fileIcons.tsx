@@ -137,6 +137,11 @@ export function imageMime(path: string): string | null {
   return dot > 0 ? (IMAGE_MIME[path.slice(dot + 1).toLowerCase()] ?? null) : null;
 }
 
+/** PDF 파일인지(확장자만 본다. Rust files::is_pdf 와 같게 ".pdf" 같은 이름만인 파일은 아님) */
+export function isPdf(path: string): boolean {
+  return /[^/]\.pdf$/i.test(path);
+}
+
 /** 파일 이름으로 아이콘을 고른다(이름 전체 → 접두어 → 확장자 순). */
 export function fileIconSpec(name: string): IconSpec {
   const lower = name.toLowerCase();

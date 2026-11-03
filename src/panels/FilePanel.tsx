@@ -4,8 +4,8 @@ import { Group, Panel, Separator } from "react-resizable-panels";
 import { api, errorText, type ChangeKind, type DirEntry, type FileContent, type FileDiff, type WorktreeStatus } from "../api";
 import { Empty, WtDot } from "../components/Overlays";
 import { useExtensionOn, useFileModes, type FileModeSlot } from "../extensions";
-import { openExternal } from "../externalEditor";
-import { FileIcon, imageMime } from "../fileIcons";
+import { openExternal, openInDefaultApp } from "../externalEditor";
+import { FileIcon, imageMime, isPdf as isPdfPath } from "../fileIcons";
 import { useFileTick } from "../fileTick";
 import { escapeHtml, highlightLines } from "../highlight";
 import { t } from "../i18n";
@@ -276,11 +276,14 @@ export function FileViewer({ worktree, viewer, onViewer }: { worktree: string; v
   const [diff, setDiff] = useState<FileDiff[] | null>(null);
   const [lines, setLines] = useState<string[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  // 그림 파일은 글자 대신 그림으로(내용 = 지금 그림, 변경 = 마지막 커밋과 나란히)
+  // 그림·PDF 는 글자 대신 그대로(내용 = 지금 것, 변경 = 마지막 커밋과 나란히)
   const isImage = imageMime(viewer.rel) !== null;
+  const isPdf = !isImage && isPdfPath(viewer.rel);
+  const media = isImage || isPdf;
+  const MediaBox = isPdf ? PdfBox : ImageBox;
   const extModes = useFileModes();
   // '내용' 을 대신하는 확장(파일 편집: 열면 바로 고치기). 고칠 수 없는 파일이면 원래 내용 보기로(noEdit)
-  const replacer = viewer.kind === "file" ? (extModes.find((m) => m.replaces === "preview" && m.available({ rel: viewer.rel, isImage })) ?? null) : null;
+  const replacer = viewer.kind === "file" ? (extModes.find((m) => m.replaces === "preview" && m.available({ rel: viewer.rel, media })) ?? null) : null;
   const [noEdit, setNoEdit] = useState<{ at: string; reason: string } | null>(null);
   const noEditReason = noEdit?.at === `${worktree}:${viewer.rel}` ? noEdit.reason : null;
   const tabModes = extModes.filter((m) => !m.replaces);
@@ -297,8 +300,8 @@ export function FileViewer({ worktree, viewer, onViewer }: { worktree: string; v
     setErr(null);
     (async () => {
       try {
-        if (isImage) {
-          // ImageBox 가 직접 읽는다
+        if (media) {
+          // ImageBox·PdfBox 가 직접 읽는다
         } else if (viewer.kind === "commit-file") {
           const d = await api.diffCommitFile(worktree, viewer.sha, viewer.rel);
           if (alive) setDiff(d);
@@ -347,20 +350,25 @@ export function FileViewer({ worktree, viewer, onViewer }: { worktree: string; v
             <button className={mode === "diff" ? "on" : ""} onClick={() => openViewer({ ...viewer, mode: "diff" })} title={t("마지막 커밋과 비교한 전체 변경")}>
               {t("변경")}
             </button>
-            {!isImage && (
+            {!media && (
               <button className={mode === "stage" ? "on" : ""} onClick={() => openViewer({ ...viewer, mode: "stage" })} title={t("바뀐 부분(조각)만 골라 커밋에 담기")}>
                 {t("일부 담기")}
               </button>
             )}
             {tabModes
-              .filter((m) => m.available({ rel: viewer.rel, isImage }))
+              .filter((m) => m.available({ rel: viewer.rel, media }))
               .map((m) => (
                 <ModeTab key={m.key} slot={m} worktree={worktree} rel={viewer.rel} on={mode === m.key} onClick={() => openViewer({ ...viewer, mode: m.key })} />
               ))}
           </div>
         )}
-        {viewer.kind === "file" && !isImage && (
+        {viewer.kind === "file" && !media && (
           <button className="icon-btn ghost" onClick={() => void openExternal(worktree, viewer.rel)} title={t("외부 편집기로 열기")} aria-label={t("외부 편집기로 열기")} data-action="open-external">
+            <ExternalLink size={14} aria-hidden />
+          </button>
+        )}
+        {viewer.kind === "file" && isPdf && (
+          <button className="icon-btn ghost" onClick={() => void openInDefaultApp(worktree, viewer.rel)} title={t("기본 앱으로 열기 (미리보기 등)")} aria-label={t("기본 앱으로 열기 (미리보기 등)")} data-action="open-default">
             <ExternalLink size={14} aria-hidden />
           </button>
         )}
@@ -378,16 +386,16 @@ export function FileViewer({ worktree, viewer, onViewer }: { worktree: string; v
           viewerScrollTops.set(scrollKey, top);
         }}
       >
-        {isImage ? (
+        {media ? (
           viewer.kind === "commit-file" ? (
-            <ImageBox worktree={worktree} rel={viewer.rel} rev={viewer.sha} label={t("커밋 {sha}", { sha: viewer.sha.slice(0, 7) })} />
+            <MediaBox worktree={worktree} rel={viewer.rel} rev={viewer.sha} label={t("커밋 {sha}", { sha: viewer.sha.slice(0, 7) })} />
           ) : mode === "diff" ? (
             <div className="img-compare">
-              <ImageBox worktree={worktree} rel={viewer.rel} rev="HEAD" label={t("마지막 커밋")} />
-              <ImageBox worktree={worktree} rel={viewer.rel} label={t("지금")} />
+              <MediaBox worktree={worktree} rel={viewer.rel} rev="HEAD" label={t("마지막 커밋")} />
+              <MediaBox worktree={worktree} rel={viewer.rel} label={t("지금")} />
             </div>
           ) : (
-            <ImageBox worktree={worktree} rel={viewer.rel} label={t("지금")} />
+            <MediaBox worktree={worktree} rel={viewer.rel} label={t("지금")} />
           )
         ) : ext && viewer.kind === "file" ? (
           <Suspense fallback={<div className="loading">…</div>}>
@@ -446,60 +454,92 @@ function ModeTab({ slot, worktree, rel, on, onClick, dataMode }: { slot: FileMod
   );
 }
 
-/** 그림 한 장: 바둑판 배경 위에 창에 맞춰 보여 주고, 누르면 실제 크기 ↔ 맞춤. */
-function ImageBox({ worktree, rel, rev, label }: { worktree: string; rel: string; rev?: string; label: string }) {
+const sizeText = (bytes: number) => (bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
+
+/**
+ * 그림·PDF 파일 바이트를 blob 주소로 읽는다. rev 가 있으면 그 커밋의 것.
+ * 지금 파일은 바뀔 때마다, 커밋의 것은 git 이 바뀔 때만 다시 읽는다. missing = 그 자리에 파일이 없다.
+ */
+function useMediaUrl(worktree: string, rel: string, rev: string | undefined, type: string) {
   const fileTick = useFileTick(rel, worktree);
-  const [url, setUrl] = useState<string | null>(null);
-  const [bytes, setBytes] = useState(0);
-  const [dims, setDims] = useState<[number, number] | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [actual, setActual] = useState(false);
+  const [got, setGot] = useState<{ url: string | null; bytes: number; err: string | null }>({ url: null, bytes: 0, err: null });
   useEffect(() => {
     let alive = true;
     let made: string | null = null;
     api.fsReadImage(worktree, rel, rev).then(
       (buf) => {
         if (!alive) return;
-        const blob = new Blob([buf], { type: imageMime(rel) ?? "application/octet-stream" });
+        const blob = new Blob([buf], { type });
         made = URL.createObjectURL(blob);
-        setUrl(made);
-        setBytes(blob.size);
-        setErr(null);
+        setGot({ url: made, bytes: blob.size, err: null });
       },
       (e) => {
-        if (!alive) return;
-        setUrl(null);
-        setErr(errorText(e));
+        if (alive) setGot({ url: null, bytes: 0, err: errorText(e) });
       },
     );
     return () => {
       alive = false;
       if (made) URL.revokeObjectURL(made);
     };
-    // 지금 그림은 파일이 바뀔 때마다, 커밋의 그림은 git 이 바뀔 때만 다시 읽는다
-  }, [worktree, rel, rev, rev ? 0 : fileTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [worktree, rel, rev, type, rev ? 0 : fileTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  const missing = !!got.err && /exists on disk, but not in|does not exist|not exist|No such file|없습니다|invalid object/i.test(got.err);
+  return { ...got, missing };
+}
 
-  const missing = err && /exists on disk, but not in|does not exist|not exist|No such file|없습니다|invalid object/i.test(err);
+type MediaProps = { worktree: string; rel: string; rev?: string; label: string };
+
+/** 그림 한 장: 바둑판 배경 위에 창에 맞춰 보여 주고, 누르면 실제 크기 ↔ 맞춤. */
+function ImageBox({ worktree, rel, rev, label }: MediaProps) {
+  const { url, bytes, err, missing } = useMediaUrl(worktree, rel, rev, imageMime(rel) ?? "application/octet-stream");
+  const [dims, setDims] = useState<[number, number] | null>(null);
+  // 그리지 못한 주소(형식을 모름). 파일이 바뀌어 주소가 새로 생기면 다시 그려 본다
+  const [badUrl, setBadUrl] = useState<string | null>(null);
+  const [actual, setActual] = useState(false);
+  const shown = url && badUrl !== url ? url : null;
   return (
     <figure className="img-box" data-testid="image-view">
       <figcaption className="img-cap">
         <b>{label}</b>
-        {dims && (
+        {dims && shown && (
           <span className="muted">
-            {dims[0]}×{dims[1]} · {bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`}
+            {dims[0]}×{dims[1]} · {sizeText(bytes)}
           </span>
         )}
-        {url && (
+        {shown && (
           <button className="link-btn" onClick={() => setActual(!actual)} title={t("실제 크기 ↔ 창에 맞춤")}>
             {actual ? t("맞춤") : t("실제 크기")}
           </button>
         )}
       </figcaption>
-      <div className={`img-stage${actual ? " actual" : ""}`} onClick={() => url && setActual(!actual)}>
-        {url ? (
-          <img src={url} alt={rel} onLoad={(e) => setDims([e.currentTarget.naturalWidth, e.currentTarget.naturalHeight])} onError={() => setErr(t("이 형식은 그릴 수 없습니다"))} />
+      <div className={`img-stage${actual ? " actual" : ""}`} onClick={() => shown && setActual(!actual)}>
+        {shown ? (
+          <img src={shown} alt={rel} onLoad={(e) => setDims([e.currentTarget.naturalWidth, e.currentTarget.naturalHeight])} onError={() => setBadUrl(shown)} />
+        ) : url ? (
+          <div className="muted small pad">{t("이 형식은 그릴 수 없습니다")}</div>
         ) : err ? (
           <div className="muted small pad">{missing ? (rev ? t("마지막 커밋에는 없던 그림이에요") : t("지금은 없는 그림이에요(지워짐)")) : err}</div>
+        ) : (
+          <div className="loading">…</div>
+        )}
+      </div>
+    </figure>
+  );
+}
+
+/** PDF 한 개: 맥 WebKit 의 PDF 보기(쪽 넘김·확대·글 고르기는 그 안에서)를 칸에 꽉 채운다. */
+function PdfBox({ worktree, rel, rev, label }: MediaProps) {
+  const { url, bytes, err, missing } = useMediaUrl(worktree, rel, rev, "application/pdf");
+  return (
+    <figure className="img-box" data-testid="pdf-view">
+      <figcaption className="img-cap">
+        <b>{label}</b>
+        {url && <span className="muted">{sizeText(bytes)}</span>}
+      </figcaption>
+      <div className="pdf-stage">
+        {url ? (
+          <iframe src={url} title={rel} />
+        ) : err ? (
+          <div className="muted small pad">{missing ? (rev ? t("마지막 커밋에는 없던 PDF예요") : t("지금은 없는 PDF예요(지워짐)")) : err}</div>
         ) : (
           <div className="loading">…</div>
         )}
