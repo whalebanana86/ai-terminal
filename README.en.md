@@ -127,7 +127,7 @@ The coloured line under the title bar is the colour of the worktree you are look
 ![Image file: last commit and current version side by side](docs/screenshots/image.png)
 
 - File-type icons (TypeScript, Rust, images, config, README…).
-- Content with syntax highlighting, diff against the last commit, or stage parts.
+- Content with syntax highlighting, diff against the last commit, or stage parts. Long lines wrap at the pane width (indentation kept), so there's no sideways scrolling.
 - Images (png, jpg, gif, webp, svg…) are shown as images; a changed image is shown **next to its last committed version**. Click to toggle actual size.
 - PDFs open right in the app (the built-in macOS PDF view, so paging, zoom and text selection work as usual). A changed PDF is shown next to its last committed version, and **↗** opens it in the default app such as Preview.
 - Markdown files open in **Preview** first (a formatted document with headings, tables, lists, coloured code and images from the repo); **Content** shows the source. Links in the preview are handled by the app (`#heading` scrolls there, repo files open in the viewer, web addresses open in your chosen browser).

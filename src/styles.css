@@ -1163,10 +1163,11 @@ button.center-tab {
   padding: 4px 0;
   font: 12px/1.5 var(--mono);
 }
+/* 긴 줄은 칸 너비에서 접는다(좌우 스크롤 없이). 들여쓰기는 그대로, 끊을 곳 없는 긴 글자(주소·압축 코드)도 끊는다 */
 .code-line,
 .dl {
   display: flex;
-  white-space: pre;
+  white-space: pre-wrap;
 }
 .ln {
   width: 40px;
@@ -1178,7 +1179,9 @@ button.center-tab {
 }
 .lc {
   flex: 1;
+  min-width: 0;
   padding-right: 12px;
+  overflow-wrap: anywhere;
 }
 .diff {
   font: 12px/1.5 var(--mono);
@@ -2036,7 +2039,8 @@ li:hover .hover-only,
 /* 그림 미리보기 */
 .img-compare {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  /* 칸이 220px 보다 좁으면 한 줄로(넘치지 않게) */
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
   grid-auto-rows: minmax(160px, 1fr);
   gap: 8px;
   padding: 8px;
@@ -2142,7 +2146,8 @@ li:hover .hover-only,
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 12px 14px;
-  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .md-body pre code {
   background: none;
@@ -2157,8 +2162,7 @@ li:hover .hover-only,
 }
 .md-body table {
   border-collapse: collapse;
-  display: block;
-  overflow: auto;
+  max-width: 100%;
 }
 .md-body th,
 .md-body td {

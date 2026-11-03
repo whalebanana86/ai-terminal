@@ -173,6 +173,8 @@ export function createEditor(parent: HTMLElement, doc: string, hooks: EditorHook
       bracketMatching(),
       rectangularSelection(),
       highlightActiveLine(),
+      // 긴 줄은 칸 너비에서 접는다(좌우 스크롤 없이)
+      EditorView.lineWrapping,
       highlightSelectionMatches(),
       search({ top: false }),
       syntaxHighlighting(highlight),
