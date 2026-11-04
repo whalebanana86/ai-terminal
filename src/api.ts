@@ -376,6 +376,12 @@ export const api = {
   fsCopyIn: (worktree: string, dest: string, sources: string[]) => invoke<TransferOutcome>("fs_copy_in", { worktree, dest, sources }),
   /** 워크트리 안의 rels 를 dest 폴더로 이동 */
   fsMove: (worktree: string, dest: string, rels: string[]) => invoke<TransferOutcome>("fs_move", { worktree, dest, rels }),
+  /** dir 폴더("" = 맨 위)에 빈 파일·폴더 만들기(같은 이름이 있으면 거부). 새 상대 경로 */
+  fsCreate: (worktree: string, dir: string, name: string, isDir: boolean) => invoke<string>("fs_create", { worktree, dir, name, isDir }),
+  /** 같은 폴더 안에서 이름만 바꾸기(같은 이름이 있으면 거부). 새 상대 경로 */
+  fsRename: (worktree: string, rel: string, name: string) => invoke<string>("fs_rename", { worktree, rel, name }),
+  /** 휴지통으로 옮기기(링크는 링크만 지움) */
+  fsTrash: (worktree: string, rel: string) => invoke<void>("fs_trash", { worktree, rel }),
   setLang: (lang: string) => invoke<void>("set_lang", { lang }),
   fsRead: (worktree: string, rel: string) => invoke<FileContent>("fs_read", { worktree, rel }),
   /** 그림 파일 바이트. rev 가 "HEAD"(또는 커밋 해시)면 그때의 그림 */

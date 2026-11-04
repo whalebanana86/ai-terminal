@@ -81,6 +81,15 @@ export function PromptDialog() {
   const req = useStore((s) => s.prompt);
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const selectedFor = useRef<unknown>(null);
+  // 첫 칸의 처음 값이 들어간 뒤 한 번만 골라 둔다(다시 눌러 들어올 때는 그대로)
+  useEffect(() => {
+    const f = req?.fields[0];
+    if (!req || !f || f.selectEnd === undefined || selectedFor.current === req || values[f.key] !== f.value) return;
+    selectedFor.current = req;
+    formRef.current?.querySelector<HTMLInputElement>("input.text-input")?.setSelectionRange(0, f.selectEnd);
+  }, [req, values]);
   useEffect(() => {
     if (!req) return;
     setValues(Object.fromEntries(req.fields.map((f) => [f.key, f.value])));
@@ -100,6 +109,7 @@ export function PromptDialog() {
   return (
     <div className="modal-backdrop" onMouseDown={() => req.resolve(null)}>
       <form
+        ref={formRef}
         className="modal"
         role="dialog"
         aria-modal="true"

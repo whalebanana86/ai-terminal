@@ -286,6 +286,39 @@ pub async fn fs_move(state: State<'_, AppState>, worktree: String, dest: String,
     .await
 }
 
+/// 트리 오른쪽 클릭 '새 파일'·'새 폴더': dir 폴더("" = 맨 위)에 빈 파일·폴더를 만든다(같은 이름이 있으면 거부). 새 상대 경로
+#[tauri::command]
+pub async fn fs_create(state: State<'_, AppState>, worktree: String, dir: String, name: String, is_dir: bool) -> Res<String> {
+    let core = state.core.clone();
+    blocking(move || {
+        core.ensure_known(&worktree)?;
+        crate::files::create_entry(Path::new(&worktree), &dir, &name, is_dir)
+    })
+    .await
+}
+
+/// 트리 오른쪽 클릭 '이름 바꾸기': 같은 폴더 안에서 이름만(같은 이름이 있으면 거부). 새 상대 경로
+#[tauri::command]
+pub async fn fs_rename(state: State<'_, AppState>, worktree: String, rel: String, name: String) -> Res<String> {
+    let core = state.core.clone();
+    blocking(move || {
+        core.ensure_known(&worktree)?;
+        crate::files::rename_entry(Path::new(&worktree), &rel, &name)
+    })
+    .await
+}
+
+/// 트리 오른쪽 클릭 '휴지통으로 옮기기'(링크는 링크만 지움)
+#[tauri::command]
+pub async fn fs_trash(state: State<'_, AppState>, worktree: String, rel: String) -> Res<()> {
+    let core = state.core.clone();
+    blocking(move || {
+        core.ensure_known(&worktree)?;
+        crate::files::trash_entry(Path::new(&worktree), &rel)
+    })
+    .await
+}
+
 // ───────────── 확장 기능(설정 → 기능) ─────────────
 
 #[tauri::command]

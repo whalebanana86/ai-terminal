@@ -2,7 +2,7 @@ import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { ExternalLink, FolderOpen, Globe, Trash2 } from "lucide-react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { api, errorText, type ChangeKind, type DirEntry, type FileContent, type FileDiff, type WorktreeStatus } from "../api";
-import { Empty, WtDot } from "../components/Overlays";
+import { ContextMenu, Empty, WtDot, type MenuItem } from "../components/Overlays";
 import { useExtensionOn, useFileModes, type FileModeSlot } from "../extensions";
 import { openExternal, openInDefaultApp, openLink, openMarkdownInBrowser } from "../externalEditor";
 import { FileIcon, imageMime, isMarkdown, isPdf as isPdfPath } from "../fileIcons";
@@ -13,6 +13,7 @@ import { baseName, decorationMap, kindLabel, kindLetter } from "../logic";
 import { useShownViewer, useStore, type Viewer } from "../store";
 import { onThemeChange } from "../theme";
 import { armTreeDrag, TREE_REVEAL, type TreeReveal } from "../treeDrag";
+import { followExpanded, newEntry, renameEntry, spotDir, trashEntry, treeMenu, type TreeSpot } from "../treeOps";
 import { PanelHead } from "./GitPanel";
 
 export function FilePanel() {
@@ -65,6 +66,8 @@ function FileTree({ worktree }: { worktree: string }) {
   const [onlyChanged, setOnlyChanged] = useState(false);
   const [showIgnored, setShowIgnored] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // rel = 오른쪽 클릭한 줄(메뉴가 떠 있는 동안 테두리)
+  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[]; rel: string | null } | null>(null);
 
   const loadDir = useCallback(
     async (rel: string) => {
@@ -136,6 +139,30 @@ function FileTree({ worktree }: { worktree: string }) {
     setExpanded(next);
   };
 
+  /** 오른쪽 클릭: 새 파일·새 폴더·이름 바꾸기·휴지통으로. 같은 폴더의 이름(접힌 폴더면 새로 읽어)으로 입력칸에서 먼저 검사한다 */
+  const siblingNames = async (dir: string) => (children.get(dir) ?? (await api.fsList(worktree, dir).catch(() => []))).map((e) => e.name);
+  const onMenu = (ev: React.MouseEvent, spot: TreeSpot | null) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (!spot) return setMenu(null);
+    setMenu({
+      x: ev.clientX,
+      y: ev.clientY,
+      rel: spot.kind === "root" ? null : spot.rel,
+      items: treeMenu(spot, {
+        newEntry: (dir, isDir) => void siblingNames(dir).then((sib) => newEntry(worktree, dir, isDir, sib)),
+        rename: (rel, isDir) =>
+          void siblingNames(spotDir({ kind: "file", rel }))
+            .then((sib) => renameEntry(worktree, rel, isDir, sib))
+            .then((to) => {
+              // 펼쳐 둔 폴더(와 그 안)는 새 이름으로도 펼쳐 둔다
+              if (to && isDir) setExpanded((cur) => followExpanded(cur, rel, to));
+            }),
+        trash: (rel, isDir) => void trashEntry(worktree, rel, isDir),
+      }),
+    });
+  };
+
   const openFile = (rel: string, kind: ChangeKind | undefined) =>
     openViewer({ kind: "file", rel, mode: !editorOn && kind && kind !== "untracked" ? "diff" : "preview" }, { keepMode: true });
 
@@ -152,10 +179,11 @@ function FileTree({ worktree }: { worktree: string }) {
         rows.push(
           <li
             key={e.rel}
-            className={`tree-row dir${e.ignored ? " ignored" : ""}`}
+            className={`tree-row dir${e.ignored ? " ignored" : ""}${menu?.rel === e.rel ? " menu-on" : ""}`}
             style={{ paddingLeft: 8 + depth * 14 }}
             onClick={() => toggle(e.rel)}
             onMouseDown={(ev) => arm(ev, e.rel, e.name, true)}
+            onContextMenu={(ev) => onMenu(ev, { kind: "dir", rel: e.rel })}
             data-dir={e.rel}
           >
             <span className="twisty">{open ? "▾" : "▸"}</span>
@@ -171,10 +199,11 @@ function FileTree({ worktree }: { worktree: string }) {
         rows.push(
           <li
             key={e.rel}
-            className={`tree-row file${on ? " on" : ""}${e.ignored ? " ignored" : ""}${k ? ` k-${k}` : ""}`}
+            className={`tree-row file${on ? " on" : ""}${e.ignored ? " ignored" : ""}${k ? ` k-${k}` : ""}${menu?.rel === e.rel ? " menu-on" : ""}`}
             style={{ paddingLeft: 22 + depth * 14 }}
             onClick={() => openFile(e.rel, k)}
             onMouseDown={(ev) => arm(ev, e.rel, e.name, false)}
+            onContextMenu={(ev) => onMenu(ev, { kind: "file", rel: e.rel })}
             data-rel={e.rel}
           >
             <FileIcon name={e.name} />
@@ -195,7 +224,7 @@ function FileTree({ worktree }: { worktree: string }) {
       if (parent !== rel || names.has(ent.path)) continue;
       const on = viewer?.kind === "file" && viewer.rel === ent.path;
       rows.push(
-        <li key={`del:${ent.path}`} className={`tree-row file k-deleted${on ? " on" : ""}`} style={{ paddingLeft: 22 + depth * 14 }} onClick={() => openViewer({ kind: "file", rel: ent.path, mode: "diff" }, { keepMode: true })} data-rel={ent.path}>
+        <li key={`del:${ent.path}`} className={`tree-row file k-deleted${on ? " on" : ""}`} style={{ paddingLeft: 22 + depth * 14 }} onClick={() => openViewer({ kind: "file", rel: ent.path, mode: "diff" }, { keepMode: true })} onContextMenu={(ev) => onMenu(ev, null)} data-rel={ent.path}>
           <FileIcon name={baseName(ent.path)} />
           <span className="name">{baseName(ent.path)}</span>
           <span className="kind kind-deleted">D</span>
@@ -223,17 +252,18 @@ function FileTree({ worktree }: { worktree: string }) {
       </div>
       {err && <div className="banner banner-error">{err}</div>}
       {/* data-drop-tree: 놓을 곳(fileDrop.ts). Finder 에서 온 것은 이 워크트리 폴더로 복사, 트리에서 끈 것은 이동 */}
-      <ul className="tree" aria-label={t("파일 트리")} data-drop-tree={worktree}>
+      <ul className="tree" aria-label={t("파일 트리")} data-drop-tree={worktree} onContextMenu={(ev) => onMenu(ev, { kind: "root" })}>
         {onlyChanged
           ? changed.map((e) => {
               const on = viewer?.kind === "file" && viewer.rel === e.path;
               return (
                 <li
                   key={e.path}
-                  className={`tree-row file k-${e.kind}${on ? " on" : ""}`}
+                  className={`tree-row file k-${e.kind}${on ? " on" : ""}${menu?.rel === e.path ? " menu-on" : ""}`}
                   style={{ paddingLeft: 10 }}
                   onClick={() => openViewer({ kind: "file", rel: e.path, mode: editorOn && e.kind !== "deleted" ? "preview" : "diff" }, { keepMode: true })}
                   onMouseDown={e.kind === "deleted" ? undefined : (ev) => arm(ev, e.path, baseName(e.path), false)}
+                  onContextMenu={(ev) => onMenu(ev, e.kind === "deleted" ? null : { kind: "file", rel: e.path })}
                   data-rel={e.path}
                 >
                   <FileIcon name={baseName(e.path)} />
@@ -245,6 +275,7 @@ function FileTree({ worktree }: { worktree: string }) {
           : renderDir("", 0)}
         {onlyChanged && !changed.length && <li className="muted pad">{t("변경된 파일이 없습니다")}</li>}
       </ul>
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
     </div>
   );
 }

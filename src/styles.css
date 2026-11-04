@@ -1100,6 +1100,11 @@ button.center-tab {
 .tree-row.on {
   background: #1f3a55;
 }
+/* 오른쪽 클릭 메뉴가 가리키는 줄 */
+.tree-row.menu-on {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
 .tree-row .name {
   overflow: hidden;
   text-overflow: ellipsis;
