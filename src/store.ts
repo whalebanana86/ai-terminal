@@ -2,7 +2,7 @@
 import { create } from "zustand";
 import { lang, t } from "./i18n";
 import { api, errorText, type AppInfo, type ExecInfo, type LinkedSession, type LiveRun, type RepoSummary } from "./api";
-import { mergeSessions } from "./logic";
+import { mergeSessions, movedRel } from "./logic";
 import { useExtensions } from "./extensions";
 import { isMarkdown } from "./fileIcons";
 
@@ -56,6 +56,8 @@ export interface PromptField {
   options?: { value: string; label: string }[];
   /** 체크박스 ("true"/"false") */
   checkbox?: boolean;
+  /** 처음 열 때 글자를 0 부터 여기까지 골라 둔다(이름 바꾸기: 확장자 앞까지). 첫 칸에만 */
+  selectEnd?: number;
 }
 
 export interface PromptRequest {
@@ -126,13 +128,16 @@ interface State {
   refreshExecs: () => Promise<void>;
   selectSession: (id: string | null) => void;
   setFocusWorktree: (path: string) => void;
-  /** 파일 보기 열기. 파일 편집이 켜져 있으면 가운데 칸 탭으로(keepMode: 이미 열린 탭이면 보던 탭 모드 그대로) */
-  openViewer: (v: Viewer, opts?: { keepMode?: boolean }) => void;
+  /** 파일 보기 열기. 파일 편집이 켜져 있으면 가운데 칸 탭으로(keepMode: 이미 열린 탭이면 보던 탭 모드 그대로,
+   *  exact: md 도 미리보기로 바꾸지 않고 준 모드 그대로 — 방금 만든 빈 파일은 바로 쓰게) */
+  openViewer: (v: Viewer, opts?: { keepMode?: boolean; exact?: boolean }) => void;
   /** 탭 안에서 모드를 바꾸거나(v) 닫는다(null) */
   setTabViewer: (id: string, v: Viewer) => void;
   setActiveTab: (id: string | null) => void;
   /** 탭 여러 개를 한 번에 닫는다(저장 안 한 수정 확인은 부르는 쪽에서) */
   closeTabs: (ids: string[]) => void;
+  /** 트리에서 이름을 바꾼(to) 파일·폴더를 열어 둔 보기·탭이 새 경로를 따라가게 한다. to 가 null(휴지통)이면 닫는다 */
+  followPaths: (worktree: string, from: string, to: string | null) => void;
   toast: (kind: Toast["kind"], text: string) => void;
   dismissToast: (id: number) => void;
   ask: (req: Omit<ConfirmRequest, "resolve" | "altLabel">) => Promise<boolean>;
@@ -333,15 +338,16 @@ export const useStore = create<State>((set, get) => ({
 
   openViewer: (v, opts) => {
     const wt = get().focus?.worktreePath;
+    const first = (x: NonNullable<Viewer>) => (opts?.exact ? x : mdFirst(x));
     if (!v || !wt || !filesInMiddle()) {
       // 보던 파일의 모드 바꾸기('내용' 탭 등)는 그대로, 새로 여는 md 만 미리보기로
       const cur = get().viewer;
-      return set({ viewer: v && !(cur && cur.kind === v.kind && cur.rel === v.rel) ? mdFirst(v) : v });
+      return set({ viewer: v && !(cur && cur.kind === v.kind && cur.rel === v.rel) ? first(v) : v });
     }
     const id = fileTabId(wt, v);
     const tabs = get().fileTabs;
     const has = tabs.find((x) => x.id === id);
-    const fileTabs = has ? (opts?.keepMode ? tabs : tabs.map((x) => (x.id === id ? { ...x, viewer: v } : x))) : [...tabs, { id, worktree: wt, viewer: mdFirst(v) }];
+    const fileTabs = has ? (opts?.keepMode ? tabs : tabs.map((x) => (x.id === id ? { ...x, viewer: v } : x))) : [...tabs, { id, worktree: wt, viewer: first(v) }];
     set({ fileTabs, activeTab: id, viewer: null });
   },
   setTabViewer: (id, v) => {
@@ -360,6 +366,7 @@ export const useStore = create<State>((set, get) => ({
     if (!active || !ids.includes(active)) return set({ fileTabs: rest });
     set({ fileTabs: rest, activeTab: nextTab(get(), ids) });
   },
+  followPaths: (worktree, from, to) => set(pathsMoved(get(), worktree, from, to)),
 
   toast: (kind, text) => {
     const id = toastSeq++;
@@ -540,6 +547,39 @@ function nextTab(s: State, closing: string[]): string | null {
   const repo = repoKeyOf(s, tabs[i].worktree);
   const ok = (x: FileTab) => !closing.includes(x.id) && repoKeyOf(s, x.worktree) === repo;
   return (tabs.slice(i + 1).find(ok) ?? [...tabs.slice(0, i)].reverse().find(ok))?.id ?? null;
+}
+
+/**
+ * from(파일 또는 폴더)이 to 로 이름이 바뀌었을 때(to = null 이면 지워졌을 때) 그 안을 열어 둔 보기·탭을 고친 상태 조각.
+ * 오른쪽 아래 보기와 가운데 탭은 새 경로로 바꾸고(탭 id 도 경로로 만들어지므로 새로), 지웠으면 닫는다.
+ * 커밋의 파일 보기(commit-file)는 그때의 경로라 그대로 둔다.
+ */
+export function pathsMoved(s: State, worktree: string, from: string, to: string | null): Partial<State> {
+  const hit = (rel: string) => movedRel(rel, from, to ?? from);
+  const patch: Partial<State> = {};
+  const v = s.viewer;
+  if (v?.kind === "file" && s.focus?.worktreePath === worktree && hit(v.rel) !== null) patch.viewer = to === null ? null : { ...v, rel: hit(v.rel)! };
+  const closing: string[] = [];
+  const renamed = new Map<string, string>();
+  const tabs = s.fileTabs.flatMap((x): FileTab[] => {
+    const n = x.worktree === worktree && x.viewer.kind === "file" ? hit(x.viewer.rel) : null;
+    if (n === null) return [x];
+    if (to === null) {
+      closing.push(x.id);
+      return [];
+    }
+    const viewer = { ...x.viewer, rel: n };
+    const id = fileTabId(worktree, viewer);
+    renamed.set(x.id, id);
+    return [{ ...x, id, viewer }];
+  });
+  if (!closing.length && !renamed.size) return patch;
+  // 새 경로의 탭이 이미 있었으면 하나만 남긴다
+  patch.fileTabs = tabs.filter((x, i) => tabs.findIndex((y) => y.id === x.id) === i);
+  const map = (id: string | null) => (id === null ? null : closing.includes(id) ? null : (renamed.get(id) ?? id));
+  patch.activeTab = s.activeTab && closing.includes(s.activeTab) ? nextTab(s, closing) : map(s.activeTab);
+  patch.tabMemory = Object.fromEntries(Object.entries(s.tabMemory).map(([k, id]) => [k, map(id)]));
+  return patch;
 }
 
 /** 지금 저장소에서 연 가운데 파일 탭들 */

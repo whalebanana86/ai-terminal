@@ -1,5 +1,5 @@
-//! 파일 탐색기: 워크트리 안의 실제 파일만 다룬다. 쓰기는 '파일 편집' 기능을 켰을 때의 save_file 과
-//! 트리에 끌어다 놓을 때의 복사·이동(copy_into·move_into)뿐이다.
+//! 파일 탐색기: 워크트리 안의 실제 파일만 다룬다. 쓰기는 '파일 편집' 기능을 켰을 때의 save_file,
+//! 트리에 끌어다 놓을 때의 복사·이동(copy_into·move_into), 트리 오른쪽 클릭의 만들기·이름 바꾸기·휴지통뿐이다.
 
 use anyhow::{bail, Result};
 use serde::Serialize;
@@ -595,6 +595,135 @@ pub fn move_into(worktree: &Path, dest_rel: &str, rels: &[String]) -> Result<Tra
     Ok(out)
 }
 
+// ───────────────────────── 만들기·이름 바꾸기·휴지통(트리 오른쪽 클릭) ─────────────────────────
+//
+// 새 이름은 한 칸(폴더 구분 / 없음)만 받고, 같은 이름이 있으면 덮어쓰지 않는다.
+// 지우기는 맥 휴지통으로 옮겨 Finder 에서 되살릴 수 있게 한다. 링크는 링크만 지운다(가리키는 곳은 건드리지 않는다).
+
+/// 맥 파일 이름 한 칸의 바이트 상한
+const MAX_NAME_BYTES: usize = 255;
+
+/// 새로 쓸 이름 검사. 화면(treeOps.ts 의 nameProblem)도 같은 규칙으로 먼저 알려 준다.
+pub fn check_name(name: &str) -> Result<()> {
+    if name.is_empty() {
+        bail!(tr!("이름을 입력하세요", "Enter a name"));
+    }
+    if name.trim() != name {
+        bail!(tr!("이름 앞뒤에 빈칸을 둘 수 없어요", "A name can't start or end with a space"));
+    }
+    if name == "." || name == ".." {
+        bail!(tr!("쓸 수 없는 이름이에요: {name}", "That name can't be used: {name}"));
+    }
+    if name.contains('/') {
+        bail!(tr!("이름에 / 는 쓸 수 없어요", "A name can't contain /"));
+    }
+    // 줄바꿈 같은 제어 문자: 경로를 터미널에 붙일 때 Enter 로 먹힐 수 있다(fileDrop.ts hasControlChar 와 같은 범위)
+    if name.chars().any(|c| (c as u32) < 0x20 || (0x7f..=0x9f).contains(&(c as u32))) {
+        bail!(tr!("이름에 줄바꿈 같은 제어 문자는 쓸 수 없어요", "A name can't contain control characters such as line breaks"));
+    }
+    if name.eq_ignore_ascii_case(".git") {
+        bail!(tr!(".git 이라는 이름은 쓸 수 없어요", "The name .git can't be used"));
+    }
+    if name.len() > MAX_NAME_BYTES {
+        bail!(tr!("이름이 너무 길어요(255바이트까지)", "The name is too long (255 bytes at most)"));
+    }
+    Ok(())
+}
+
+/// rel 이 든 폴더(워크트리 안의 실제 폴더, .git 아님)와 마지막 이름. 마지막 이름은 링크여도 풀지 않는다(링크 자체를 다룬다).
+fn split_inside(worktree: &Path, root: &Path, rel: &str) -> Result<(PathBuf, String)> {
+    let rel = rel.trim_end_matches('/');
+    crate::git::safe_rel_path(rel)?;
+    if has_git_component(Path::new(rel)) {
+        bail!(tr!(".git 안은 앱에서 바꿀 수 없습니다", "Nothing inside .git can be changed from the app"));
+    }
+    let (parent_rel, name) = match rel.rfind('/') {
+        Some(i) => (&rel[..i], &rel[i + 1..]),
+        None => ("", rel),
+    };
+    // "a/." 처럼 마지막 칸이 폴더 자신을 가리키면 그 폴더를 바꾸게 된다
+    if name.is_empty() || name == "." {
+        bail!(tr!("올바르지 않은 경로: {rel}", "Invalid path: {rel}"));
+    }
+    let parent = resolve_inside(worktree, parent_rel)?;
+    refuse_real_git(root, &parent)?;
+    Ok((parent, name.to_string()))
+}
+
+fn same_name_error(e: std::io::Error) -> anyhow::Error {
+    if e.kind() == std::io::ErrorKind::AlreadyExists {
+        anyhow::anyhow!(tr!("같은 이름이 이미 있습니다", "An item with the same name already exists"))
+    } else {
+        e.into()
+    }
+}
+
+/// dir_rel 폴더("" = 워크트리 맨 위) 안에 빈 파일이나 폴더를 만든다. 새 상대 경로를 돌려준다.
+pub fn create_entry(worktree: &Path, dir_rel: &str, name: &str, is_dir: bool) -> Result<String> {
+    check_name(name)?;
+    let (root, dir) = drop_dir(worktree, dir_rel)?;
+    let target = dir.join(name);
+    if is_dir {
+        // 이미 있으면(링크 포함) 실패한다
+        std::fs::create_dir(&target).map_err(same_name_error)?;
+    } else {
+        // create_new = O_EXCL: 있는 파일·링크(가리키는 곳이 없어도)를 덮어쓰거나 따라가지 않는다
+        std::fs::OpenOptions::new().write(true).create_new(true).open(&target).map_err(same_name_error)?;
+    }
+    Ok(rel_of(&root, &target))
+}
+
+/// 같은 폴더 안에서 이름만 바꾼다. 새 상대 경로를 돌려준다.
+pub fn rename_entry(worktree: &Path, rel: &str, new_name: &str) -> Result<String> {
+    check_name(new_name)?;
+    let root = std::fs::canonicalize(worktree)?;
+    let (parent, name) = split_inside(worktree, &root, rel)?;
+    let src = parent.join(&name);
+    std::fs::symlink_metadata(&src).map_err(|_| anyhow::anyhow!(tr!("원본이 없습니다", "The source no longer exists")))?;
+    let target = parent.join(new_name);
+    if name == new_name {
+        return Ok(rel_of(&root, &target));
+    }
+    // 대소문자만 바꾸는 것(a.ts → A.ts)은 대소문자를 가리지 않는 맥 디스크(APFS·HFS+)에서도 RENAME_EXCL 이 같은 항목으로 보고 바꿔 준다
+    // (2026-11-05 두 디스크에서 시험으로 확인). 하드 링크 둘처럼 다른 이름이 있으면 거부된다.
+    rename_no_replace(&src, &target).map_err(same_name_error)?;
+    Ok(rel_of(&root, &target))
+}
+
+/// 휴지통으로 옮긴다. 링크는 링크 자체만 지운다.
+pub fn trash_entry(worktree: &Path, rel: &str) -> Result<()> {
+    trash_with(worktree, rel, move_to_trash)
+}
+
+/// trash: 실제로 옮기는 함수(시험에서는 가짜 휴지통 폴더로 — 시험마다 사용자 휴지통이 차지 않게)
+fn trash_with(worktree: &Path, rel: &str, trash: impl FnOnce(&Path) -> Result<()>) -> Result<()> {
+    let root = std::fs::canonicalize(worktree)?;
+    let (parent, name) = split_inside(worktree, &root, rel)?;
+    let src = parent.join(&name);
+    let meta = std::fs::symlink_metadata(&src).map_err(|_| anyhow::anyhow!(tr!("원본이 없습니다", "The source no longer exists")))?;
+    if meta.file_type().is_symlink() {
+        // 휴지통 API 가 링크를 따라가 가리키는 것(워크트리 밖일 수도)을 옮기지 않게 링크만 지운다
+        std::fs::remove_file(&src)?;
+        return Ok(());
+    }
+    trash(&src)
+}
+
+#[cfg(target_os = "macos")]
+fn move_to_trash(p: &Path) -> Result<()> {
+    use objc2_foundation::{NSFileManager, NSString, NSURL};
+    let path = p.to_str().ok_or_else(|| anyhow::anyhow!(tr!("이름을 읽을 수 없는 파일이에요", "The file name can't be read")))?;
+    let url = NSURL::fileURLWithPath(&NSString::from_str(path));
+    NSFileManager::defaultManager()
+        .trashItemAtURL_resultingItemURL_error(&url, None)
+        .map_err(|e| anyhow::anyhow!(tr!("휴지통으로 옮기지 못했어요: {}", "Couldn't move it to the Trash: {}", e.localizedDescription())))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn move_to_trash(_p: &Path) -> Result<()> {
+    bail!(tr!("휴지통 옮기기는 맥에서만 돼요", "Moving to the Trash only works on macOS"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -899,5 +1028,155 @@ mod transfer_tests {
         let r = move_into(w, "docs", &["out/o.txt".into()]).unwrap();
         assert_eq!(r.failed.len(), 1);
         assert!(outside.path().join("o.txt").exists());
+    }
+
+    #[test]
+    fn names_are_checked() {
+        for ok in ["a.ts", "새 파일.md", ".env", "a:b", "x".repeat(255).as_str(), "가".repeat(85).as_str()] {
+            assert!(check_name(ok).is_ok(), "{ok}");
+        }
+        let long = "가".repeat(86); // 3바이트 × 86 = 258
+        for bad in ["", " a", "a ", ".", "..", "a/b", "/", "a\nb", "a\rb", "a\u{1b}b", "a\u{85}b", ".git", ".GIT", long.as_str()] {
+            assert!(check_name(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn creates_files_and_folders_without_overwriting() {
+        let wd = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let w = wd.path();
+        std::fs::create_dir_all(w.join("src")).unwrap();
+        std::fs::create_dir_all(w.join(".git")).unwrap();
+        std::fs::write(w.join("src/a.ts"), "원래").unwrap();
+        std::os::unix::fs::symlink(outside.path(), w.join("out")).unwrap();
+        std::os::unix::fs::symlink(outside.path().join("nowhere.txt"), w.join("src/dangling")).unwrap();
+
+        assert_eq!(create_entry(w, "", "새 파일.md", false).unwrap(), "새 파일.md");
+        assert_eq!(std::fs::read(w.join("새 파일.md")).unwrap(), b"", "빈 파일");
+        assert_eq!(create_entry(w, "src", "ui", true).unwrap(), "src/ui");
+        assert!(w.join("src/ui").is_dir());
+        assert_eq!(create_entry(w, "src/ui", "b.ts", false).unwrap(), "src/ui/b.ts");
+
+        // 같은 이름(대소문자만 달라도, 맥 기본 디스크)·끊긴 링크 자리에는 만들지 않는다
+        assert!(create_entry(w, "src", "a.ts", false).is_err());
+        assert!(create_entry(w, "src", "a.ts", true).is_err());
+        assert_eq!(std::fs::read_to_string(w.join("src/a.ts")).unwrap(), "원래", "덮어쓰지 않는다");
+        assert!(create_entry(w, "src", "ui", true).is_err());
+        assert!(create_entry(w, "src", "dangling", false).is_err());
+        assert!(!outside.path().join("nowhere.txt").exists(), "링크를 따라가 밖에 만들지 않는다");
+
+        // .git·밖·파일 안·없는 폴더·나쁜 이름
+        assert!(create_entry(w, ".git", "x", false).is_err());
+        assert!(create_entry(w, "", ".git", true).is_err());
+        assert!(create_entry(w, "out", "x.txt", false).is_err());
+        assert!(create_entry(w, "../", "x.txt", false).is_err());
+        assert!(create_entry(w, "src/a.ts", "x.txt", false).is_err());
+        assert!(create_entry(w, "missing", "x.txt", false).is_err());
+        assert!(create_entry(w, "", "../x.txt", false).is_err());
+        assert!(create_entry(w, "", "a/b.txt", false).is_err());
+        assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn renames_in_place() {
+        let wd = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let w = wd.path();
+        std::fs::create_dir_all(w.join("src/ui")).unwrap();
+        std::fs::create_dir_all(w.join(".git")).unwrap();
+        std::fs::write(w.join(".git/config"), "x").unwrap();
+        std::fs::write(w.join("src/a.ts"), "a").unwrap();
+        std::fs::write(w.join("src/b.ts"), "b").unwrap();
+        std::fs::write(w.join("src/ui/c.ts"), "c").unwrap();
+        std::fs::write(outside.path().join("o.txt"), "o").unwrap();
+        std::os::unix::fs::symlink(outside.path(), w.join("out")).unwrap();
+        std::os::unix::fs::symlink("a.ts", w.join("src/alink")).unwrap();
+
+        assert_eq!(rename_entry(w, "src/a.ts", "app.ts").unwrap(), "src/app.ts");
+        assert!(!w.join("src/a.ts").exists());
+        assert_eq!(std::fs::read_to_string(w.join("src/app.ts")).unwrap(), "a");
+        // 폴더: 안의 것도 함께
+        assert_eq!(rename_entry(w, "src/ui/", "view").unwrap(), "src/view");
+        assert_eq!(std::fs::read_to_string(w.join("src/view/c.ts")).unwrap(), "c");
+        // 링크는 링크 이름만(가리키는 글은 그대로)
+        assert_eq!(rename_entry(w, "src/alink", "blink").unwrap(), "src/blink");
+        assert_eq!(std::fs::read_link(w.join("src/blink")).unwrap(), Path::new("a.ts"));
+        // 그대로인 이름은 아무것도 안 한다
+        assert_eq!(rename_entry(w, "src/b.ts", "b.ts").unwrap(), "src/b.ts");
+
+        // 같은 이름은 덮어쓰지 않는다
+        let e = rename_entry(w, "src/app.ts", "b.ts").unwrap_err();
+        assert!(format!("{e:#}").contains("같은 이름"), "{e:#}");
+        assert_eq!(std::fs::read_to_string(w.join("src/app.ts")).unwrap(), "a");
+        assert_eq!(std::fs::read_to_string(w.join("src/b.ts")).unwrap(), "b");
+        assert!(rename_entry(w, "src/view", "b.ts").is_err());
+
+        // 대소문자만 바꾸기(대소문자를 가리지 않는 디스크에서도)
+        assert_eq!(rename_entry(w, "src/b.ts", "B.ts").unwrap(), "src/B.ts");
+        let names: Vec<String> = std::fs::read_dir(w.join("src")).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        assert!(names.contains(&"B.ts".to_string()) && !names.contains(&"b.ts".to_string()), "{names:?}");
+        assert_eq!(std::fs::read_to_string(w.join("src/B.ts")).unwrap(), "b");
+        // 하드 링크 둘은 같은 inode 라도 다른 항목: 덮어쓰지 않는다
+        std::fs::hard_link(w.join("src/B.ts"), w.join("src/hard.ts")).unwrap();
+        assert!(rename_entry(w, "src/hard.ts", "B.ts").is_err());
+        assert!(w.join("src/hard.ts").exists() && w.join("src/B.ts").exists());
+
+        // .git·밖·워크트리 자체·없는 것·나쁜 이름
+        assert!(rename_entry(w, ".git", "git2").is_err());
+        assert!(rename_entry(w, ".git/config", "c").is_err());
+        assert!(rename_entry(w, "src/B.ts", ".git").is_err());
+        assert!(rename_entry(w, "src/B.ts", "../B.ts").is_err());
+        assert!(rename_entry(w, "src/B.ts", "x/B.ts").is_err());
+        assert!(rename_entry(w, "out/o.txt", "p.txt").is_err());
+        assert!(rename_entry(w, "", "x").is_err());
+        assert!(rename_entry(w, ".", "x").is_err());
+        assert!(rename_entry(w, "src/.", "x").is_err());
+        assert!(rename_entry(w, "src/none.ts", "x.ts").is_err());
+        assert!(w.join(".git/config").exists() && outside.path().join("o.txt").exists() && w.join("src").is_dir());
+    }
+
+    #[test]
+    fn trash_moves_items_and_unlinks_links() {
+        let wd = tempfile::tempdir().unwrap();
+        let bin = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let w = wd.path();
+        std::fs::create_dir_all(w.join("src/ui")).unwrap();
+        std::fs::create_dir_all(w.join(".git")).unwrap();
+        std::fs::write(w.join(".git/config"), "x").unwrap();
+        std::fs::write(w.join("src/a.ts"), "a").unwrap();
+        std::fs::write(w.join("src/ui/c.ts"), "c").unwrap();
+        std::fs::write(outside.path().join("o.txt"), "o").unwrap();
+        std::os::unix::fs::symlink(outside.path().join("o.txt"), w.join("olink")).unwrap();
+        std::os::unix::fs::symlink(outside.path(), w.join("out")).unwrap();
+        let calls = std::cell::Cell::new(0);
+        let fake = |p: &Path| -> Result<()> {
+            calls.set(calls.get() + 1);
+            std::fs::rename(p, bin.path().join(p.file_name().unwrap()))?;
+            Ok(())
+        };
+
+        trash_with(w, "src/a.ts", fake).unwrap();
+        assert!(!w.join("src/a.ts").exists());
+        assert_eq!(std::fs::read_to_string(bin.path().join("a.ts")).unwrap(), "a", "휴지통에 그대로");
+        trash_with(w, "src/ui/", fake).unwrap();
+        assert_eq!(std::fs::read_to_string(bin.path().join("ui/c.ts")).unwrap(), "c", "폴더는 안까지");
+        assert_eq!(calls.get(), 2);
+
+        // 링크는 링크만 지우고 가리키는 것은 그대로(휴지통 함수를 부르지 않는다)
+        trash_with(w, "olink", fake).unwrap();
+        trash_with(w, "out", fake).unwrap();
+        assert_eq!(calls.get(), 2);
+        assert!(std::fs::symlink_metadata(w.join("olink")).is_err() && std::fs::symlink_metadata(w.join("out")).is_err());
+        assert_eq!(std::fs::read_to_string(outside.path().join("o.txt")).unwrap(), "o");
+
+        // .git·밖·워크트리 자체·없는 것
+        std::os::unix::fs::symlink(outside.path(), w.join("out2")).unwrap();
+        for bad in [".git", ".git/config", "src/.GIT", "out2/o.txt", "", ".", "src/.", "../x", "src/none.ts"] {
+            assert!(trash_with(w, bad, fake).is_err(), "{bad:?}");
+        }
+        assert_eq!(calls.get(), 2);
+        assert!(w.join(".git/config").exists() && w.join("src").is_dir() && outside.path().join("o.txt").exists());
     }
 }

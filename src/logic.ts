@@ -151,6 +151,18 @@ export function baseName(p: string): string {
   return parts[parts.length - 1] || p;
 }
 
+/** from(파일 또는 폴더)을 to 로 옮겼을 때 rel 의 새 경로. from 도 그 안도 아니면 null ("src" 는 "src2/a" 를 품지 않는다) */
+export function movedRel(rel: string, from: string, to: string): string | null {
+  if (rel === from) return to;
+  return rel.startsWith(`${from}/`) ? to + rel.slice(from.length) : null;
+}
+
+/** 이름을 바꿀 때 처음 골라 둘 곳(확장자 앞까지). 폴더·확장자 없는 이름·점으로 시작하는 이름은 전부 */
+export function stemEnd(name: string, isDir: boolean): number {
+  const i = name.lastIndexOf(".");
+  return i > 0 && !isDir ? i : name.length;
+}
+
 /** 경로 → 변경 종류. 폴더는 하위에 변경이 있으면 "modified" 로 표시한다. */
 export function decorationMap(entries: StatusEntry[]): { files: Map<string, ChangeKind>; dirs: Map<string, number> } {
   const files = new Map<string, ChangeKind>();

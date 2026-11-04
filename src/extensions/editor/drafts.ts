@@ -3,6 +3,7 @@ import { useSyncExternalStore } from "react";
 import type { Text } from "@codemirror/state";
 import { api, errorText } from "../../api";
 import { t } from "../../i18n";
+import { movedRel } from "../../logic";
 
 export interface Draft {
   /** 고친 내용(CodeMirror 문서, 바꿀 때마다 새 값이라 그대로 들고 있어도 된다) */
@@ -47,6 +48,24 @@ export async function saveDraft(worktree: string, rel: string): Promise<string |
   } catch (e) {
     return errorText(e);
   }
+}
+
+/** rel(파일 또는 폴더)과 그 안에서 저장하지 않은 수정이 남은 파일들 */
+export function draftRelsUnder(worktree: string, rel: string): string[] {
+  const head = `${worktree}\u0000`;
+  return [...drafts.keys()].filter((k) => k.startsWith(head) && movedRel(k.slice(head.length), rel, rel) !== null).map((k) => k.slice(head.length));
+}
+
+/** 트리에서 이름을 바꾼 파일·폴더의 수정을 새 경로로 옮긴다(내용·지문은 그대로라 이어서 고치고 저장할 수 있다) */
+export function moveDrafts(worktree: string, from: string, to: string) {
+  const moved = draftRelsUnder(worktree, from);
+  if (!moved.length) return;
+  for (const rel of moved) {
+    const d = drafts.get(draftKey(worktree, rel))!;
+    drafts.delete(draftKey(worktree, rel));
+    drafts.set(draftKey(worktree, movedRel(rel, from, to)!), d);
+  }
+  bump();
 }
 
 /** 저장하지 않은 편집이 남아 있는 파일 수 */
