@@ -124,9 +124,10 @@ export function extractErrors(out, max = 40) {
   return picked.slice(0, max);
 }
 
-/** 같은 오류인지 비교할 때 시간·임시 경로·주소처럼 매번 바뀌는 부분은 뺀다 */
+/** 같은 오류인지 비교할 때 시간·임시 경로·주소·스레드 번호처럼 매번 바뀌는 부분은 뺀다 */
 export function normalize(line) {
   return stripAnsi(line)
+    .replace(/(thread '[^']*') \(\d+\)/g, "$1") // Rust panic 줄의 스레드 번호
     .replace(/\b\d+(\.\d+)?(ms|s)\b/g, "#t")
     .replace(/0x[0-9a-f]+/gi, "0x#")
     .replace(/(\/private)?\/(var\/folders|tmp)\/\S+/g, "<tmp>")
@@ -134,16 +135,16 @@ export function normalize(line) {
     .trim();
 }
 
-/** 실패한 단계 id 와 오류 줄로 만든 오류 지문 */
+/** 실패한 단계 id 와 오류 줄로 만든 오류 지문. cargo·vitest 는 병렬이라 줄 순서가 바뀌므로 정렬해서 비교한다. */
 export function makeSignature(steps) {
   const failed = steps.filter((s) => !s.ok && !s.skipped);
-  const text = failed.map((s) => `${s.id}\n${(s.errors ?? []).map(normalize).join("\n")}`).join("\n\n");
+  const text = failed.map((s) => `${s.id}\n${(s.errors ?? []).map(normalize).sort().join("\n")}`).join("\n\n");
   return createHash("sha256").update(text).digest("hex").slice(0, 12);
 }
 
-/** clippy --message-format=short 출력의 경고(파일:줄:칸 기준, lib 와 lib test 중복은 하나로) */
+/** clippy --message-format=short 출력의 경고(파일:줄:칸 기준, lib 와 lib test 중복은 하나로, 실행마다 순서가 달라 정렬) */
 export function clippyWarnings(out) {
-  return [...new Set(stripAnsi(out).split("\n").filter((l) => /^\S+:\d+:\d+: warning: /.test(l)))];
+  return [...new Set(stripAnsi(out).split("\n").filter((l) => /^\S+:\d+:\d+: warning: /.test(l)))].sort();
 }
 
 // ───────── 루프 판단 ─────────
@@ -374,7 +375,7 @@ export async function runAttempt({ root, taskId, note, cfg, steps, log = (s) => 
   }
   for (const s of results.filter((r) => !r.ok && !r.skipped)) {
     log(`\n[${s.name}]`);
-    (s.errors ?? []).slice(0, 15).forEach((e) => log(`  ${e}`));
+    (s.errors ?? []).forEach((e) => log(`  ${e}`)); // 기록한 줄은 모두(오류 40줄·경고 31줄까지로 이미 잘림)
   }
   log(`\n전체 출력: ${rel(logFile)} · 시도 기록: ${rel(file)}`);
   if (v.result === "stopped") {
