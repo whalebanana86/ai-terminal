@@ -1,0 +1,14 @@
+{
+  "maxAttempts": 5,
+  "timeLimitMinutes": 60,
+  "stepTimeoutMinutes": 20,
+  "sameErrorLimit": 2,
+  "clippyMaxWarnings": 15,
+  "설명": {
+    "maxAttempts": "한 루프에서 검증을 돌릴 수 있는 최대 횟수. 루프는 마지막 통과 또는 --reset 뒤에 새로 시작한다.",
+    "timeLimitMinutes": "루프의 첫 시도부터 잰 시간 제한(분). 넘으면 멈춘다.",
+    "stepTimeoutMinutes": "검증 단계 하나(빌드·테스트 등)의 시간 제한(분).",
+    "sameErrorLimit": "같은 오류가 이 횟수만큼 연달아 나오면 멈춘다.",
+    "clippyMaxWarnings": "clippy 경고 허용 개수. 2026-11-04 기준 이미 있는 경고 수(15). 늘면 Lint 실패."
+  }
+}
