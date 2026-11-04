@@ -123,6 +123,29 @@ describe("출력 다루기", () => {
     expect(a).not.toBe(c);
   });
 
+  it("실행마다 바뀌는 Rust 스레드 번호는 지문에서 뺀다(깨뜨림 B4)", () => {
+    const sig = (tid, secs) =>
+      makeSignature([
+        {
+          id: "test-rust",
+          ok: false,
+          errors: [
+            "test editors::tests::refuses ... FAILED",
+            `thread 'editors::tests::refuses' (${tid}) panicked at src/editors.rs:82:9:`,
+            'assertion failed: open_args("../../bin/sh", f).is_ok()',
+            `test result: FAILED. 105 passed; 1 failed; 3 ignored; 0 measured; 0 filtered out; finished in ${secs}s`,
+          ],
+        },
+      ]);
+    expect(sig(80754197, "4.52")).toBe(sig(80759224, "4.08"));
+  });
+
+  it("오류 줄 순서만 다르면 같은 지문, clippy 경고는 정렬한다(깨뜨림 B5)", () => {
+    const a = ["src/b.rs:2:1: warning: y", "src/a.rs:1:1: warning: x"];
+    expect(makeSignature([{ id: "lint", ok: false, errors: a }])).toBe(makeSignature([{ id: "lint", ok: false, errors: [...a].reverse() }]));
+    expect(clippyWarnings(a.join("\n"))).toEqual(["src/a.rs:1:1: warning: x", "src/b.rs:2:1: warning: y"]);
+  });
+
   it("clippy 경고는 위치 기준으로 한 번씩 센다", () => {
     const out = "src/a.rs:1:2: warning: x\nsrc/a.rs:1:2: warning: x\nsrc/b.rs:3:4: warning: y\nwarning: `ai-terminal` (lib) generated 2 warnings\n";
     expect(clippyWarnings(out)).toHaveLength(2);
@@ -197,6 +220,14 @@ describe("시도 기록(실제 명령으로)", () => {
       if (i === 3) expect(r.record.reason).toMatch(/최대 시도 횟수\(3번\)/);
     }
     expect(codes).toEqual([1, 1, 2]);
+  });
+
+  it("기록한 오류 줄은 잘리지 않고 모두 화면에 보인다(깨뜨림 B5: 경고 16개 + 개수 줄)", async () => {
+    const root = repo();
+    const lines = Array.from({ length: 20 }, (_, i) => `error: 줄 ${i + 1}`).join("\n");
+    const shown = [];
+    await runAttempt({ root, taskId: "T-1", cfg, steps: [step("bad", 1, { stderr: lines })], log: (s) => shown.push(s) });
+    expect(shown.join("\n")).toContain("error: 줄 20");
   });
 
   it("앞 단계가 실패하면 그 단계에 기대는 단계는 건너뛴다", async () => {
