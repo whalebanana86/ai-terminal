@@ -2761,6 +2761,13 @@ li:hover .hover-only,
 .repo-tab-group .repo-tab { border:0; padding-right:6px; }
 .repo-tab-close, .repo-tab-add { display:flex; align-items:center; justify-content:center; border:0; background:transparent; color:var(--fg-dim); cursor:pointer; width:28px; height:28px; border-radius:4px; flex:none; }
 .repo-tab-close:hover, .repo-tab-add:hover { color:var(--fg); background:var(--bg-3); }
+/* 이 저장소에서 지금 AI 가 쓰이는지(repoAgents.ts). 계속 도는 움직임은 넣지 않는다(WebKit 이 쉬는 동안에도 다시 그린다).
+   확인 필요는 색만으로 갈리지 않게 마름모(적록 색약이면 주황·초록이 비슷하다) */
+.repo-tab-ai { width:7px; height:7px; border-radius:50%; flex:none; box-sizing:border-box; }
+.repo-tab-ai.ai-waiting { width:6px; height:6px; margin:0 1px; border-radius:1px; transform:rotate(45deg); background:var(--warn); }
+.repo-tab-ai.ai-busy { background:var(--ok); }
+.repo-tab-ai.ai-unknown { border:1.5px solid var(--ok); }
+.repo-tab-ai.ai-idle { border:1.5px solid var(--fg-faint); }
 .statusbar { overflow-x:auto; white-space:nowrap; }
 .subscription-usage { display:flex; align-items:center; gap:12px; margin-left:8px; padding-left:12px; border-left:1px solid var(--line); }
 .quota-provider { display:flex; align-items:center; gap:7px; }

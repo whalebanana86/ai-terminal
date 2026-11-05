@@ -180,4 +180,12 @@ export default {
   ".git 이라는 이름은 쓸 수 없어요": "The name .git can't be used",
   "이름이 너무 길어요(255바이트까지)": "The name is too long (255 bytes at most)",
   "같은 이름이 이미 있어요: {name}": "An item named {name} already exists",
+  // repoAgents.ts — 저장소 탭의 AI 표시
+  "확인 필요": "needs you",
+  "일하는 중": "working",
+  "실행 중": "running",
+  "대기 중": "idle",
+  "AI {state}": "AI {state}",
+  "확인 필요: 승인이나 질문의 답을 기다려요": "Needs you: waiting for an approval or an answer",
+  "실행 중: 일하는지 알 수 없는 에이전트(Codex 등)": "Running: an agent that doesn't report whether it's working (Codex, etc.)",
 } satisfies Record<string, string>;
