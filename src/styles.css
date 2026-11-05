@@ -895,6 +895,22 @@ button.center-tab {
   background: var(--bg-3);
   color: var(--fg);
 }
+/* 탭 끌어 옮기기(tabDrag.ts): 끄는 탭은 흐리게, 놓일 자리에 세로 막대 */
+.drag-src {
+  opacity: 0.45;
+}
+.drop-before {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.drop-after {
+  box-shadow: inset -2px 0 0 var(--accent);
+}
+body.tab-dragging,
+body.tab-dragging * {
+  cursor: grabbing !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
 .session-list {
   height: 100%;
   display: flex;

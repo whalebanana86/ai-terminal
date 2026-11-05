@@ -1,7 +1,7 @@
 // 파일 편집을 켜면 파일은 오른쪽 아래(좁음) 대신 가운데 칸 탭으로 연다.
 // 에이전트 화면(터미널)은 그대로 두고 그 위에 파일 화면을 덮어서, 탭을 오가도 터미널이 끊기거나 크기가 바뀌지 않는다.
 import { Bot, X } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ContextMenu, type MenuItem } from "../components/Overlays";
 import { dropDraft, getDraft, saveDraft, useHasDraft } from "../extensions/editor/drafts";
 import { FileIcon } from "../fileIcons";
@@ -10,6 +10,7 @@ import { baseName } from "../logic";
 import { useShallow } from "zustand/react/shallow";
 import { shownTab, useStore, visibleTabs, type FileTab } from "../store";
 import { FileViewer } from "./FilePanel";
+import { dragClass, useTabDrag, type DragView } from "../tabDrag";
 
 /**
  * 탭들을 닫는다. 저장하지 않은 수정이 있으면 저장하고 닫기 / 저장하지 않고 닫기 / 취소 를 묻는다.
@@ -52,6 +53,10 @@ export function CenterTabBar() {
   const setActive = useStore((s) => s.setActiveTab);
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const all = tabs.map((x) => x.id);
+  // 파일 탭을 끌어 순서 바꾸기('에이전트' 탭은 맨 앞에 그대로)
+  const bar = useRef<HTMLDivElement>(null);
+  const move = useStore((s) => s.moveFileTab);
+  const drag = useTabDrag(bar, move);
   const openMenu = (e: React.MouseEvent, id: string | null) => {
     e.preventDefault();
     e.stopPropagation();
@@ -72,19 +77,27 @@ export function CenterTabBar() {
     });
   };
   return (
-    <div className="center-tabs" role="tablist" aria-label={t("가운데 칸 탭")} onContextMenu={(e) => openMenu(e, null)}>
+    <div ref={bar} className="center-tabs" role="tablist" aria-label={t("가운데 칸 탭")} onContextMenu={(e) => openMenu(e, null)} onClickCapture={drag.guardClick}>
       <button role="tab" aria-selected={active === null} className={`center-tab${active === null ? " on" : ""}`} onClick={() => setActive(null)} data-tab="agent">
         <Bot size={13} aria-hidden /> <span>{t("에이전트")}</span>
       </button>
       {tabs.map((tab) => (
-        <FileTabButton key={tab.id} tab={tab} on={active === tab.id} onMenu={(e) => openMenu(e, tab.id)} />
+        <FileTabButton key={tab.id} tab={tab} on={active === tab.id} onMenu={(e) => openMenu(e, tab.id)} drag={drag.view} order={all} onDragStart={(e) => drag.start(e, tab.id)} />
       ))}
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
     </div>
   );
 }
 
-function FileTabButton({ tab, on, onMenu }: { tab: FileTab; on: boolean; onMenu: (e: React.MouseEvent) => void }) {
+function FileTabButton(props: {
+  tab: FileTab;
+  on: boolean;
+  onMenu: (e: React.MouseEvent) => void;
+  drag: DragView | null;
+  order: string[];
+  onDragStart: (e: React.MouseEvent) => void;
+}) {
+  const { tab, on, onMenu } = props;
   const setActive = useStore((s) => s.setActiveTab);
   const v = tab.viewer;
   const dirty = useHasDraft(tab.worktree, v.rel) && v.kind === "file";
@@ -95,7 +108,9 @@ function FileTabButton({ tab, on, onMenu }: { tab: FileTab; on: boolean; onMenu:
       role="tab"
       aria-selected={on}
       tabIndex={0}
-      className={`center-tab${on ? " on" : ""}`}
+      className={`center-tab${on ? " on" : ""}${dragClass(props.drag, props.order, tab.id)}`}
+      data-drag-id={tab.id}
+      onMouseDown={props.onDragStart}
       onClick={() => setActive(tab.id)}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setActive(tab.id)}
       onAuxClick={(e) => e.button === 1 && void close()}
