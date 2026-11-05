@@ -5,6 +5,7 @@ import { api, errorText, type AppInfo, type ExecInfo, type LinkedSession, type L
 import { mergeSessions, movedRel } from "./logic";
 import { useExtensions } from "./extensions";
 import { isMarkdown } from "./fileIcons";
+import { moveNear } from "./tabDrag";
 
 /** 세 패널이 바라보는 워크트리. 조회 전용이며 절대 체크아웃을 일으키지 않는다. */
 export interface Focus {
@@ -89,6 +90,8 @@ interface State {
   repoTabSessions: Record<string, string>;
   openRepoTab: (id: string) => void;
   closeRepoTab: (id: string) => void;
+  /** 저장소 탭을 끌어 target 앞(after 면 뒤)으로. 순서는 저장해 다시 켜도 그대로 */
+  moveRepoTab: (id: string, target: string, after: boolean) => void;
   rawSessions: LinkedSession[];
   sessions: LinkedSession[];
   execs: ExecInfo[];
@@ -136,6 +139,8 @@ interface State {
   setActiveTab: (id: string | null) => void;
   /** 탭 여러 개를 한 번에 닫는다(저장 안 한 수정 확인은 부르는 쪽에서) */
   closeTabs: (ids: string[]) => void;
+  /** 가운데 파일 탭을 끌어 target 앞(after 면 뒤)으로. 안 보이는 다른 저장소 탭끼리의 순서는 그대로 */
+  moveFileTab: (id: string, target: string, after: boolean) => void;
   /** 트리에서 이름을 바꾼(to) 파일·폴더를 열어 둔 보기·탭이 새 경로를 따라가게 한다. to 가 null(휴지통)이면 닫는다 */
   followPaths: (worktree: string, from: string, to: string | null) => void;
   toast: (kind: Toast["kind"], text: string) => void;
@@ -336,6 +341,13 @@ export const useStore = create<State>((set, get) => ({
     persistTabs();
   },
 
+  moveRepoTab: (id, target, after) => {
+    const ids = moveNear(get().openRepoIds, (x) => x, id, target, after);
+    if (ids === get().openRepoIds) return;
+    set({ openRepoIds: ids });
+    persistTabs();
+  },
+
   openViewer: (v, opts) => {
     const wt = get().focus?.worktreePath;
     const first = (x: NonNullable<Viewer>) => (opts?.exact ? x : mdFirst(x));
@@ -367,6 +379,10 @@ export const useStore = create<State>((set, get) => ({
     set({ fileTabs: rest, activeTab: nextTab(get(), ids) });
   },
   followPaths: (worktree, from, to) => set(pathsMoved(get(), worktree, from, to)),
+  moveFileTab: (id, target, after) => {
+    const fileTabs = moveNear(get().fileTabs, (x) => x.id, id, target, after);
+    if (fileTabs !== get().fileTabs) set({ fileTabs });
+  },
 
   toast: (kind, text) => {
     const id = toastSeq++;

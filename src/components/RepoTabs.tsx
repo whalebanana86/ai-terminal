@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { t } from "../i18n";
 import { openRepository } from "../openRepository";
 import { useStore } from "../store";
+import { dragClass, useTabDrag } from "../tabDrag";
 
 export function RepoTabs() {
   const repos = useStore((s) => s.repos);
@@ -10,18 +11,23 @@ export function RepoTabs() {
   const path = useStore((s) => s.focus?.worktreePath);
   const select = useStore((s) => s.openRepoTab);
   const close = useStore((s) => s.closeRepoTab);
+  const move = useStore((s) => s.moveRepoTab);
   const nav = useRef<HTMLElement>(null);
+  // 탭을 끌어 순서 바꾸기(누르기만 하면 그대로 고르기)
+  const drag = useTabDrag(nav, move);
   const active = repos.find((r) => r.worktrees.some((w) => w.path === path));
   const opened = ids.flatMap((id) => repos.filter((r) => r.id === id));
+  const order = opened.map((r) => r.id);
   useEffect(() => { nav.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" }); }, [active?.id]);
   const closeTab = (id: string) => {
     close(id);
     requestAnimationFrame(() => (nav.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]') ?? nav.current?.querySelector<HTMLButtonElement>('.repo-tab-add'))?.focus());
   };
-  return <nav ref={nav} className="repo-tabs" role="tablist" aria-label={t("저장소 탭")}>
+  return <nav ref={nav} className="repo-tabs" role="tablist" aria-label={t("저장소 탭")} onClickCapture={drag.guardClick}>
     {opened.map((repo) => {
       const selected = active?.id === repo.id;
-      return <div key={repo.id} className={`repo-tab-group${selected ? " active" : ""}`}>
+      return <div key={repo.id} className={`repo-tab-group${selected ? " active" : ""}${dragClass(drag.view, order, repo.id)}`}
+        data-drag-id={repo.id} onMouseDown={(e) => drag.start(e, repo.id)}>
         <button type="button" role="tab" className="repo-tab" aria-selected={selected}
           tabIndex={selected || !active ? 0 : -1} title={repo.path} data-repo-id={repo.id}
           disabled={!repo.worktrees.some((w) => w.exists && !w.bare)} onClick={() => select(repo.id)}
