@@ -4,5 +4,5 @@
 
 - 현재 작업: 없음
 - 상태: -
-- 다음 행동: 새 요청이 오면 `.agent/TASK_TEMPLATE.md` 를 본떠 `.agent/tasks/TASK-006.md` 를 만든다
-- 마지막 완료 작업: TASK-005 코드행방 0.15.0 릴리즈 (2026-11-05, `archive/TASK-005.md`)
+- 다음 행동: 새 요청이 오면 `.agent/tasks/TASK-009.md` 를 만든다 (TASK-006·007 은 docs/system-map 브랜치 쪽 stash 에 있음)
+- 마지막 완료 작업: TASK-008 저장소 탭에 지금 AI 가 쓰이는지 표시 (2026-11-05, `archive/TASK-008.md`)
