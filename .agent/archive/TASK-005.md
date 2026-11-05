@@ -1,6 +1,6 @@
 # TASK-005: 코드행방 0.15.0 릴리즈
 
-- 상태: IN_PROGRESS
+- 상태: COMPLETED
 - 만든 날: 2026-11-05
 - 브랜치: chore/release-0.15.0
 
@@ -22,10 +22,10 @@
 
 ## 완료 조건 (Acceptance Criteria)
 
-- [ ] 버전 넷이 0.15.0, 노트 작성
-- [ ] `./scripts/auto-fix-loop.sh` 통과
-- [ ] main 푸시(원격 main = 로컬 main), 그 뒤 태그 v0.15.0 푸시(원격 태그 확인)
-- [ ] 릴리즈 게시 확인:
+- [x] 버전 넷이 0.15.0, 노트 작성
+- [x] `./scripts/auto-fix-loop.sh` 통과
+- [x] main 푸시(원격 main = 로컬 main), 그 뒤 태그 v0.15.0 푸시(원격 태그 확인)
+- [x] 릴리즈 게시 확인:
   - DMG 체크섬
   - latest.json 0.15.0·두 플랫폼
   - 앱 버전 0.15.0
@@ -40,5 +40,18 @@
 3. scratchpad `wait_release.sh 0.15.0` 로 게시 확인.
 
 ## 진행 기록
+
+- 2026-11-05 버전 넷 0.15.0, 노트 `docs/release-notes/0.15.0.md`, 자동 검증 통과.
+- 커밋·머지·푸시:
+  - 커밋 `5d3108f`.
+  - main 받기(바뀐 것 없음) → 머지 `757dd50` → `git push origin main`(0416306..757dd50).
+  - 원격 main = 757dd50 확인.
+  - 그 뒤 주석 태그 `v0.15.0`(코드행방 0.15.0) 푸시. 원격 태그 `v0.15.0^{}` = 757dd50 확인.
+  - main 에 같이 올라간 것: TASK-003(f3705bd)·TASK-004(89c1078) 머지.
+- 게시 확인: scratchpad `wait_release.sh 0.15.0`(github.com 내려받기 주소 60초마다, api.github.com 안 씀). 결과:
+  - `Code-Whereabouts-0.15.0-macOS.dmg: OK`, `latest.json: OK`(SHA256SUMS.txt)
+  - latest.json version 0.15.0, 플랫폼 darwin-aarch64·darwin-x86_64
+  - DMG 속 앱 버전 0.15.0, 겸용 x86_64·arm64, `codesign --verify --deep --strict` 통과
+  - 최신 릴리즈 = v0.15.0
 
 ## 발견한 문제
