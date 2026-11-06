@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { api, errorText, type CommitDetail, type GitRef, type GraphData, type OpState, type WorktreeStatus } from "../api";
+import { worktreeStatus } from "../gitStatus";
 import { ArrowDownToLine, ArrowUpFromLine, Crosshair, RefreshCw, X } from "lucide-react";
 import { ContextMenu, Empty, WtDot, type MenuItem } from "../components/Overlays";
 import * as ga from "../gitActions";
@@ -44,7 +45,7 @@ export function GitPanel() {
   const loadStatus = useCallback(async () => {
     if (!wtPath) return;
     const path = wtPath;
-    const st = await api.status(path).catch(() => null);
+    const st = await worktreeStatus(path).catch(() => null);
     if (current.current !== path || !st) return;
     setStatus(st);
     // 병합/rebase 중일 때만 진행 상태를 읽는다

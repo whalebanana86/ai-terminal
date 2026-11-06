@@ -4,6 +4,6 @@
 
 - 현재 작업: 없음
 - 상태: -
-- 다음 행동: 새 요청이 오면 `.agent/tasks/TASK-013.md` 를 만든다
-- 마지막 완료 작업: TASK-012 코드행방 0.17.0 릴리즈 (2026-11-06, `archive/TASK-012.md`)
+- 다음 행동: TASK-013 은 브랜치 perf/git-status-dedupe 에서 커밋 대기, 새 요청이 오면 `.agent/tasks/TASK-014.md`
+- 마지막 완료 작업: TASK-013 git status 중복 호출 합치기 (2026-11-06, `archive/TASK-013.md`, 브랜치 perf/git-status-dedupe 커밋 전)
 - 참고: TASK-006·007 은 docs/system-map 브랜치 쪽 stash 에 있음
