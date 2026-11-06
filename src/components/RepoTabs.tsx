@@ -2,6 +2,7 @@ import { FolderGit2, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import { t } from "../i18n";
 import { openRepository } from "../openRepository";
+import { closeRepoTabAsking } from "../repoClose";
 import { agentSummary, agentsByRepo, stateLabel, topState } from "../repoAgents";
 import { useStore } from "../store";
 import { dragClass, useTabDrag } from "../tabDrag";
@@ -11,7 +12,6 @@ export function RepoTabs() {
   const ids = useStore((s) => s.openRepoIds);
   const path = useStore((s) => s.focus?.worktreePath);
   const select = useStore((s) => s.openRepoTab);
-  const close = useStore((s) => s.closeRepoTab);
   const move = useStore((s) => s.moveRepoTab);
   const sessions = useStore((s) => s.sessions);
   const liveRuns = useStore((s) => s.liveRuns);
@@ -25,9 +25,12 @@ export function RepoTabs() {
   // 저장소마다 지금 도는 AI(앱 터미널 + 앱 밖). 실행 감지가 5초마다 바뀐 것만 알려 준다
   const agents = useMemo(() => agentsByRepo(repos, sessions, liveRuns, execs), [repos, sessions, liveRuns, execs]);
   useEffect(() => { nav.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" }); }, [active?.id]);
-  const closeTab = (id: string) => {
-    close(id);
-    requestAnimationFrame(() => (nav.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]') ?? nav.current?.querySelector<HTMLButtonElement>('.repo-tab-add'))?.focus());
+  // 그 저장소에서 앱 터미널의 AI 가 돌고 있으면 멈출지 먼저 묻는다(repoClose.ts). 그대로 뒀으면 그 탭으로 포커스를 돌려준다
+  const closeTab = async (id: string) => {
+    const closed = await closeRepoTabAsking(id);
+    requestAnimationFrame(() => (closed
+      ? nav.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]') ?? nav.current?.querySelector<HTMLButtonElement>('.repo-tab-add')
+      : nav.current?.querySelector<HTMLButtonElement>(`.repo-tab[data-repo-id="${CSS.escape(id)}"]`))?.focus());
   };
   return <nav ref={nav} className="repo-tabs" role="tablist" aria-label={t("저장소 탭")} onClickCapture={drag.guardClick}>
     {opened.map((repo) => {
@@ -40,7 +43,7 @@ export function RepoTabs() {
           tabIndex={selected || !active ? 0 : -1} title={ai && state ? `${repo.path}\n${agentSummary(ai)}` : repo.path} data-repo-id={repo.id}
           disabled={!repo.worktrees.some((w) => w.exists && !w.bare)} onClick={() => select(repo.id)}
           onKeyDown={(e) => {
-            if (e.key === "Delete") { e.preventDefault(); closeTab(repo.id); return; }
+            if (e.key === "Delete") { e.preventDefault(); void closeTab(repo.id); return; }
             if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
             e.preventDefault();
             const tabs = [...(nav.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]:not(:disabled)') ?? [])];
@@ -49,7 +52,7 @@ export function RepoTabs() {
             tabs[next]?.click(); tabs[next]?.focus();
           }}><FolderGit2 size={13} aria-hidden /><span>{repo.name}</span>
           {state && <span className={`repo-tab-ai ai-${state}`} role="img" aria-label={t("AI {state}", { state: stateLabel(state) })} data-ai={state} />}</button>
-        <button className="repo-tab-close" aria-label={t("{name} 탭 닫기", { name: repo.name })} title={t("탭 닫기")} onClick={() => closeTab(repo.id)}><X size={12} aria-hidden /></button>
+        <button className="repo-tab-close" aria-label={t("{name} 탭 닫기", { name: repo.name })} title={t("탭 닫기")} onClick={() => void closeTab(repo.id)}><X size={12} aria-hidden /></button>
       </div>;
     })}
     <button className="repo-tab-add" aria-label={t("저장소 추가")} title={t("저장소 추가")} onClick={openRepository}><Plus size={15} aria-hidden /></button>

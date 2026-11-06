@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LiveRun } from "./api";
-import { agentState, agentSummary, agentsByRepo, topState, type RepoAgents } from "./repoAgents";
+import { agentState, agentSummary, agentsByRepo, runsInRepo, stateCounts, topState, type RepoAgents } from "./repoAgents";
 
 const repo = (id: string, path: string, more: string[] = []) => ({ id, path, worktrees: [path, ...more].map((p) => ({ path: p })) }) as never;
 const session = (id: string, o: { repo?: string | null; wt?: string | null; cwd?: string | null; exec?: string | null } = {}) => ({
@@ -122,5 +122,39 @@ describe("탭에 보일 상태", () => {
     const s = agentSummary(counts({ waiting: 1, unknown: 1 })).split("\n");
     expect(s[0]).toBe("AI 확인 필요 1 · 실행 중 1");
     expect(s).toHaveLength(3);
+  });
+});
+
+describe("한 저장소의 실행(탭 닫을 때 멈출지 묻기)", () => {
+  it("앱 터미널 실행은 실행 id 와 상태로, 앱 밖 실행은 개수만. 다른 저장소 것은 빼고 앱이 띄운 감지는 다시 세지 않는다", () => {
+    const sessions = [
+      session("claude:s1", { repo: "a", wt: "/w/a", exec: "e1" }),
+      session("claude:s2", { wt: "/w/a-feature", exec: "e2" }),
+      session("claude:s3", { repo: "ab", wt: "/w/ab", exec: "e3" }),
+      session("claude:done", { repo: "a", wt: "/w/a" }),
+    ];
+    const runs = [
+      run("claude:s1", { pid: 41, status: "waiting", ownedByApp: true, cwd: "/w/a" }),
+      run("claude:s2", { pid: 42, status: "busy", ownedByApp: true, cwd: "/w/a-feature" }),
+      run("claude:out", { pid: 50, status: "busy", cwd: "/w/a/src" }),
+      run("claude:other", { pid: 51, status: "busy", cwd: "/w/ab" }),
+    ];
+    const execs = [{ id: "e1", pid: 41 }, { id: "e2", pid: 42 }, { id: "e3", pid: 43 }];
+    const r = runsInRepo("a", repos, sessions, runs, execs);
+    expect(r.execIds).toEqual(["e1", "e2"]);
+    expect(r.app).toEqual(counts({ waiting: 1, busy: 1 }));
+    expect(r.outside).toBe(1);
+    expect(runsInRepo("ab", repos, sessions, runs, execs)).toEqual({ execIds: ["e3"], app: counts({ unknown: 1 }), outside: 1 });
+    expect(runsInRepo("p", repos, sessions, runs, execs)).toEqual({ execIds: [], app: counts(), outside: 0 });
+  });
+
+  it("상위 폴더에서 연결된 앱 세션·아직 세션 id 가 없는 새 실행도 그 저장소 것", () => {
+    const sessions = [session("claude:up", { repo: "a", wt: "/w", cwd: "/w", exec: "e7" }), session("exec:e8", { wt: "/w/a", cwd: "/w/a", exec: "e8" })];
+    expect(runsInRepo("a", repos, sessions, [], [{ id: "e7", pid: 70 }, { id: "e8", pid: 80 }]).execIds).toEqual(["e7", "e8"]);
+  });
+
+  it("상태별 개수 글은 급한 것부터, 0 은 뺀다", () => {
+    expect(stateCounts(counts({ idle: 1, waiting: 2, unknown: 1 }))).toBe("확인 필요 2 · 실행 중 1 · 대기 중 1");
+    expect(stateCounts(counts())).toBe("");
   });
 });
