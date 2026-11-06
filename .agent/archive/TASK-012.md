@@ -1,6 +1,6 @@
 # TASK-012: 코드행방 0.17.0 릴리즈
 
-- 상태: IN_PROGRESS
+- 상태: COMPLETED
 - 만든 날: 2026-11-06
 - 브랜치: chore/release-0.17.0
 
@@ -24,8 +24,8 @@
 
 - [x] 버전 넷이 0.17.0, 노트 작성
 - [x] `./scripts/auto-fix-loop.sh` 통과
-- [ ] main 푸시(원격 main = 로컬 main), 그 뒤 태그 v0.17.0 푸시(원격 태그 확인)
-- [ ] 릴리즈 게시 확인:
+- [x] main 푸시(원격 main = 로컬 main), 그 뒤 태그 v0.17.0 푸시(원격 태그 확인)
+- [x] 릴리즈 게시 확인:
   - DMG 체크섬
   - latest.json 0.17.0·두 플랫폼
   - 앱 버전 0.17.0
@@ -43,5 +43,15 @@
 
 - 2026-11-06 TASK-010 커밋 `7d1b0bd`, TASK-011 기록 커밋 `f531737`, main 에 머지 `4c2959f`(main 받기: 바뀐 것 없음, 아직 푸시 전).
 - 버전 넷 0.17.0, 노트 `docs/release-notes/0.17.0.md`, 자동 검증 1번에 통과(빌드 화면 1초·Rust 9초, 타입 2초, clippy 15/15, 테스트 화면 1초·Rust 9초).
+- 커밋·머지·푸시:
+  - 커밋 `ac44f93`.
+  - main 받기(바뀐 것 없음) → 머지 `64d690d` → `pnpm exec tsc --noEmit` 0 → 한 번 더 받기(바뀐 것 없음) → `git push origin main`(a3b82e0..64d690d).
+  - 원격 main = 64d690d 확인.
+  - 그 뒤 주석 태그 `v0.17.0`(코드행방 0.17.0) 푸시. 원격 태그 `v0.17.0^{}` = 64d690d 확인.
+- 게시 확인: scratchpad `wait_release.sh 0.17.0 300`(github.com 내려받기 주소 5분마다, api.github.com 안 씀). 결과:
+  - `Code-Whereabouts-0.17.0-macOS.dmg: OK`, `latest.json: OK`(SHA256SUMS.txt)
+  - latest.json version 0.17.0, 플랫폼 darwin-aarch64·darwin-x86_64
+  - DMG 속 앱 버전 0.17.0, 겸용 x86_64·arm64, `codesign --verify --deep --strict` 통과
+  - 최신 릴리즈 = v0.17.0
 
 ## 발견한 문제
