@@ -188,4 +188,13 @@ export default {
   "AI {state}": "AI {state}",
   "확인 필요: 승인이나 질문의 답을 기다려요": "Needs you: waiting for an approval or an answer",
   "실행 중: 일하는지 알 수 없는 에이전트(Codex 등)": "Running: an agent that doesn't report whether it's working (Codex, etc.)",
+  // repoClose.ts — 저장소 탭을 닫을 때 실행 중인 AI 를 멈출지
+  "{name} 에서 AI 가 실행 중이에요": "AI is running in {name}",
+  "앱 터미널에서 띄운 AI {n}개가 아직 돌고 있어요 ({states}).": "Agents started in the app's terminal are still running: {n} ({states}).",
+  "멈추면 프로세스를 끝내요. 대화 기록은 남아 있어 나중에 이어갈 수 있어요.": "Stopping ends the process. The conversation is kept, so you can continue it later.",
+  "그대로 두면 탭만 닫히고 AI 는 계속 돌아요.": "If you leave it, only the tab closes and the AI keeps running.",
+  "다른 터미널에서 띄운 AI {n}개는 멈추지 않아요.": "Agents started in another terminal won't be stopped ({n}).",
+  "그대로 두고 닫기": "Close and leave running",
+  "멈추고 닫기": "Stop and close",
+  "AI 를 멈추지 못해 탭을 닫지 않았어요: {error}": "Couldn't stop the AI, so the tab was left open: {error}",
 } satisfies Record<string, string>;
