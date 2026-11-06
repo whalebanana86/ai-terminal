@@ -2,6 +2,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { createContext, Fragment, lazy, memo, Suspense, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Group, Panel, Separator, useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { api, errorText, externalRunning, type Agent, type LinkedSession, type LiveRun, type Transcript, type WorktreeStatus } from "../api";
+import { worktreeStatus } from "../gitStatus";
 import { BookmarkPlus, GitBranch, Info, PanelTopClose, PanelTopOpen, Play, Plus, RefreshCw, Square } from "lucide-react";
 import { AgentBadge, Empty, WtDot } from "../components/Overlays";
 import { baseName, branchLabel, branchState, clientLabel, externalRunOf, kindLabel, kindLetter, relativeTime, relativeTo } from "../logic";
@@ -584,7 +585,7 @@ function TouchedFilesView({ s }: { s: LinkedSession }) {
   }, [s.id, updatedAt, pending]);
   useEffect(() => {
     let alive = true;
-    if (s.worktreePath && s.cwdExists) api.status(s.worktreePath).then((x) => alive && setStatus(x), () => alive && setStatus(null));
+    if (s.worktreePath && s.cwdExists) worktreeStatus(s.worktreePath).then((x) => alive && setStatus(x), () => alive && setStatus(null));
     return () => {
       alive = false;
     };

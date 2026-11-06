@@ -2,6 +2,7 @@ import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { ExternalLink, FolderOpen, Globe, Trash2 } from "lucide-react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { api, errorText, type ChangeKind, type DirEntry, type FileContent, type FileDiff, type WorktreeStatus } from "../api";
+import { worktreeStatus } from "../gitStatus";
 import { ContextMenu, Empty, WtDot, type MenuItem } from "../components/Overlays";
 import { useExtensionOn, useFileModes, type FileModeSlot } from "../extensions";
 import { openExternal, openInDefaultApp, openLink, openMarkdownInBrowser } from "../externalEditor";
@@ -104,7 +105,7 @@ function FileTree({ worktree }: { worktree: string }) {
 
   useEffect(() => {
     let alive = true;
-    api.status(worktree).then((x) => alive && setStatus(x), () => alive && setStatus(null));
+    worktreeStatus(worktree).then((x) => alive && setStatus(x), () => alive && setStatus(null));
     return () => {
       alive = false;
     };

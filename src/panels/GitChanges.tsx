@@ -59,8 +59,9 @@ export function ChangesView({ worktree, status, onChanged }: { worktree: string;
       toast("error", t("{label} 실패: {error}", { label, error: errorText(e) }));
     } finally {
       setBusy(false);
-      onChanged();
+      // 신호를 먼저 올려야 다시 읽기가 바뀐 뒤 세대가 되어 다른 화면들과 한 번에 읽힌다(gitStatus.ts)
       useStore.getState().bumpGit();
+      onChanged();
     }
   };
   // 일괄 스테이지에서는 중첩 저장소와 충돌 파일을 뺀다(충돌 파일은 '해결됨' 검사를 거쳐야 한다).
@@ -87,8 +88,9 @@ export function ChangesView({ worktree, status, onChanged }: { worktree: string;
       toast("error", t("커밋 실패: {error}", { error: errorText(e) }));
     } finally {
       setBusy(false);
-      onChanged();
+      // 신호를 먼저 올려야 다시 읽기가 바뀐 뒤 세대가 되어 다른 화면들과 한 번에 읽힌다(gitStatus.ts)
       useStore.getState().bumpGit();
+      onChanged();
     }
   };
 
